@@ -72,9 +72,12 @@ void start_playback(PlaybackSource source, const std::wstring& title, int second
     auto next = std::make_unique<PlaybackProxy>(std::move(source));
     const auto& local = next->url();
     const std::wstring url(local.begin(), local.end());
-    enqueueFileWithMetaStructW item{url.c_str(), title.c_str(), seconds};
+    COPYDATASTRUCT item{};
+    item.dwData = IPC_ENQUEUEFILEW;
+    item.lpData = const_cast<wchar_t*>(url.c_str());
+    item.cbData = static_cast<DWORD>((url.size() + 1) * sizeof(wchar_t));
     const auto position = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
-    SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, reinterpret_cast<WPARAM>(&item), IPC_ENQUEUEFILEW);
+    SendMessageW(plugin.hwndWinampParent, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&item));
     const auto length = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
     if (length != position + 1) throw std::runtime_error("playlist_enqueue");
     proxy = std::move(next);

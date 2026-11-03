@@ -30,7 +30,9 @@ Native Dialoge werden mit `WS_CHILD`, `DS_CONTROL` und `WS_EX_CONTROLPARENT` ers
 
 ## Playlist und Metadaten
 
-`IPC_ENQUEUEFILEW` erhält `enqueueFileWithMetaStructW`: URL, Unicode-Titel und Länge in **Sekunden**, unbekannte Länge `-1`. Dieser IPC hängt an; er startet nicht automatisch. Für den Prototyp werden danach `IPC_SETPLAYLISTPOS` und `IPC_STARTPLAY` verwendet. Die bestehende Liste wird dabei nicht gelöscht.
+SDK 5.55 beschreibt für `IPC_ENQUEUEFILEW` die Struktur `enqueueFileWithMetaStructW`: URL, Unicode-Titel und Länge in **Sekunden**, unbekannte Länge `-1`. Diese Strukturübergabe verursacht in der konkreten Zielversion einen im Debugger reproduzierten Absturz innerhalb von Winamp. Im [offiziellen Fehlerbericht, Beitrag 141](https://forums.winamp.com/forum/winamp/winamp-bug-reports/316139-post-all-winamp-5-9-2-bug-reports-in-this-thread/page10) ist die Regression ebenfalls gemeldet. Der alte Header ist damit kein ausreichender Kompatibilitätsnachweis für diesen Aufruf.
+
+Der aktuelle Untersuchungsstand übergibt die Unicode-URL mit `WM_COPYDATA` und `IPC_ENQUEUEFILEW` als `dwData`. Dieser im SDK beschriebene Dateipfad hängt den Titel an, ohne den Strukturabsturz auszulösen. Plex-Metadaten werden dabei noch nicht übertragen. Für den Prototyp werden danach `IPC_SETPLAYLISTPOS` und `IPC_STARTPLAY` verwendet. Die bestehende Liste wird dabei nicht gelöscht. Der echte Streaming-Test bleibt wegen einer noch ungeklärten lokalen Request-Ablehnung offen.
 
 `IPC_GETLISTLENGTH` prüft den tatsächlichen Zuwachs. `IPC_GETOUTPUTTIME` dient zur Laufzeit- und Seek-Prüfung. `IPC_JUMPTOTIME` wird für die manuelle Gegenprüfung verwendet. Diese Aufrufe werden nur gegen das konkret geprüfte Testfenster ausgeführt.
 

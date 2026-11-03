@@ -30,6 +30,10 @@ Der echte Wiedergabenachweis läuft separat über `scripts/Test-PlexPlayback.ps1
 
 Ein technischer Proxytest allein erfüllt diese Schranke nicht. Der aktuelle echte Wiedergabe- und Seeking-Nachweis ist noch offen. Vor dessen Ergebnis wird die allgemeine Bibliotheksimplementierung nicht als nutzbar beschrieben.
 
+Der echte MP3-Test mit `enqueueFileWithMetaStructW` stürzt innerhalb von Winamp bei `IPC_ENQUEUEFILEW` ab. Der Debugger zeigt einen Lesezugriff auf `0x132`, den übergebenen Wert der Titellänge. Die entsprechende API-Regression ist auch im offiziellen Winamp-Forum für 5.9.1/5.9.2 gemeldet. Es wird keine alternative Struktur geraten. Mit `WM_COPYDATA` lässt sich ein Titel anhängen, ohne diesen Absturz auszulösen. Dieser Test scheitert anschließend: Winamp meldet `access denied`, der Proxy hat noch keinen Plex-Upstream-Status. Der genaue Ablehnungsgrund der lokalen Anfrage ist offen. Die aktuelle Übergabe transportiert außerdem noch keinen Plex-Titel und keine vorgegebene Länge.
+
+Die lokale Übergabe ist somit ein untersuchter Implementierungsstand, kein erfolgreicher Audio-Nachweis. Der nächste Schritt ist die sichere Diagnose des lokalen Request-Validators mit Winamps tatsächlicher Anfrage. Anschließend müssen Metadaten, fortschreitende Wiedergabe und Seeking gemeinsam geprüft werden.
+
 ## Manuelle Checkliste für die Zielversion
 
 ### Plugin und Lifecycle
