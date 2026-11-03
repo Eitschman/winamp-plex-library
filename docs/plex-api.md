@@ -1,0 +1,55 @@
+# Plex-API-Vertrag
+
+Primärquelle ist die [offizielle PMS-API](https://developer.plex.tv/pms/). Die folgenden Pfade sind dokumentierte Verträge beziehungsweise ausdrücklich markierte Referenzbefunde. Ein Eintrag in dieser Tabelle ist keine Behauptung, dass die zugehörige Produktfunktion schon implementiert oder am realen Server geprüft wurde.
+
+## Authentifizierung
+
+1. Pro Installation einen zufälligen Client-Identifier anlegen.
+2. `POST https://plex.tv/api/v2/pins?strong=true` mit `Accept: application/json`, `X-Plex-Product` und `X-Plex-Client-Identifier`. Die Antwort enthält unter anderem `id`, `code`, `expiresIn` und zunächst kein Zugriffstoken.
+3. Die Plex-Anmeldeseite `https://app.plex.tv/auth#?...` im Systembrowser öffnen. Die Parameter enthalten Client-ID, PIN-Code und Produktname. Kein Kontopasswort wird vom Plugin verarbeitet.
+4. `GET /api/v2/pins/{id}` bei `plex.tv` etwa einmal pro Sekunde abfragen, bis `authToken` gesetzt ist, die Anforderung abläuft oder der Benutzer abbricht.
+5. Mit dem Account-Token `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0` abfragen.
+6. Nur Ressourcen mit `provides=server` anbieten. Server besitzen `clientIdentifier`, `name`, `accessToken` und `connections[]`. Der Server-Token kann sich vom Account-Token unterscheiden.
+7. Eine konkrete HTTPS-Verbindung auswählen und deren `/identity` mit dem Ressourcen-Token prüfen. `machineIdentifier` muss zur ausgewählten Serverressource passen.
+8. Serverzugang und Musikbibliothek mit Windows DPAPI speichern. Der Account-Token wird nach der Ressourcenermittlung nicht dauerhaft benötigt.
+
+Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und Token-Erneuerung. Der Prototyp verwendet den ebenfalls offiziell beschriebenen starken PIN-Ablauf. Abgelaufene oder widerrufene Serverzugänge erfordern eine sichtbare erneute Anmeldung, keinen stillen Wechsel auf andere Tokens.
+
+## Server und Musik
+
+| Zweck | Pfad / Struktur | Umsetzung |
+| --- | --- | --- |
+| Serveridentifikation | `GET /identity`, `MediaContainer.machineIdentifier` | Anmeldung vergleicht die Identität. |
+| Fähigkeiten und Versionsdaten | `GET /` | Recherchiert; kein umfassendes Capability-Modell. |
+| Bibliotheken | `GET /library/sections`, `MediaContainer.Directory[]` mit `key`, `title`, `type` | Musikbibliotheken haben `type=artist`. |
+| Künstler | `/library/sections/{id}/all?type=8` | Bibliotheksansicht geplant. |
+| Alben | `/library/sections/{id}/all?type=9` | Bibliotheksansicht geplant. |
+| Titel | `/library/sections/{id}/all?type=10` | Begrenzter technischer Wiedergabetest. |
+| Metadaten | `/library/metadata/{ratingKey}`, `MediaContainer.Metadata[]` | Grundlage für die gezielte Medienauflösung. |
+| Kinder | `/library/metadata/{ratingKey}/children` | Künstler → Alben, Album → Titel. |
+| Audio-Playlists | `/playlists?playlistType=audio` und `/playlists/{id}/items` | Recherchiert, noch keine zugesicherte Produktfunktion. |
+| Bilder | Relativer `thumb`-/`art`-Schlüssel; auch `/photo/:/transcode` ist dokumentiert. | Covertransport und UI noch zu prüfen. |
+| Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | Proxy; nie das lokale Serverdateifeld `file` verwenden. |
+| Suche und Sortierung | Typisierte `all`-Abfrage mit dokumentierten Bibliotheksfiltern und `sort` | Serverfähigkeiten prüfen; keine SQL-ähnliche Syntax erfinden. |
+
+Ein Titel kann mehrere `Media`-Varianten und mehrere `Part`-Einträge besitzen. Eine allgemeine Implementierung muss diese Auswahl sichtbar und reproduzierbar behandeln. Der Prototyp darf nicht beliebige zusätzliche Parts durch Zusammenhängen von URLs simulieren. Laufzeiten sind API-seitig Millisekunden; Winamp erwartet im Playlist-IPC Sekunden.
+
+## Pagination
+
+`X-Plex-Container-Start` und `X-Plex-Container-Size` werden gemeinsam gesendet. Die Antwort kann eine andere Seitengröße als angefordert besitzen. Maßgeblich sind tatsächliches `offset`, `size`, optional `totalSize` sowie gegebenenfalls die entsprechenden Antwortheader. Ein leeres Ergebnis darf keine Endlosschleife erzeugen. Eine nicht paginierte Antwort darf nicht wiederholt als neue Seite angehängt werden. Eine allgemeine Sammlung aller Datensätze ist kein Ersatz für bedarfsgesteuerte Ansichten.
+
+## JSON und XML
+
+Der Client fordert JSON explizit an. Fehlende oder falsch typisierte Felder sind Fehler. Der Prototyp enthält noch keinen XML-Verarbeitungspfad. Ein zusätzlicher XML-Pfad darf nur bei einem nachgewiesenen Serverbedarf ergänzt werden und muss mit DTD-/Entitätsauflösung abgeschaltet getestet werden. XML darf keinen HTTP-, Authentifizierungs- oder Parserfehler verdecken. Die [Plex-Supportseite](https://support.plex.tv/articles/201638786-plex-media-server-url-commands/) liefert offizielle XML-Beispiele für diesen späteren Kompatibilitätstest.
+
+## Wiedergabestatus und schreibende Funktionen
+
+Die offizielle API führt `/:/timeline` für Playback-Meldungen sowie `PUT /:/rate` mit Provider-Identifier, `ratingKey` und Bewertung von 0 bis 10. Verlauf und Wiedergabemarkierungen sind eigenständige Serverwirkungen. Sie werden erst nach Prüfung der Zeitbasis, Zustandsübergänge, Mehrfachaufrufe und Rücklesewerte implementiert. Der Browser-/Wiedergabe-Prototyp verändert keine Bewertungen, Playlists oder Bibliotheksinhalte.
+
+Plexas Audio-Transcoding unter `/music/:/transcode/universal/start.mp3` ist zusätzlich im Referenzadapter belegt. Noch nicht belegt ist die erforderliche Parameterkombination für diesen Winamp-Client. Es gibt deshalb keinen automatischen Transcoding-Versuch.
+
+## Fehler und Sicherheitsgrenzen
+
+401/403: Zugriff verweigert; 404: Datei oder Metadaten fehlen; 416: Byte-Range nicht erfüllbar. Redirects werden nicht gefolgt. Andere Upstream-Fehler ergeben am lokalen Proxy einen leeren HTTP-502-Fehler. Antworttexte, Cookies und Location-Header gehen nicht an Winamp. Die UI zeigt nur klassifizierte Codes, nie Tokens oder rohe API-Antworten.
+
+Der Client bindet jeden Request an eine vorab ausgewählte Origin. Medienpfade müssen relative, geprüfte Plex-Part-Pfade sein. Absolute URLs, Netzwerkpfade, eingebettete Zugangsdaten, Query-Tokens und Header-Injection werden abgewiesen. Der Proxy sendet keine vom lokalen HTTP-Client gelieferten Authentifizierungsheader an Plex.

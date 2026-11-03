@@ -1,0 +1,72 @@
+﻿$ErrorActionPreference = 'Stop'
+$script:ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path | Split-Path -Parent
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public class PlexNativeWindow {
+  public IntPtr Handle;
+  public int ProcessId;
+  public int ControlId;
+  public string Class;
+  public string Text;
+}
+public static class PlexNative {
+  public delegate bool EnumProc(IntPtr window, IntPtr parameter);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr window);
+  [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maximum);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder text, int maximum);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, string second);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int left, int top, int width, int height, bool repaint);
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr device, uint flags);
+  static PlexNativeWindow Read(IntPtr window) {
+    uint process; GetWindowThreadProcessId(window, out process);
+    var text = new StringBuilder(1024); GetWindowText(window, text, text.Capacity);
+    var type = new StringBuilder(256); GetClassName(window, type, type.Capacity);
+    return new PlexNativeWindow { Handle=window, ProcessId=(int)process, ControlId=GetDlgCtrlID(window), Class=type.ToString(), Text=text.ToString() };
+  }
+  public static PlexNativeWindow[] Windows(int process) {
+    var result = new List<PlexNativeWindow>();
+    EnumWindows((window, parameter) => { var item=Read(window); if(item.ProcessId==process) result.Add(item); return true; }, IntPtr.Zero);
+    return result.ToArray();
+  }
+  public static PlexNativeWindow[] Children(IntPtr parent) {
+    var result = new List<PlexNativeWindow>();
+    EnumChildWindows(parent, (window, parameter) => { result.Add(Read(window)); return true; }, IntPtr.Zero);
+    return result.ToArray();
+  }
+}
+'@
+
+function Get-PlexTestProcess {
+    $expected = Join-Path $script:ProjectRoot '.local\winamp-test\winamp.exe'
+    $process = @(Get-Process winamp -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $expected })
+    if ($process.Count -ne 1) { throw 'Genau eine isolierte Winamp-Testinstanz wird erwartet.' }
+    return $process[0]
+}
+
+function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
+    Add-Type -AssemblyName System.Drawing
+    $rectangle = New-Object PlexNative+Rect
+    if (-not [PlexNative]::GetWindowRect($Window, [ref]$rectangle)) { throw 'Fensterrechteck nicht verfügbar.' }
+    $bitmap = New-Object Drawing.Bitmap(($rectangle.Right - $rectangle.Left), ($rectangle.Bottom - $rectangle.Top))
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $device = $graphics.GetHdc()
+    try {
+        if (-not [PlexNative]::PrintWindow($Window, $device, 0)) { throw 'Fenster konnte nicht aufgenommen werden.' }
+    } finally { $graphics.ReleaseHdc($device); $graphics.Dispose() }
+    try { $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
+}
+
+Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot

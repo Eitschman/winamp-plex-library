@@ -1,0 +1,220 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <winhttp.h>
+#include "plex/proxy.h"
+#include "plex/security.h"
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <iostream>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+int checks = 0;
+void check(bool condition, const char* name) {
+    ++checks;
+    if (!condition) throw std::runtime_error(name);
+}
+void send_text(SOCKET socket, const std::string& text) {
+    std::size_t offset = 0;
+    while (offset < text.size()) {
+        const auto sent = send(socket, text.data() + offset, static_cast<int>(text.size() - offset), 0);
+        if (sent <= 0) return;
+        offset += sent;
+    }
+}
+
+struct Fixture {
+    SOCKET listener = INVALID_SOCKET;
+    std::uint16_t port = 0;
+    std::atomic<bool> stop{false};
+    std::atomic<bool> slow_started{false};
+    std::atomic<unsigned> hits{0};
+    std::atomic<unsigned> token_errors{0};
+    std::string media;
+    std::thread worker;
+
+    Fixture() {
+        WSADATA data{};
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) throw std::runtime_error("fixture_winsock");
+        media.resize(100000);
+        for (std::size_t offset = 0; offset < media.size(); ++offset) media[offset] = static_cast<char>(offset % 251);
+        listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        sockaddr_in address{};
+        address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        check(bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0, "fixture_bind");
+        check(listen(listener, 8) == 0, "fixture_listen");
+        int length = sizeof(address);
+        getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
+        port = ntohs(address.sin_port);
+        u_long nonblocking = 1; ioctlsocket(listener, FIONBIO, &nonblocking);
+        worker = std::thread([this] { run(); });
+    }
+
+    void serve(SOCKET client) {
+        DWORD timeout = 500;
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        std::string request;
+        char chunk[2048];
+        while (request.find("\r\n\r\n") == request.npos && request.size() < 16384) {
+            const auto size = recv(client, chunk, sizeof(chunk), 0);
+            if (size <= 0) return;
+            request.append(chunk, static_cast<std::size_t>(size));
+        }
+        ++hits;
+        if (request.find("X-Plex-Token: synthetic-test-token\r\n") == request.npos) {
+            ++token_errors; send_text(client, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"); return;
+        }
+        if (request.find("/library/parts/998/") != request.npos) {
+            slow_started.store(true);
+            while (!stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            return;
+        }
+        for (const auto status : {401, 403, 404, 302, 500}) {
+            if (request.find("/library/parts/" + std::to_string(status) + "/") != request.npos) {
+                const auto response = "HTTP/1.1 " + std::to_string(status) + " Test\r\nContent-Length: 0\r\n"
+                                      "Location: http://127.0.0.1:1/foreign\r\nSet-Cookie: private=test\r\n\r\n";
+                send_text(client, response); return;
+            }
+        }
+        if (request.find("/library/parts/999/") != request.npos) {
+            send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 999999\r\n\r\ntruncated"); return;
+        }
+        std::size_t first = 0, last = media.size() - 1;
+        bool ranged = false;
+        auto range = request.find("Range: bytes=");
+        if (range != request.npos) {
+            ranged = true;
+            range += 13;
+            const auto end = request.find("\r\n", range);
+            const auto interval = request.substr(range, end - range);
+            const auto dash = interval.find('-');
+            if (dash == 0) first = media.size() - static_cast<std::size_t>(std::stoull(interval.substr(1)));
+            else {
+                first = static_cast<std::size_t>(std::stoull(interval.substr(0, dash)));
+                if (dash + 1 < interval.size()) last = static_cast<std::size_t>(std::stoull(interval.substr(dash + 1)));
+            }
+            if (first >= media.size()) { send_text(client, "HTTP/1.1 416 Test\r\nContent-Length: 0\r\n\r\n"); return; }
+        }
+        const auto body = media.substr(first, last - first + 1);
+        auto response = std::string(ranged ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n") +
+                        "Content-Type: audio/mpeg\r\nAccept-Ranges: bytes\r\nContent-Length: " + std::to_string(body.size()) + "\r\n";
+        if (ranged) response += "Content-Range: bytes " + std::to_string(first) + "-" + std::to_string(last) + "/" + std::to_string(media.size()) + "\r\n";
+        response += "\r\n";
+        if (request.substr(0, 4) != "HEAD") response += body;
+        send_text(client, response);
+    }
+
+    void run() noexcept {
+        while (!stop.load()) {
+            const auto client = accept(listener, nullptr, nullptr);
+            if (client == INVALID_SOCKET) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+            u_long blocking = 0; ioctlsocket(client, FIONBIO, &blocking);
+            try { serve(client); } catch (...) { ++token_errors; }
+            closesocket(client);
+        }
+    }
+
+    ~Fixture() {
+        stop.store(true);
+        if (worker.joinable()) worker.join();
+        closesocket(listener); WSACleanup();
+    }
+};
+
+struct InternetHandle {
+    HINTERNET value;
+    ~InternetHandle() { if (value) WinHttpCloseHandle(value); }
+};
+struct Response { DWORD status = 0; std::string body; std::wstring raw_headers; };
+
+Response fetch(const std::string& url, const wchar_t* method = L"GET", const std::wstring& headers = {}) {
+    const auto authority_end = url.find('/', 7);
+    const auto origin = plex::parse_server_address(url.substr(0, authority_end));
+    const std::wstring host(origin.host.begin(), origin.host.end());
+    const auto path_text = url.substr(authority_end);
+    const std::wstring path(path_text.begin(), path_text.end());
+    InternetHandle session{WinHttpOpen(L"Plex synthetic tests", WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0)};
+    WinHttpSetTimeouts(session.value, 2000, 2000, 2000, 2000);
+    InternetHandle connection{WinHttpConnect(session.value, host.c_str(), origin.port, 0)};
+    InternetHandle request{WinHttpOpenRequest(connection.value, method, path.c_str(), nullptr, nullptr, nullptr, 0)};
+    if (!WinHttpSendRequest(request.value, headers.c_str(), static_cast<DWORD>(headers.size()), nullptr, 0, 0, 0) ||
+        !WinHttpReceiveResponse(request.value, nullptr)) throw std::runtime_error("fixture_client_connect");
+    Response response;
+    DWORD size = sizeof(response.status);
+    WinHttpQueryHeaders(request.value, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &response.status, &size, nullptr);
+    size = 0;
+    WinHttpQueryHeaders(request.value, WINHTTP_QUERY_RAW_HEADERS_CRLF, nullptr, nullptr, &size, nullptr);
+    std::vector<wchar_t> buffer(size / sizeof(wchar_t) + 1);
+    WinHttpQueryHeaders(request.value, WINHTTP_QUERY_RAW_HEADERS_CRLF, nullptr, buffer.data(), &size, nullptr);
+    response.raw_headers = buffer.data();
+    if (wcscmp(method, L"HEAD") == 0) return response;
+    char bytes[16384];
+    DWORD read = 0;
+    while (WinHttpReadData(request.value, bytes, sizeof(bytes), &read) && read) response.body.append(bytes, read);
+    return response;
+}
+}
+
+int main() {
+    try {
+        Fixture fixture;
+        const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
+        auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+        const auto url = proxy->url();
+        check(url.find("synthetic-test-token") == url.npos && url.find("/library/parts/") == url.npos, "opaque_url");
+        const auto all = fetch(url);
+        check(all.status == 200 && all.body == fixture.media, "complete_media_bytes");
+        const auto head = fetch(url, L"HEAD");
+        check(head.status == 200 && head.body.empty() && head.raw_headers.find(L"Content-Length: 100000") != head.raw_headers.npos, "head_length");
+        const auto range = fetch(url, L"GET", L"Range: bytes=101-500\r\n");
+        check(range.status == 206 && range.body == fixture.media.substr(101, 400), "bounded_byte_range");
+        check(range.raw_headers.find(L"Content-Range: bytes 101-500/100000") != range.raw_headers.npos, "content_range");
+        check(fetch(url, L"GET", L"Range: bytes=99900-\r\n").body == fixture.media.substr(99900), "open_range");
+        check(fetch(url, L"GET", L"Range: bytes=-128\r\n").body == fixture.media.substr(99872), "suffix_range");
+        check(fetch(url, L"GET", L"Range: bytes=999999-\r\n").status == 416, "unsatisfiable_range");
+        const auto before = fixture.hits.load();
+        check(fetch(url + "?X-Plex-Token=should-not-forward").status == 403, "query_rejected");
+        check(fetch(url, L"POST").status == 403, "post_rejected");
+        check(fetch(url, L"GET", L"Origin: https://evil.example\r\n").status == 403, "browser_origin_rejected");
+        check(fetch(url, L"GET", L"Range: bytes=0-1,4-5\r\n").status == 403, "multipart_range_rejected");
+        check(fetch(url, L"GET", L"Host: evil.example\r\n").status == 403, "dns_rebinding_rejected");
+        check(fixture.hits.load() == before, "rejections_never_contact_upstream");
+        const auto origin_end = url.find('/', 7);
+        check(fetch(url.substr(0, origin_end) + "/stream/invalid/audio.mp3").status == 403, "invalid_capability");
+        proxy.reset();
+        bool revoked = false;
+        try { fetch(url); } catch (...) { revoked = true; }
+        check(revoked, "grant_revoked_after_shutdown");
+        for (const auto status : {401, 403, 404, 302, 500}) {
+            plex::PlaybackProxy failure({server, "synthetic-test-token", "/library/parts/" + std::to_string(status) + "/file.mp3"});
+            const auto response = fetch(failure.url());
+            check(response.status == static_cast<DWORD>(status == 302 || status == 500 ? 502 : status), "classified_upstream_status");
+            check(response.body.empty() && response.raw_headers.find(L"Set-Cookie") == response.raw_headers.npos &&
+                  response.raw_headers.find(L"Location:") == response.raw_headers.npos, "private_headers_not_forwarded");
+        }
+        const auto handles_before = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+        for (int iteration = 0; iteration < 10; ++iteration) {
+            plex::PlaybackProxy repeated({server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+            check(fetch(repeated.url()).status == 200, "repeated_proxy_lifecycle");
+        }
+        check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) == handles_before, "no_user_handles_leaked");
+        check(fixture.token_errors.load() == 0, "header_authentication_intact");
+        proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/998/file.mp3"});
+        const auto pending_url = proxy->url();
+        auto pending = std::async(std::launch::async, [pending_url] { try { fetch(pending_url); } catch (...) {} });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!fixture.slow_started.load() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        check(fixture.slow_started.load(), "pending_request_started");
+        const auto start = std::chrono::steady_clock::now();
+        proxy.reset();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        check(elapsed < 1500, "async_request_cancelled_on_shutdown");
+        pending.get();
+        std::cout << checks << " transport checks passed; cancellation " << elapsed << " ms\n";
+        return 0;
+    } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }
+}
