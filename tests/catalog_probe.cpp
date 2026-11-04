@@ -4,15 +4,82 @@
 #include <objbase.h>
 #include <iostream>
 #include <stdexcept>
+#include <map>
+#include <set>
+#include <fstream>
+#include <algorithm>
 
 // Bewusster Integrationstest, nicht Teil von CTest; keine privaten Inhalte ausgeben.
 int main(int count, char** arguments) {
-    if (count != 1 && count != 3) return 2;
+    const bool inventory = (count == 2 || count == 3) && std::string(arguments[1]) == "--formats";
+    if (count != 1 && count != 3 && !inventory) return 2;
     const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     int stage = 0;
     try {
         const auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexCatalog client(settings, stop);
+        if (inventory) {
+            stage = 50;
+            plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks;
+            query.library_identifier = settings.library_identifier; query.limit = 250;
+            std::map<std::string, std::size_t> formats;
+            std::set<std::string> identifiers;
+            std::map<std::string, std::size_t> title_counts;
+            std::map<std::string, std::vector<std::string>> sample_titles;
+            std::map<std::pair<std::string, std::string>, plex::PlexTrack> sample_tracks;
+            std::size_t without_artwork = 0, unsupported = 0;
+            std::optional<std::size_t> total;
+            for (;;) {
+                const auto page = client.page(query);
+                if (total && page.total && total != page.total) throw std::runtime_error("inventory_library_changed");
+                if (page.total) total = page.total;
+                for (const auto& item : page.items) {
+                    const auto& track = std::get<plex::PlexTrack>(item);
+                    if (!identifiers.insert(track.identifier).second) throw std::runtime_error("inventory_duplicate_track");
+                    ++title_counts[track.title];
+                    if (plex::track_artwork(track).empty()) ++without_artwork;
+                    try {
+                        const auto parts = plex::direct_parts(track);
+                        const auto format = parts.front().container;
+                        auto extension = parts.front().key.substr(parts.front().key.rfind('.') + 1);
+                        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+                        if (!track.title.empty() && track.duration_ms > 30000 && sample_titles[extension].size() < 50) {
+                            sample_titles[extension].push_back(track.title);
+                            sample_tracks.emplace(std::pair{extension, track.title}, track);
+                        }
+                        // Nur bekannte Formatnamen ausgeben, niemals API-Texte oder Medienpfade.
+                        if (format == "mp3" || format == "flac" || format == "aac" || format == "m4a" || format == "ogg" || format == "mp4") ++formats[format];
+                        else ++formats["other"];
+                    } catch (const std::invalid_argument&) { ++unsupported; }
+                }
+                if (!page.more) break;
+                if (page.items.empty() || query.offset > 200000) throw std::runtime_error("inventory_pagination_limit");
+                query.offset += page.items.size();
+            }
+            if (total && identifiers.size() != *total) throw std::runtime_error("inventory_total_mismatch");
+            for (const auto& entry : formats) std::cout << "format=" << entry.first << " tracks=" << entry.second << '\n';
+            std::cout << "tracks=" << identifiers.size() << " without_artwork_metadata=" << without_artwork << " unsupported=" << unsupported << '\n';
+            if (count == 3) {
+                nlohmann::json samples = nlohmann::json::array();
+                for (auto& format : sample_titles) {
+                    std::stable_sort(format.second.begin(), format.second.end(), [](const auto& left, const auto& right) { return left.size() > right.size(); });
+                    const std::string* selected = &format.second.front();
+                    for (const auto& title : format.second) if (title_counts.at(title) == 1) {
+                        selected = &title; break;
+                    }
+                    const auto& track = sample_tracks.at({format.first, *selected});
+                    samples.push_back({{"format", format.first}, {"title", *selected}, {"artist", track.artist}, {"album", track.album},
+                                       {"narrow", title_counts.at(*selected) != 1}});
+                }
+                // Der optionale lokale Bericht enthält private Titel-/Albumangaben,
+                // aber keine URLs oder Zugangsdaten. Er gehört nicht ins Repository.
+                std::ofstream output(arguments[2], std::ios::binary | std::ios::trunc);
+                if (!output || !(output << samples.dump(2))) throw std::runtime_error("inventory_output");
+                std::cout << "format_samples=" << samples.size() << '\n';
+            }
+            CloseHandle(stop);
+            return 0;
+        }
         for (const auto kind : {plex::BrowseKind::artists, plex::BrowseKind::albums, plex::BrowseKind::tracks, plex::BrowseKind::playlists}) {
             stage = 10 * static_cast<int>(kind) + 1;
             plex::BrowseQuery query; query.kind = kind; query.library_identifier = settings.library_identifier; query.limit = 2;

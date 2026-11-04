@@ -2,7 +2,13 @@
 
 Die Entwicklung läuft am ursprünglichen Plugin-Auftrag einschließlich Bibliotheksansichten, Wiedergabe und Qualitätssicherung weiter. Das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument. Der Benutzer hat den lokalen Proxy als Architektur bestätigt.
 
+Tagespause am 04.11.2026 um 13:00 Uhr Europe/Berlin. Einstellungen und Bibliotheksgestaltung sind lokal versioniert. Die sieben CTest-Suiten bestehen. Der echte Format-Gesamttest meldet bewusst Fehler für FLAC und OGG; die positive Gegenprobe für M4A und MP3 einschließlich Titelvergleich besteht. Kein Produktnachweis für sämtliche Audioformate.
+
+Die Testinstanz wurde mit gestoppter Wiedergabe und geleerter gespeicherter Playlist regulär beendet. Eine zusätzliche echte Nachprüfung des Proxy-Links nach Beendigung ergab HTTP-Timeout statt eines eindeutigen Verbindungsfehlers; die anschließende Listener-Vorbedingung war nicht erfüllt. Dieser Nachweis bleibt offen. Das dafür erprobte Prüfskript wurde wegen der unzuverlässigen Vorbedingung nicht übernommen. Kein Decoderfehlerdialog bleibt absichtlich geöffnet.
+
 ## Nächster konkreter Schritt
+
+Priorität für die Fortsetzung: Wiedergabearchitektur für die tatsächlich nachgewiesenen Decoder-Grenzen ergänzen. Winamp 5.9.2 weist FLAC-HTTP mit „Cannot stream flac file, please download it“ ab. OGG liefert Fortschritt, aber Länge 0 und Seek-Code -1; Proxy-Range liefert separat korrekt HTTP 206. MP3 und M4A bestehen Fortschritt, Laufzeit und Seeking. Ein kontrollierter lokaler Dateizugriff für die betroffenen Decoder ist zu entwerfen und umzusetzen, ohne automatisches Transcoding oder tokenhaltige URLs. Anschließend dieselben Originalmedien erneut prüfen. `scripts/Test-PlexFormats.ps1` erhält private Titel ausschließlich aus dem lokalen Inventurbericht und benutzt die reguläre Bibliotheksoberfläche. Die automatischen Tests erkennen die beiden Fehler; sie sind keine erfolgreichen Formatnachweise.
 
 Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `src/plugin/plugin.cpp` verwendet `WM_COPYDATA` mit einer temporären M3U8-Datei, `ML_IPC_HOOKTITLEW` und den im SDK dokumentierten Play-Befehl. Wiedergabe, Seeking, 306 Sekunden Länge und Plex-Titel sind nachgewiesen; die exportierte Testplaylist ist tokenfrei. Details und konkrete Messwerte stehen in `docs/testing.md`.
 

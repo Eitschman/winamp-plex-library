@@ -16,7 +16,7 @@ Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_m
 
 Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrund geladen. Titel übernehmen das vorhandene Albumcover, sofern sie kein eigenes Bild besitzen. Ein begrenzter Bildcache hält Miniaturen vor. Das reale Dimmu-Borgir-Album „Grand Serpent Rising“ wurde mit Cover und 13 Titeln geprüft. Fehlende Bilder werden ohne Ersatzbild dargestellt. Winamps Album-Art-Dienst erhält vorbereitete PNG-Bilder für eigene Wiedergabe-URLs. Beide Coverfelder des Big-Bento-Players wurden damit visuell geprüft.
 
-Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Weitere Audioformate, Fehlerfälle und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
+Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. MP3 und M4A sind mit Fortschritt, Laufzeit und Seeking geprüft. Winamps FLAC-Decoder verlangt eine lokale Datei; OGG meldet über HTTP keine Länge und verweigert Seeking. Diese Grenzen sind offen und verhindern einen allgemeinen Wiedergabenachweis für alle geforderten Formate. Weitere Fehlerfälle und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
 
 ## Build
 

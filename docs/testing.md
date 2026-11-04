@@ -69,16 +69,22 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 | Format | Echtes Plex Direct Play | Länge / Titel | Seeking | Abbruch / Neustart |
 | --- | --- | --- | --- | --- |
 | MP3 | getestet | getestet | getestet | weitere Fehlerfälle offen |
-| FLAC | offen | offen | offen | offen |
+| FLAC | fehlgeschlagen: Winamp verlangt lokale Datei | nicht geprüft | nicht geprüft | Decoderfehlerdialog erkannt und geschlossen |
 | AAC | offen | offen | offen | offen |
-| M4A | offen | offen | offen | offen |
-| OGG | offen | offen | offen | offen |
+| M4A | getestet, MP4-Container | 251 Sekunden, Titel über reguläre Bibliotheksübergabe | getestet, 10.550 ms nach Sprung auf 10 Sekunden | weitere Fehlerfälle offen |
+| OGG | Fortschritt 551 ms nachgewiesen | Decoder meldet Länge 0 | abgewiesen, Rückgabecode -1 | Test gestoppt; weitere Fälle offen |
 
-- [ ] Winamp-Playlist speichern und kontrollieren, dass keine Plex-Tokens enthalten sind.
+`catalog_probe.exe --formats <lokaler-Ausgabepfad>` erfasst die gewählte Musikbibliothek seitenweise und erzeugt optional einen privaten Titel-/Formatbericht ohne URLs oder Zugangsdaten. Der reale Lauf prüfte 20.782 stabile Titel-IDs: 20.332 MP3-, 77 MP4-, 186 OGG-, ein FLAC- und 100 weitere Containerangaben; 86 Titel besitzen keine vom derzeitigen Direct-Play-Selektor unterstützte Variante. Bei 1.434 Titeln fehlt eine Cover-Referenz. Containerangaben sind kein Decoder-Nachweis. Der lokale Bericht und private Titel werden nicht eingecheckt.
+
+`scripts/Test-PlexFormats.ps1` verwendet diesen Bericht ausschließlich zur Auswahl über die regulären nativen Bibliotheksansichten. Mehrdeutige Titel werden über Künstler und Album eingegrenzt und die tatsächliche Dateiendung der sicheren Playlist-URL geprüft. Der reale Gesamtlauf meldet zwei erfolgreiche und zwei fehlgeschlagene Formate; sein Fehlerstatus ist beabsichtigt. Der FLAC-Dialog meldet ausdrücklich „Cannot stream flac file, please download it“. Bei OGG beantwortet derselbe Proxy eine Range-Anfrage korrekt mit HTTP 206; Winamp lehnt den Positionswechsel dennoch ab. Eine ausschließlich auf HTTP-Streaming beruhende Wiedergabearchitektur erfüllt damit die Anforderungen für diese Zielversion noch nicht. Ein eigener Decoder oder automatisches Transcoding wurde nicht ergänzt. Der nächste Implementierungsschritt muss den lokalen Dateizugriff der vorhandenen Decoder berücksichtigen und erneut mit diesen Originalmedien geprüft werden.
+
+- [x] Winamp-Testplaylist gespeichert und jede Medienzeile gegen das vollständige Loopback-URL-Format ohne Plex-Tokens geprüft. M4A-/MP3-Titel außerdem mit Winamps aktuellem Fenstertitel verglichen.
 - [ ] Abgelaufene lokale Capability und URL nach Plugin-Beendigung abweisen.
 - [ ] Fehlende Mediendatei und Verbindungsunterbrechung während des Abspielens.
 - [ ] Prüfen, dass Plex tatsächlich keine Transcoding-Session erzeugt.
 - [ ] Keine anderen Titel oder Konfigurationen der vorhandenen Winamp-Instanz verändern.
+
+Die Formatprüfung besitzt eine positive Gegenprobe mit M4A und MP3 und eine synthetische negative Gegenprobe mit einer unzulässigen Dateiendung. Die gültigen Formate bestehen; die ungültige Probe liefert einen Fehlerstatus. Der Gesamtlauf bleibt wegen der nachgewiesenen FLAC-/OGG-Grenzen absichtlich rot. Die sieben unabhängigen CTest-Suiten bestehen weiterhin; diese Ergebnisse dürfen nicht miteinander verwechselt werden.
 
 ### Bibliotheken und Erweiterungen
 

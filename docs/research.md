@@ -35,7 +35,7 @@ Die offizielle API unterscheidet Konto- und Serverzugriff. Der Account-Token wir
 | Prozessinterner Loopback-Proxy | Authentifizierung im WinHTTP-Header; Winamp erhält nur einen zufälligen lokalen Grant. Echter MP3-Titel mit Seeking und Plex-Metadaten geprüft. | Gewählte Architektur; weitere Formate getrennt prüfen. |
 | Audio-Transcoding | Plexa verwendet unter anderem `/music/:/transcode/universal/start.mp3`. Das ist ein Referenzbefund, kein eigener Laufzeitnachweis. | Nicht automatisch aktivieren; Direct Play zuerst nachweisen. |
 
-MP3, FLAC, AAC, M4A und OGG benötigen jeweils einen separaten tatsächlichen Winamp-Test. Das Vorhandensein eines Decoders beweist weder HTTP- noch HTTPS-, Range- oder Containerkompatibilität. M4A kann insbesondere Zugriffe auf verschiedene Dateibereiche benötigen. Ein Proxy allein ergänzt keine fehlende URL-Unterstützung eines Input-Plugins.
+MP3 und M4A bestehen den tatsächlichen Winamp-Test mit Fortschritt, Laufzeit und Seeking. FLAC wird vom Zieldecoder mit der Aufforderung zum lokalen Download abgewiesen. OGG spielt an, meldet aber Länge 0 und lehnt Seeking ab, obwohl der Proxy die zusätzliche Range-Anfrage korrekt beantwortet. AAC ist noch nicht tatsächlich geprüft. Das Vorhandensein eines Decoders beweist weder HTTP- noch HTTPS-, Range- oder Containerkompatibilität. Ein Proxy allein ergänzt keine fehlende URL-Unterstützung eines Input-Plugins.
 
 Ein widerrufenes Token muss als HTTP 401/403 sichtbar werden. Der Proxy reicht keine fremden Redirects weiter und liefert keine authentifizierten URLs oder Antworttexte an Winamp. Beim Widerruf erfolgt weder Transcoding noch eine automatische Anmeldung mit anderen Zugangsdaten.
 
