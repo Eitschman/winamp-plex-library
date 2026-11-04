@@ -15,7 +15,13 @@ if ($Skin -eq 'Classic') {
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($preferences.Count -ne 1) { throw 'Winamps Skin-Auswahl wurde nicht geöffnet.' }
-    $list = [PlexNative]::Children($preferences[0].Handle) | Where-Object ControlId -eq 1122
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $list = [PlexNative]::Children($preferences[0].Handle) | Where-Object ControlId -eq 1122
+        if ($list -and [PlexNative]::QueryInt32($list.Handle, 395, [IntPtr]::Zero, [IntPtr]::Zero) -gt 0 -and
+            [PlexNative]::ListItemText($list.Handle, 0) -match '^Winamp (Classic|Klassisch)$') { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $list -or [PlexNative]::ListItemText($list.Handle, 0) -notmatch '^Winamp (Classic|Klassisch)$') {
         throw 'Eingebaute Classic-Auswahl wurde nicht gefunden.'
     }

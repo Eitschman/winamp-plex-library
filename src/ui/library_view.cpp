@@ -22,6 +22,7 @@ PageCache cache;
 std::atomic<unsigned long long> cache_scope{0};
 void clear_cache() { ++cache_scope; cache.clear(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
+void layout(HWND dialog);
 
 // gen_ml besitzt die Skin-Ressourcen und entfernt seine Subklassen bei WM_NCDESTROY.
 // Die Ansicht verwendet dieselbe Skin-Engine wie die eingebauten Bibliotheksansichten.
@@ -32,6 +33,7 @@ void skin_view(HWND dialog) {
     MLSKINWINDOW window{dialog, SKINNEDWND_TYPE_DIALOG, style};
     if (!MLSkinWindow(library, &window)) throw std::runtime_error("skin_dialog");
     for (auto child = GetWindow(dialog, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        if (GetDlgCtrlID(child) == IDC_LIBRARY) continue;
         const bool list = GetDlgCtrlID(child) == IDC_CATALOG;
         window = {child, static_cast<UINT>(list ? SKINNEDWND_TYPE_LISTVIEW : SKINNEDWND_TYPE_AUTO),
                   style | (list ? SWLVS_FULLROWSELECT | SWLVS_DOUBLEBUFFER : 0)};
@@ -153,6 +155,7 @@ struct View {
     std::vector<PlexLibrary> libraries;
     CatalogPage page;
     bool busy = false, suppress_search = false;
+    bool library_skinned = false;
     HIMAGELIST images = nullptr;
     std::unique_ptr<ArtworkLoader> artwork;
     std::vector<bool> requested_artwork;
@@ -177,7 +180,15 @@ struct View {
 
     void prepare_artwork() {
         const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        // ListView merkt sich die zuletzt zugewiesenen Bildmaße auch nach dem
+        // Entfernen. Vor dem Freigeben auf eine reine Textzeile zurücksetzen.
+        if (images) {
+            if (!ImageList_SetIconSize(images, 1, 1)) throw std::runtime_error("artwork_row_reset");
+            ListView_SetImageList(list, images, LVSIL_SMALL);
+        }
         ListView_SetImageList(list, nullptr, LVSIL_SMALL);
+        // Der native ListView behält nach großen Covern sonst die Zeilenhöhe.
+        SendMessageW(list, WM_SETFONT, SendMessageW(list, WM_GETFONT, 0, 0), FALSE);
         if (images) { ImageList_Destroy(images); images = nullptr; }
         requested_artwork.assign(rows.size(), false);
         ++artwork_generation;
@@ -305,10 +316,38 @@ struct View {
     }
     void controls() {
         const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        const bool history_available = !history.empty();
+        const bool pages_available = current.offsets.size() > 1 || page.more;
+        const bool library_choice = libraries.size() > 1;
+        if (library_choice != library_skinned) {
+            if (library_choice) {
+                MLSKINWINDOW window{GetDlgItem(dialog, IDC_LIBRARY), SKINNEDWND_TYPE_COMBOBOX,
+                                    SWS_USESKINCOLORS | SWS_USESKINFONT | SWS_USESKINCURSORS};
+                if (!MLSkinWindow(descriptor().hwndLibraryParent, &window)) throw std::runtime_error("skin_library_choice");
+            } else if (!MLUnskinWindow(descriptor().hwndLibraryParent, GetDlgItem(dialog, IDC_LIBRARY)))
+                throw std::runtime_error("unskin_library_choice");
+            library_skinned = library_choice;
+        }
+        for (const auto& control : {std::pair{IDC_BACK, history_available}, {IDC_PREVIOUS, pages_available},
+                                    {IDC_NEXT, pages_available}, {IDC_LIBRARY, library_choice}}) {
+            const auto child = GetDlgItem(dialog, control.first);
+            const auto style = GetWindowLongPtrW(child, GWL_STYLE);
+            SetWindowLongPtrW(child, GWL_STYLE, control.second ? style | WS_TABSTOP : style & ~WS_TABSTOP);
+        }
+        ShowWindow(GetDlgItem(dialog, IDC_BACK), history_available ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog, IDC_PAGE_TITLE), history_available ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog, IDC_PREVIOUS), pages_available ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog, IDC_NEXT), pages_available ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog, IDC_LIBRARY), library_choice ? SW_SHOW : SW_HIDE);
+        ShowWindow(GetDlgItem(dialog, IDC_LIBRARY_NAME), library_choice ? SW_HIDE : SW_SHOW);
+        const auto settings = request_connection_settings();
+        const auto library_name = settings.library_title.empty() ? text(L"Keine ausgewählt", L"None selected") : wide(settings.library_title);
+        SetDlgItemTextW(dialog, IDC_LIBRARY_NAME, library_name.c_str());
         EnableWindow(GetDlgItem(dialog, IDC_PREVIOUS), !busy && current.offsets.size() > 1);
         EnableWindow(GetDlgItem(dialog, IDC_NEXT), !busy && page.more);
         EnableWindow(GetDlgItem(dialog, IDC_BACK), !history.empty());
         EnableWindow(list, !busy);
+        layout(dialog);
     }
     void submit(Job job) {
         job.settings = request_connection_settings(); job.query = current.query;
@@ -345,7 +384,8 @@ struct View {
         SetDlgItemTextW(dialog, IDC_PAGE_TITLE, current.caption.c_str());
         for (const auto& label : {std::pair{IDC_LOGIN, text(L"Einstellungen...", L"Settings...")}, {IDC_BACK, text(L"Zurück", L"Back")},
              {IDC_SEARCH_LABEL, text(L"Suche", L"Search")}, {IDC_REFRESH, text(L"Aktualisieren", L"Refresh")}, {IDC_CLEAR_CACHE, text(L"Cache leeren", L"Clear cache")},
-             {IDC_PREVIOUS, text(L"Vorherige", L"Previous")}, {IDC_NEXT, text(L"Nächste", L"Next")}})
+             {IDC_LIBRARY_LABEL, text(L"Musikbibliothek", L"Music library")},
+             {IDC_PREVIOUS, text(L"Vorherige Seite", L"Previous page")}, {IDC_NEXT, text(L"Nächste Seite", L"Next page")}})
             SetDlgItemTextW(dialog, label.first, label.second);
         columns();
     }
@@ -442,22 +482,32 @@ void layout(HWND dialog) {
     auto place = [&](int control, int left, int top, int control_width, int control_height) {
         MoveWindow(GetDlgItem(dialog, control), left, top, (std::max)(1, control_width), (std::max)(1, control_height), TRUE);
     };
-    place(IDC_PAGE_TITLE, padding, vertical(7), narrow ? width - horizontal(188) : horizontal(70), vertical(13));
+    const bool context_visible = (GetWindowLongPtrW(GetDlgItem(dialog, IDC_PAGE_TITLE), GWL_STYLE) & WS_VISIBLE) != 0;
+    const bool back_visible = (GetWindowLongPtrW(GetDlgItem(dialog, IDC_BACK), GWL_STYLE) & WS_VISIBLE) != 0;
+    place(IDC_LIBRARY_LABEL, padding, vertical(7), horizontal(80), vertical(13));
     const int library_y = narrow ? vertical(25) : vertical(5);
-    place(IDC_LIBRARY, narrow ? padding : horizontal(82), library_y, narrow ? width - 2 * padding : width - horizontal(196), vertical(100));
+    const int library_left = narrow ? padding : horizontal(90);
+    const int library_width = narrow ? width - 2 * padding : width - horizontal(204);
+    place(IDC_LIBRARY, library_left, library_y, library_width, vertical(100));
+    place(IDC_LIBRARY_NAME, library_left, library_y + vertical(2), library_width, vertical(13));
     place(IDC_LOGIN, width - horizontal(108), vertical(5), horizontal(102), vertical(15));
-    const int search_y = narrow ? vertical(45) : vertical(27);
+    const int context_y = narrow ? vertical(45) : vertical(27);
+    place(IDC_PAGE_TITLE, padding, context_y, width - 2 * padding, vertical(13));
+    const int search_y = context_y + (context_visible ? vertical(20) : 0);
     place(IDC_BACK, padding, search_y, horizontal(48), vertical(15));
-    place(IDC_SEARCH_LABEL, horizontal(60), search_y + vertical(2), horizontal(28), vertical(12));
-    place(IDC_SEARCH, horizontal(90), search_y, width - horizontal(narrow ? 96 : 265), vertical(15));
+    const int search_label_left = back_visible ? horizontal(60) : padding;
+    const int search_left = search_label_left + horizontal(30);
+    place(IDC_SEARCH_LABEL, search_label_left, search_y + vertical(2), horizontal(28), vertical(12));
+    place(IDC_SEARCH, search_left, search_y, width - search_left - horizontal(narrow ? 6 : 175), vertical(15));
     const int refresh_y = narrow ? search_y + vertical(20) : search_y;
     place(IDC_REFRESH, width - horizontal(169), refresh_y, horizontal(78), vertical(15));
     place(IDC_CLEAR_CACHE, width - horizontal(85), refresh_y, horizontal(79), vertical(15));
-    const int bottom = height - vertical(22), list_y = refresh_y + vertical(21);
+    const int bottom = height - vertical(narrow ? 42 : 22), list_y = refresh_y + vertical(21);
     place(IDC_CATALOG, padding, list_y, width - 2 * padding, bottom - list_y - vertical(7));
-    place(IDC_STATUS, padding, bottom + vertical(3), width - horizontal(160), vertical(14));
-    place(IDC_PREVIOUS, width - horizontal(140), bottom, horizontal(64), vertical(15));
-    place(IDC_NEXT, width - horizontal(70), bottom, horizontal(64), vertical(15));
+    place(IDC_STATUS, padding, bottom + vertical(3), narrow ? width - 2 * padding : width - horizontal(204), vertical(14));
+    const int pager_y = bottom + (narrow ? vertical(20) : 0);
+    place(IDC_PREVIOUS, width - horizontal(196), pager_y, horizontal(92), vertical(15));
+    place(IDC_NEXT, width - horizontal(98), pager_y, horizontal(92), vertical(15));
 }
 }
 

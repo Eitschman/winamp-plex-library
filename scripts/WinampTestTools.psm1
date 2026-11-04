@@ -56,6 +56,8 @@ public static class PlexNative {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
   [DllImport("user32.dll", EntryPoint="GetWindowLongW")] public static extern int WindowStyle(IntPtr window, int index);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int left, int top, int width, int height, bool repaint);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int left, int top, int width, int height, uint flags);
+  [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr window, IntPtr rectangle, IntPtr region, uint flags);
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] struct GuiThreadInfo {
     public int Size; public uint Flags;

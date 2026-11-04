@@ -133,6 +133,10 @@ int wmain(int count, wchar_t** arguments) {
             check(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41999, reinterpret_cast<INT_PTR>(window), 0) == 0, "unrelated_node");
             const auto view = reinterpret_cast<HWND>(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41000, reinterpret_cast<INT_PTR>(window), 0));
             check(IsWindow(view) && GetParent(view) == window, "plugin_view");
+            check(!(GetWindowLongPtrW(GetDlgItem(view, 1001), GWL_STYLE) & WS_VISIBLE) &&
+                  !(GetWindowLongPtrW(GetDlgItem(view, 1053), GWL_STYLE) & WS_VISIBLE), "root_without_redundant_context_or_back");
+            check(!(GetWindowLongPtrW(GetDlgItem(view, 1060), GWL_STYLE) & WS_VISIBLE) &&
+                  (GetWindowLongPtrW(GetDlgItem(view, 1064), GWL_STYLE) & WS_VISIBLE), "unconfigured_library_without_empty_dropdown");
             check(GetDlgItem(view, 1002) == nullptr && IsWindow(GetDlgItem(view, 1050)), "catalog_without_manual_token_test_control");
             wchar_t caption[80]{}; GetDlgItemTextW(view, 1007, caption, 80);
             check(wcscmp(caption, german_host ? L"Einstellungen..." : L"Settings...") == 0 && !GetDlgItem(view, 1005), "language_inherited_from_winamp_without_selector");
