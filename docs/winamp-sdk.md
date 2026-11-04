@@ -43,9 +43,19 @@ Der SDK-Kommentar zu `IPC_WRITEPLAYLIST` beschreibt die Speicherung in `winamp.m
 
 ## Skin-Anbindung
 
-Die geprüfte SDK-Erweiterung `gen_ml/ml_ipc_0313.h` enthält `MLSKINWINDOW`, `ML_IPC_SKINWINDOW` und `MLSKINNEDPOPUP`. Ihre SHA-256 ist `3a1cb197ba4e32ea856af2e3d83b74c12924371863eb38286829551ed0fbfb96`. Dialog, Tabellen und Steuerelemente werden mit `SWS_USESKINCOLORS`, `SWS_USESKINFONT` und `SWS_USESKINCURSORS` registriert. Die Registrierung erfolgt zuerst am Dialog, damit die erforderliche Nachrichtenreflexion vorhanden ist. Laut Header entfernt Winamp die Skin-Unterklasse bei `WM_NCDESTROY` selbst. Kontextmenüs werden über `ML_IPC_TRACKSKINNEDPOPUPEX` angezeigt.
+Der unveränderte [Skin-Schnittstellenheader von 2016](https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h) enthält `MLSKINWINDOW`, `ML_IPC_SKINWINDOW` und `MLSKINNEDPOPUP`. Seine SHA-256 ist `922e6d21b0b8f2e9fe536456c87e51e05bba82b579ec6eaa77264cbdb25c4e42`. Er liegt getrennt unter `.local/skin-sdk`; der Build verwendet ihn zusammen mit den drei oben genannten SDK-5.55-Headern. Das ist keine Zusage zur WACUP-Laufzeitkompatibilität.
+
+`MLSKINNEDPOPUP` muss im x86-Build 48 Bytes besitzen, einschließlich `customProc` und `customParam`. Ein `static_assert` sichert diese Größe. Die 40-Byte-Fassung im SDK-5.55-Archiv öffnet in der Zielversion kein Menü. Der 48-Byte-Vertrag wurde mit geöffnetem, skinned Kontextmenü und tatsächlicher Albumübergabe geprüft. Es werden keine zusätzlichen Felder lokal nachgebildet.
+
+Dialog, Tabellen und Steuerelemente werden mit `SWS_USESKINCOLORS`, `SWS_USESKINFONT` und `SWS_USESKINCURSORS` registriert. Die Registrierung erfolgt zuerst am Dialog, damit die erforderliche Nachrichtenreflexion vorhanden ist. Laut Header entfernt Winamp die Skin-Unterklasse bei `WM_NCDESTROY` selbst. Kontextmenüs werden über `ML_IPC_TRACKSKINNEDPOPUPEX` angezeigt.
 
 Die getrennte Zielinstallation enthält für die Prüfung auch `gen_ff.dll`, dessen `freeform`-Komponenten und die vorhandenen Skins. Classic, Winamp Modern, Bento und Big Bento wurden tatsächlich geladen und die Ansicht visuell geprüft. Eine Prüfung dieser vier Skins ist keine Aussage über beliebige Drittanbieter-Skins oder alle Schriftgrößen.
+
+## Album-Art-Dienst
+
+Die Album-Art-Anbindung verwendet `svc_albumArtProvider`, `waServiceFactory`, `api_service` und `api_memmgr` aus dem SDK-5.55-Archiv. Die zusätzlich verwendeten Originalheader und ihre Prüfsummen stehen in `cmake/WinampArtworkSdk.cmake`. `IPC_GET_API_SERVICE` liefert den Hostdienst; die Registrierung wird anschließend über dessen GUID-Abfrage geprüft. Daten- und MIME-Puffer stammen aus Winamps Speicherverwaltung. Der Callback liefert nur vorbereitete Bilder, führt keine Netzwerkanfrage aus und beantwortet Schreibversuche mit `ALBUMARTPROVIDER_READONLY`.
+
+Der private SDK-Typname `int8_t` kollidiert mit dem C++17-Standardheader: MSVC behandelt das alte `__int8` als `char`, der Standardtyp ist `signed char`. `wasabi_sdk.h` trennt ausschließlich diesen SDK-Typnamen per lokal begrenztem Präprozessormakro. Keine Headerdatei oder Dispatch-Signatur wird verändert. Der MSVC-Build und die Dispatch-Tests prüfen die gemeinsame Verwendung.
 
 ## Lifecycle-Grenzen
 

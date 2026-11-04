@@ -1,9 +1,11 @@
 #include "plugin/plugin.h"
+#include "artwork_loader.h"
 #include <gen_ml/ml_ipc_0313.h>
 #include "plex/page_cache.h"
 #include "plex/http_stream.h"
 #include "resource.h"
 #include <commctrl.h>
+#include <objbase.h>
 #include <algorithm>
 #include <array>
 #include <condition_variable>
@@ -14,6 +16,7 @@
 
 namespace plex::plugin {
 namespace {
+static_assert(sizeof(MLSKINNEDPOPUP) == 48, "Die Zielversion benötigt die dokumentierte Popup-Struktur mit Anpassungsfeldern.");
 constexpr UINT result_ready = WM_APP + 42;
 PageCache cache;
 std::atomic<unsigned long long> cache_scope{0};
@@ -69,7 +72,7 @@ const wchar_t* kind_title(BrowseKind kind) {
 }
 
 // Die UI speichert fertig formatierte Zellen getrennt von den API-Modellen.
-struct Row { PlexItem item; std::vector<std::wstring> cells; };
+struct Row { PlexItem item; std::vector<std::wstring> cells; bool image_ready = false; };
 Row make_row(const PlexItem& item) {
     Row row{item, {}};
     auto title = wide(item_title(item));
@@ -107,11 +110,30 @@ struct Result {
     Action action = Action::browse;
     CatalogPage page;
     std::vector<PlexTrack> tracks;
+    PlaybackArtwork artwork;
     std::vector<PlexLibrary> libraries;
     bool libraries_loaded = false;
     DWORD error = 0;
 };
 struct Navigation { BrowseQuery query; std::wstring caption; std::vector<std::size_t> offsets{0}; };
+
+HBITMAP artwork_bitmap(const std::optional<ArtworkPixels>& pixels) {
+    BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = 48; info.bmiHeader.biHeight = -48;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* destination = nullptr;
+    const auto bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &destination, nullptr, 0);
+    if (!bitmap || !destination) throw std::runtime_error("artwork_bitmap");
+    ZeroMemory(destination, 48 * 48 * 4);
+    if (pixels && pixels->width <= 48 && pixels->height <= 48) {
+        const auto left = (48 - pixels->width) / 2, top = (48 - pixels->height) / 2;
+        for (unsigned row = 0; row < pixels->height; ++row)
+            CopyMemory(static_cast<BYTE*>(destination) + ((top + row) * 48 + left) * 4,
+                       pixels->bgra.data() + row * pixels->width * 4, pixels->width * 4);
+    }
+    return bitmap;
+}
 
 struct View {
     HWND dialog;
@@ -130,6 +152,10 @@ struct View {
     std::vector<PlexLibrary> libraries;
     CatalogPage page;
     bool busy = false, suppress_search = false;
+    HIMAGELIST images = nullptr;
+    std::unique_ptr<ArtworkLoader> artwork;
+    std::vector<bool> requested_artwork;
+    unsigned artwork_generation = 0;
 
     View(HWND window, BrowseKind kind) : dialog(window), root(kind) {
         current.query.kind = kind; current.caption = kind_title(kind);
@@ -138,12 +164,82 @@ struct View {
         try { worker = std::thread([this] { run(); }); } catch (...) { CloseHandle(stop); throw; }
     }
     ~View() {
+        artwork.reset();
+        if (images) {
+            const auto list = GetDlgItem(dialog, IDC_CATALOG);
+            if (IsWindow(list)) ListView_SetImageList(list, nullptr, LVSIL_SMALL);
+            ImageList_Destroy(images);
+        }
         { std::lock_guard<std::mutex> lock(mutex); closing = true; SetEvent(stop); }
         wake.notify_one(); if (worker.joinable()) worker.join(); CloseHandle(stop);
     }
 
+    void prepare_artwork() {
+        const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        ListView_SetImageList(list, nullptr, LVSIL_SMALL);
+        if (images) { ImageList_Destroy(images); images = nullptr; }
+        requested_artwork.assign(rows.size(), false);
+        ++artwork_generation;
+        if (artwork) artwork->reset(artwork_generation);
+        if ((current.query.kind != BrowseKind::albums && current.query.kind != BrowseKind::tracks) || rows.empty()) return;
+        if (!artwork) { artwork = std::make_unique<ArtworkLoader>(dialog); artwork->reset(artwork_generation); }
+        images = ImageList_Create(48, 48, ILC_COLOR32, static_cast<int>(rows.size()) + 1, 1);
+        if (!images) throw std::runtime_error("artwork_images");
+        const auto blank = artwork_bitmap(std::nullopt);
+        const auto index = ImageList_Add(images, blank, nullptr); DeleteObject(blank);
+        if (index != 0 || !ImageList_SetImageCount(images, static_cast<UINT>(rows.size()) + 1)) throw std::runtime_error("artwork_images");
+        ListView_SetImageList(list, images, LVSIL_SMALL);
+    }
+    void request_artwork(int first, int last) {
+        if (!images || !artwork || rows.empty() || requested_artwork.size() != rows.size()) return;
+        first = (std::max)(0, first); last = (std::min)(last, static_cast<int>(rows.size()) - 1);
+        for (int index = first; index <= last; ++index) {
+            if (requested_artwork[static_cast<std::size_t>(index)]) continue;
+            const auto* album = std::get_if<PlexAlbum>(&rows[static_cast<std::size_t>(index)].item);
+            const auto* track = std::get_if<PlexTrack>(&rows[static_cast<std::size_t>(index)].item);
+            if (!album && !track) continue;
+            const PlexAlbum inherited = track ? PlexAlbum{track->album_identifier.empty() ? track->identifier : track->album_identifier,
+                track->album, track->artist, track_artwork(*track), track->year, 1} : PlexAlbum{};
+            artwork->submit(static_cast<std::size_t>(index), album ? *album : inherited, connection_settings(),
+                            std::to_string(cache_scope.load()) + (track ? "|track" : "|album"));
+            requested_artwork[static_cast<std::size_t>(index)] = true;
+        }
+    }
+    void visible_artwork() {
+        const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        const auto top = ListView_GetTopIndex(list);
+        request_artwork(top, top + ListView_GetCountPerPage(list) + 1);
+    }
+    void apply_artwork() {
+        if (!artwork) return;
+        for (auto& result : artwork->take()) {
+            if (result.generation != artwork_generation || result.row >= rows.size() || !images) continue;
+            if (result.track_count && std::holds_alternative<PlexAlbum>(rows[result.row].item)) {
+                rows[result.row].cells[3] = std::to_wstring(*result.track_count);
+                std::get<PlexAlbum>(rows[result.row].item).track_count = *result.track_count;
+                ListView_RedrawItems(GetDlgItem(dialog, IDC_CATALOG), static_cast<int>(result.row), static_cast<int>(result.row));
+            }
+            if (result.error) {
+                SetDlgItemTextW(dialog, IDC_STATUS, text(L"Ein Albumcover konnte nicht geladen werden.", L"An album cover could not be loaded."));
+                continue;
+            }
+            if (!result.pixels) continue;
+            const auto bitmap = artwork_bitmap(result.pixels);
+            const auto replaced = ImageList_Replace(images, static_cast<int>(result.row) + 1, bitmap, nullptr);
+            DeleteObject(bitmap);
+            if (!replaced) throw std::runtime_error("artwork_replace");
+            rows[result.row].image_ready = true;
+            ListView_RedrawItems(GetDlgItem(dialog, IDC_CATALOG), static_cast<int>(result.row), static_cast<int>(result.row));
+        }
+    }
+
     void run() noexcept {
         try {
+        struct Apartment {
+            HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            ~Apartment() { if (SUCCEEDED(result)) CoUninitialize(); }
+        } apartment;
+        if (FAILED(apartment.result)) throw std::runtime_error("catalog_com");
         for (;;) {
             Job job;
             {
@@ -178,6 +274,19 @@ struct View {
                         if (result.tracks.size() > 10000) throw std::invalid_argument("queue_limit");
                     }
                     for (const auto& track : result.tracks) direct_parts(track);
+                    std::size_t artwork_size = 0;
+                    for (const auto& track : result.tracks) {
+                        const auto& thumb = track_artwork(track);
+                        if (thumb.empty() || result.artwork.count(thumb)) continue;
+                        const auto pixels = fetch_artwork(job.settings, thumb, stop, 256);
+                        ArtworkBytes bytes;
+                        if (pixels) {
+                            bytes = std::make_shared<const std::vector<std::uint8_t>>(encode_artwork_bmp(*pixels));
+                            artwork_size += bytes->size();
+                            if (artwork_size > 64 * 1024 * 1024) throw std::invalid_argument("playback_artwork_limit");
+                        }
+                        result.artwork.emplace(thumb, std::move(bytes));
+                    }
                 }
             } catch (const HttpError& failure) { result.error = failure.code; }
               catch (const std::invalid_argument& failure) {
@@ -279,11 +388,13 @@ struct View {
             ListView_SetItemCount(GetDlgItem(dialog, IDC_CATALOG), 0);
             page = std::move(result->page); rows.clear(); rows.reserve(page.items.size());
             for (const auto& item : page.items) rows.push_back(make_row(item));
+            prepare_artwork();
             ListView_SetItemCount(GetDlgItem(dialog, IDC_CATALOG), static_cast<int>(rows.size()));
             if (!rows.empty()) ListView_EnsureVisible(GetDlgItem(dialog, IDC_CATALOG), 0, FALSE);
             count_status();
+            visible_artwork();
         } else {
-            try { enqueue_tracks(result->tracks, result->action == Action::play); count_status(); }
+            try { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork); count_status(); }
             catch (...) { SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl konnte nicht an Winamp übergeben werden.", L"Could not send the selection to Winamp.")); }
         }
         controls();
@@ -350,7 +461,13 @@ void layout(HWND dialog) {
 }
 }
 
+void clear_library_cache() { clear_cache(); }
+
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) {
+    if (message == artwork_diagnostic_message) {
+        SetWindowLongPtrW(dialog, DWLP_MSGRESULT, artwork_provider_diagnostic(static_cast<unsigned>(parameter)));
+        return TRUE;
+    }
     auto* view = reinterpret_cast<View*>(GetWindowLongPtrW(dialog, GWLP_USERDATA));
     if (message == WM_INITDIALOG) {
         auto created = std::make_unique<View>(dialog, static_cast<BrowseKind>(detail));
@@ -369,7 +486,12 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         view->localize(); skin_view(dialog); layout(dialog); view->controls(); view->load(); return TRUE;
     }
     if (!view) return FALSE;
-    if (message == WM_SIZE) { layout(dialog); return TRUE; }
+    if (message == WM_SIZE) { layout(dialog); view->visible_artwork(); return TRUE; }
+    if (message == artwork_ready) {
+        if (parameter) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Albumcover-Auftrag konnte nicht ausgeführt werden.", L"The album artwork task could not be completed."));
+        else view->apply_artwork();
+        return TRUE;
+    }
     if (message == result_ready) {
         if (parameter) { view->busy = false; view->controls(); SetDlgItemTextW(dialog, IDC_STATUS, text(L"Der Hintergrundauftrag konnte nicht ausgeführt werden.", L"The background task could not be completed.")); }
         else view->apply();
@@ -402,7 +524,9 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             set_german(SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_GETCURSEL, 0, 0) == 0);
             update_connection_settings(connection_settings());
             if (view->history.empty()) view->current.caption = kind_title(view->root);
-            view->localize(); for (auto& row : view->rows) row = make_row(row.item);
+            view->localize(); for (auto& row : view->rows) {
+                const auto image_ready = row.image_ready; row = make_row(row.item); row.image_ready = image_ready;
+            }
             InvalidateRect(GetDlgItem(dialog, IDC_CATALOG), nullptr, TRUE); return TRUE;
         }
         if (control == IDC_LIBRARY && HIWORD(parameter) == CBN_SELCHANGE) {
@@ -425,7 +549,15 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             const auto row = static_cast<std::size_t>(info->item.iItem), column = static_cast<std::size_t>(info->item.iSubItem);
             if ((info->item.mask & LVIF_TEXT) && row < view->rows.size() && column < view->rows[row].cells.size())
                 info->item.pszText = view->rows[row].cells[column].data();
+            if ((info->item.mask & LVIF_IMAGE) && row < view->rows.size()) {
+                info->item.iImage = view->rows[row].image_ready ? static_cast<int>(row) + 1 : 0;
+                view->request_artwork(static_cast<int>(row), static_cast<int>(row));
+            }
             return TRUE;
+        }
+        if (notification->code == LVN_ODCACHEHINT) {
+            const auto* hint = reinterpret_cast<NMLVCACHEHINT*>(detail);
+            view->request_artwork(hint->iFrom, hint->iTo); return TRUE;
         }
         if (notification->code == LVN_ITEMCHANGED) { view->controls(); return TRUE; }
         if (notification->code == NM_DBLCLK) { view->open(); return TRUE; }
@@ -464,7 +596,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         POINT point{static_cast<short>(LOWORD(detail)), static_cast<short>(HIWORD(detail))};
         if (point.x == -1 && point.y == -1) { point = {20, 20}; ClientToScreen(GetDlgItem(dialog, IDC_CATALOG), &point); }
         MLSKINNEDPOPUP popup{sizeof(MLSKINNEDPOPUP), menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                            point.x, point.y, dialog, nullptr, nullptr, 0, SMS_USESKINFONT};
+                            point.x, point.y, dialog, nullptr, nullptr, 0, SMS_USESKINFONT, nullptr, 0};
         const auto command = static_cast<UINT>(SendMessageW(descriptor().hwndLibraryParent, WM_ML_IPC,
                                                            reinterpret_cast<WPARAM>(&popup), ML_IPC_TRACKSKINNEDPOPUPEX));
         DestroyMenu(menu); if (command) PostMessageW(dialog, WM_COMMAND, command, 0); return TRUE;

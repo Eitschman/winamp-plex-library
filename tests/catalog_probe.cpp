@@ -1,10 +1,13 @@
 #include "plex/catalog.h"
 #include "plex/http_stream.h"
+#include "plex/artwork.h"
+#include <objbase.h>
 #include <iostream>
 #include <stdexcept>
 
 // Bewusster Integrationstest, nicht Teil von CTest; keine privaten Inhalte ausgeben.
-int main() {
+int main(int count, char** arguments) {
+    if (count != 1 && count != 3) return 2;
     const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     int stage = 0;
     try {
@@ -54,6 +57,34 @@ int main() {
                 }
             }
             std::cout << "catalog kind=" << static_cast<int>(kind) << " count=" << first.items.size() << " more=" << first.more << '\n';
+        }
+        if (count == 3) {
+        stage = 41;
+        plex::BrowseQuery cover_query; cover_query.kind = plex::BrowseKind::albums;
+        cover_query.library_identifier = settings.library_identifier; cover_query.search = arguments[2];
+        const auto albums = client.page(cover_query);
+        bool matched = false;
+        if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) throw std::runtime_error("artwork_com");
+        try {
+            for (const auto& item : albums.items) {
+                const auto* album = std::get_if<plex::PlexAlbum>(&item);
+                if (!album || album->artist != arguments[1]) continue;
+                matched = true;
+                const auto cover = plex::fetch_artwork(settings, album->thumb, stop);
+                if (!cover) throw std::runtime_error("live_album_cover_missing");
+                std::cout << "Requested album matched; cover decoded " << cover->width << 'x' << cover->height << '\n';
+                plex::BrowseQuery tracks_query; tracks_query.kind = plex::BrowseKind::tracks;
+                tracks_query.parent_identifier = album->identifier; tracks_query.sort = "albumOrder";
+                const auto album_tracks = client.tracks(tracks_query);
+                if (album_tracks.empty()) throw std::runtime_error("live_album_tracks_empty");
+                for (const auto& track : album_tracks)
+                    if (track.album_identifier != album->identifier || plex::track_artwork(track).empty())
+                        throw std::runtime_error("live_track_artwork_missing");
+                std::cout << "Track album identity and artwork verified for " << album_tracks.size() << " tracks\n";
+            }
+        } catch (...) { CoUninitialize(); throw; }
+        CoUninitialize();
+        if (!matched) throw std::runtime_error("live_album_not_found");
         }
         CloseHandle(stop);
         std::cout << "Live catalog, pagination and search passed\n";

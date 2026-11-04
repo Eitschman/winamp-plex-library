@@ -22,13 +22,13 @@ Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und 
 | Serveridentifikation | `GET /identity`, `MediaContainer.machineIdentifier` | Anmeldung vergleicht die Identität. |
 | Fähigkeiten und Versionsdaten | `GET /` | Recherchiert; kein umfassendes Capability-Modell. |
 | Bibliotheken | `GET /library/sections`, `MediaContainer.Directory[]` mit `key`, `title`, `type` | Musikbibliotheken haben `type=artist`. |
-| Künstler | `/library/sections/{id}/all?type=8` | Bibliotheksansicht geplant. |
-| Alben | `/library/sections/{id}/all?type=9` | Bibliotheksansicht geplant. |
-| Titel | `/library/sections/{id}/all?type=10` | Begrenzter technischer Wiedergabetest. |
+| Künstler | `/library/sections/{id}/all?type=8` | Native paginierte Ansicht, Suche und Sortierung. |
+| Alben | `/library/sections/{id}/all?type=9` | Native paginierte Ansicht, Suche und Sortierung. |
+| Titel | `/library/sections/{id}/all?type=10` | Native paginierte Ansicht und Playlistübergabe. |
 | Metadaten | `/library/metadata/{ratingKey}`, `MediaContainer.Metadata[]` | Grundlage für die gezielte Medienauflösung. |
 | Kinder | `/library/metadata/{ratingKey}/children` | Künstler → Alben, Album → Titel. |
-| Audio-Playlists | `/playlists?playlistType=audio` und `/playlists/{id}/items` | Recherchiert, noch keine zugesicherte Produktfunktion. |
-| Bilder | Relativer `thumb`-/`art`-Schlüssel; auch `/photo/:/transcode` ist dokumentiert. | Covertransport und UI noch zu prüfen. |
+| Audio-Playlists | `/playlists?playlistType=audio` und `/playlists/{id}/items` | Native Liste und Auflösung der Titel; reale Metadatenabfrage geprüft. |
+| Bilder | Relativer `thumb`-Schlüssel unter `/library/metadata/{id}/thumb`, optional numerischer Versionspfad. | Authentifizierter Originalbildtransport und WIC-Miniatur. Titel verweisen über `parentThumb` auf das Albumcover. Kein Foto-Transcoding erforderlich. |
 | Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | Proxy; nie das lokale Serverdateifeld `file` verwenden. |
 | Suche und Sortierung | Typisierte `all`-Abfrage mit dokumentierten Bibliotheksfiltern und `sort` | Serverfähigkeiten prüfen; keine SQL-ähnliche Syntax erfinden. |
 

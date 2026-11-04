@@ -14,11 +14,13 @@ Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Ple
 
 Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_ml`. Classic, Winamp Modern, Bento und Big Bento wurden in der getrennten Testkopie visuell geprüft. Das ist kein Nachweis für jeden fremden Skin oder jede DPI-Einstellung. Es gibt keine zusätzliche Player-Steuerleiste: Doppelklick und Kontextmenü übergeben Medien an Winamp; der Player steuert die Wiedergabe.
 
-Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Weitere Nachweise, Cover und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md).
+Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrund geladen. Titel übernehmen das vorhandene Albumcover, sofern sie kein eigenes Bild besitzen. Ein begrenzter Bildcache hält Miniaturen vor. Das reale Dimmu-Borgir-Album „Grand Serpent Rising“ wurde mit Cover und 13 Titeln geprüft. Fehlende Bilder werden ohne Ersatzbild dargestellt. Die Übergabe an Winamps Album-Art-Dienst wird separat geprüft.
+
+Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Weitere Audioformate, Fehlerfälle und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
 
 ## Build
 
-Erforderlich sind Visual Studio 2022 oder dessen Build Tools mit C++-x86-Werkzeugen, Windows SDK, CMake ab 3.24 und die unveränderten SDK-5.55-Header. Die einzige zusätzliche C++-Bibliothek ist nlohmann/json 3.12.0, mit SHA-256 festgelegt.
+Erforderlich sind Visual Studio 2022 oder dessen Build Tools mit C++-x86-Werkzeugen, Windows SDK, CMake ab 3.24 sowie die unveränderten SDK-5.55-Header und der veröffentlichte Skin-Schnittstellenheader von 2016. Die einzige zusätzliche C++-Bibliothek ist nlohmann/json 3.12.0, mit SHA-256 festgelegt. Die Bildverarbeitung verwendet Windows Imaging Component.
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32

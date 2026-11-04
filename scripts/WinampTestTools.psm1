@@ -30,12 +30,32 @@ public static class PlexNative {
       throw new InvalidOperationException("Winamp IPC timeout or invalid window");
     return result;
   }
+  public static int QueryInt32(IntPtr window, uint message, IntPtr first, IntPtr second) {
+    // Winamp x86 kann negative IPC-Werte als 0xFFFFFFFF an den 64-Bit-Testprozess liefern.
+    return unchecked((int)Query(window,message,first,second).ToInt64());
+  }
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int left, int top, int width, int height, bool repaint);
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
+  [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+  [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
+  [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+  public static void ClickTestMenu(IntPtr menu, int process, int x, int y) {
+    uint owner; GetWindowThreadProcessId(menu, out owner);
+    Rect rectangle;
+    if(owner!=process || !GetWindowRect(menu,out rectangle)) throw new InvalidOperationException("Invalid test menu");
+    var point = new Point { X=rectangle.Left+x, Y=rectangle.Top+y };
+    if(point.X>=rectangle.Right || point.Y>=rectangle.Bottom || !SetCursorPos(point.X,point.Y))
+      throw new InvalidOperationException("Invalid menu position");
+    // Nur das weiterhin sichtbare Menü der isolierten Testinstanz darf einen Klick erhalten.
+    if(WindowFromPoint(point)!=menu) throw new InvalidOperationException("Test menu is obscured");
+    mouse_event(2,0,0,0,UIntPtr.Zero);
+    mouse_event(4,0,0,0,UIntPtr.Zero);
+  }
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr device, uint flags);
   static PlexNativeWindow Read(IntPtr window) {
     uint process; GetWindowThreadProcessId(window, out process);

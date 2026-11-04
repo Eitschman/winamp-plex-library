@@ -4,6 +4,9 @@
 #include <winhttp.h>
 #include "plex/proxy.h"
 #include "plex/security.h"
+#include "plex/artwork.h"
+#include "plex/http_stream.h"
+#include <objbase.h>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -67,6 +70,20 @@ struct Fixture {
         ++hits;
         if (request.find("X-Plex-Token: synthetic-test-token\r\n") == request.npos) {
             ++token_errors; send_text(client, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"); return;
+        }
+        if (request.find("/library/metadata/") != request.npos) {
+            if (request.find("Accept: image/*\r\n") == request.npos) { ++token_errors; return; }
+            for (const auto status : {401, 403, 404, 302, 500}) {
+                if (request.find("/library/metadata/" + std::to_string(status) + "/thumb") != request.npos) {
+                    send_text(client, "HTTP/1.1 " + std::to_string(status) + " Test\r\nContent-Length: 0\r\nLocation: http://127.0.0.1:1/foreign\r\n\r\n"); return;
+                }
+            }
+            std::string bitmap(62, '\0'); bitmap[0] = 'B'; bitmap[1] = 'M'; bitmap[2] = 62; bitmap[10] = 54;
+            bitmap[14] = 40; bitmap[18] = 2; bitmap[22] = 1; bitmap[26] = 1; bitmap[28] = 24;
+            bitmap[56] = static_cast<char>(255); bitmap[58] = static_cast<char>(255);
+            const auto type = request.find("/metadata/2/thumb") == request.npos ? "image/bmp" : "text/html";
+            send_text(client, std::string("HTTP/1.1 200 OK\r\nContent-Type: ") + type + "\r\nContent-Length: 62\r\n\r\n" + bitmap);
+            return;
         }
         if (request.find("/library/parts/998/") != request.npos) {
             slow_started.store(true);
@@ -161,8 +178,33 @@ Response fetch(const std::string& url, const wchar_t* method = L"GET", const std
 
 int main() {
     try {
+        struct Apartment {
+            Apartment() { check(SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)), "artwork_com"); }
+            ~Apartment() { CoUninitialize(); }
+        } apartment;
         Fixture fixture;
         const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
+        plex::PlexConnectionSettings image_settings;
+        image_settings.server_origin = "http://127.0.0.1:" + std::to_string(fixture.port);
+        image_settings.server_token = "synthetic-test-token"; image_settings.client_identifier = "synthetic-client";
+        const auto image_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        check(image_stop != nullptr, "artwork_stop_event");
+        try {
+            const auto image = plex::fetch_artwork(image_settings, "/library/metadata/1/thumb/123", image_stop);
+            check(image && image->width == 48 && image->height == 24, "artwork_authenticated_image_transport");
+            check(!plex::fetch_artwork(image_settings, "/library/metadata/404/thumb", image_stop), "artwork_404_is_missing");
+            for (const auto status : {401, 403, 302, 500}) {
+                bool rejected = false;
+                try { plex::fetch_artwork(image_settings, "/library/metadata/" + std::to_string(status) + "/thumb", image_stop); }
+                catch (const plex::HttpError& error) { rejected = error.code == 0x20000000UL + status; }
+                check(rejected, "artwork_errors_and_redirects_not_hidden");
+            }
+            bool rejected = false;
+            try { plex::fetch_artwork(image_settings, "/library/metadata/2/thumb", image_stop); }
+            catch (const std::invalid_argument&) { rejected = true; }
+            check(rejected, "artwork_non_image_rejected");
+        } catch (...) { CloseHandle(image_stop); throw; }
+        CloseHandle(image_stop);
         auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/1/file.mp3"});
         const auto url = proxy->url();
         check(url.find("synthetic-test-token") == url.npos && url.find("/library/parts/") == url.npos, "opaque_url");

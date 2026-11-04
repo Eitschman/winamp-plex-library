@@ -72,14 +72,15 @@ struct HttpStream::State {
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                        bool head, const std::string& range, HANDLE stop)
-    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop) {}
+    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*") {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       HttpMethod method, const std::string& client_identifier, HANDLE stop)
-    : HttpStream(server, token, path, method == HttpMethod::post ? L"POST" : L"GET", {}, client_identifier, stop) {}
+                       HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation)
+    : HttpStream(server, token, path, method == HttpMethod::post ? L"POST" : L"GET", {}, client_identifier, stop,
+                 representation == HttpRepresentation::image ? L"image/*" : L"application/json") {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop)
+                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept)
     : state_(std::make_unique<State>()) {
     if (!token.empty()) validate_token(token);
     validate_token(client_identifier);
@@ -110,7 +111,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     require(WinHttpSetOption(state.request, WINHTTP_OPTION_CONTEXT_VALUE, &context, sizeof(context)));
     state.context_installed = true;
     auto headers = L"X-Plex-Product: Winamp Plex Library\r\nX-Plex-Version: 0.1.0\r\nX-Plex-Platform: Windows\r\n"
-                   L"X-Plex-Client-Identifier: " + widen(client_identifier) + L"\r\nAccept: application/json\r\nAccept-Encoding: identity\r\n";
+                   L"X-Plex-Client-Identifier: " + widen(client_identifier) + L"\r\nAccept: " + accept + L"\r\nAccept-Encoding: identity\r\n";
     if (!token.empty()) headers += L"X-Plex-Token: " + widen(token) + L"\r\n";
     if (!range.empty()) headers += L"Range: " + widen(range) + L"\r\n";
     state.prepare();

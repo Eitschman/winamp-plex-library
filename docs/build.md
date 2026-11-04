@@ -6,7 +6,7 @@
 - Visual Studio 2022 oder Build Tools 2022, C++-Werkzeuge für x86/x64.
 - Windows 10/11 SDK und CMake ab 3.24. Die VS-Komponente für CMake genügt.
 - 7-Zip zum Extrahieren des SDK-Archivs, ohne dessen Installer auszuführen.
-- Netzwerkzugriff auf den historischen Nullsoft-Download und GitHub für die prüfsummengesicherten Abhängigkeiten.
+- Netzwerkzugriff auf den historischen Nullsoft-Download, das veröffentlichte WACUP-SDK-Verzeichnis und GitHub für die prüfsummengesicherten Abhängigkeiten.
 
 Im aktuellen Lauf wurden mit ausdrücklicher Freigabe Build Tools 2022 installiert. Der verwendete Compiler meldet MSVC 19.44.35229. Der CMake-Lauf wählte Windows SDK 10.0.19041.0. Diese Versionsangaben sind Testbefunde und keine zusätzlichen Mindestanforderungen an spätere Entwicklerinstallationen.
 
@@ -17,9 +17,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Fetch-WinampSdk.ps1 
   -SevenZip "C:\Program Files\7-Zip\7z.exe"
 ```
 
-Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `gen_ml/ml_ipc_0313.h`, `Winamp/wa_ipc.h` und `gen_tray/WINAMPCMD.H` nach `.local/sdk`. CMake prüft alle vier Header einzeln. Ein vorhandener SDK-Ordner wird nicht überschrieben.
+Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `gen_tray/WINAMPCMD.H` sowie die Wasabi-/Agave-Header für Album-Art nach `.local/sdk`. Zusätzlich lädt es den unveränderten Skin-Schnittstellenheader von 2016 nach `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. CMake prüft die verwendeten Header einzeln, für Album-Art gemäß `cmake/WinampArtworkSdk.cmake`. Vorhandene Zielordner werden nicht überschrieben. Quellen, Hashes und ABI-Vertrag stehen in [winamp-sdk.md](winamp-sdk.md).
 
-Ein manuell entpacktes SDK kann mit `-DWINAMP_SDK_ROOT=C:/Pfad/zum/SDK` angegeben werden. Die Prüfsummen müssen zur untersuchten SDK-5.55-Fassung passen. Andere Fassungen erfordern eine gesonderte ABI-Prüfung und bewusste Änderung des Buildvertrags.
+Ein manuell entpacktes SDK kann mit `-DWINAMP_SDK_ROOT=C:/Pfad/zum/SDK` angegeben werden. Der getrennte Skin-Header wird mit `-DWINAMP_SKIN_SDK_ROOT=C:/Pfad/zum/SkinSDK` angegeben. Die Prüfsummen müssen zu den untersuchten Fassungen passen. Andere Fassungen erfordern eine gesonderte ABI-Prüfung und bewusste Änderung des Buildvertrags.
 
 ## Konfiguration und Build
 

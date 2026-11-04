@@ -23,6 +23,14 @@ int main() {
         check(track.identifier == "42" && track.artist == "Björk" && track.title == "Grüße 東京", "typed_unicode_track");
         check(track.number == 2 && track.disc == 1 && track.duration_ms == 123456, "typed_track_numbers");
         check(track.parts.size() == 1 && track.parts.front().duration_ms == 123456, "media_part_model");
+        auto inherited = fixture;
+        inherited["MediaContainer"]["Metadata"][0]["parentRatingKey"] = "8";
+        inherited["MediaContainer"]["Metadata"][0]["parentThumb"] = "/library/metadata/8/thumb/123";
+        auto inherited_track = std::get<plex::PlexTrack>(plex::parse_catalog_page(inherited, 0).items.front());
+        check(inherited_track.album_identifier == "8" && plex::track_artwork(inherited_track) == "/library/metadata/8/thumb/123", "track_inherits_album_cover");
+        inherited_track.thumb = "/library/metadata/42/thumb/456";
+        check(plex::track_artwork(inherited_track) == inherited_track.thumb, "track_specific_cover_has_priority");
+        check(plex::track_artwork(track).empty(), "missing_track_and_album_cover");
         auto untitled = fixture; untitled["MediaContainer"]["Metadata"][0]["title"] = "";
         check(plex::item_title(plex::parse_catalog_page(untitled, 0).items.front()).empty(), "real_pms_empty_title_preserved");
         for (const auto* type : {"artist", "album", "playlist"}) {

@@ -21,7 +21,10 @@ struct PlexTrack {
     unsigned year = 0, number = 0, disc = 0;
     long long duration_ms = 0;
     std::vector<PlexMediaPart> parts;
+    std::string album_identifier, album_thumb;
 };
+// Ein eigener Track-Thumb hat Vorrang vor dem geerbten Albumcover.
+const std::string& track_artwork(const PlexTrack& track);
 struct PlexPlaylist { std::string identifier, title, thumb; unsigned track_count = 0; long long duration_ms = 0; };
 using PlexItem = std::variant<PlexArtist, PlexAlbum, PlexTrack, PlexPlaylist>;
 struct CatalogPage {

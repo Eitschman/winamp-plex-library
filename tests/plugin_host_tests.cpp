@@ -1,6 +1,8 @@
 #include <windows.h>
 #include <gen_ml/ml.h>
 #include <gen_ml/ml_ipc_0313.h>
+#include <Winamp/wa_ipc.h>
+#include "wasabi_mock.h"
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
@@ -12,7 +14,9 @@ int removals = 0;
 bool deny_navigation = false;
 unsigned child_count = 0;
 unsigned skin_dialogs = 0, skin_lists = 0;
+MockServices services;
 LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operation) {
+    if (message == WM_WA_IPC && operation == IPC_GET_API_SERVICE) return reinterpret_cast<LRESULT>(&services);
     if (message == WM_ML_IPC) {
         if (operation == ML_IPC_SKINWINDOW) {
             const auto* skin = reinterpret_cast<const MLSKINWINDOW*>(parameter);
@@ -75,6 +79,7 @@ int wmain(int count, wchar_t** arguments) {
             check(IsWindow(view) && GetParent(view) == window, "plugin_view");
             if (iteration % 2 == 0) DestroyWindow(view);
             plugin->quit();
+            check(!services.registered && services.memory.memory.allocations == 0, "artwork_service_released");
             check(!IsWindow(view), "view_destroyed_on_quit");
             check(FreeLibrary(library) != 0, "unload_plugin");
         }

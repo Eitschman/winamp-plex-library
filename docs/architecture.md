@@ -9,6 +9,9 @@
 | `src/plex/http_stream.cpp` | Asynchrone WinHTTP-Requests, TLS, Timeouts, Abbruch, Header- und Bytezugriff |
 | `src/plex/auth.cpp` | Starker PIN, Browser-Anmelde-URL, Ressourcen, Serveridentität und Musikbibliotheken |
 | `src/plex/catalog.cpp` | Typisierte Modelle, Künstler, Alben, Titel, Playlists, Query-Prüfung und Pagination |
+| `src/plex/artwork.cpp` | Geprüfte relative Coverpfade, authentifizierter Bildtransport und begrenzte WIC-Decodierung |
+| `src/ui/artwork_loader.cpp` | Bedarfsgesteuerte Cover-/Titelanzahlaufträge, Generationsprüfung und begrenzter Bildcache |
+| `src/plugin/artwork_provider.cpp` | Cache-basierter Album-Art-Dienst für eigene Loopback-Titel, ohne Netzwerkzugriff im Hostcallback |
 | `src/cache` | Thread-sicherer LRU-Metadaten-Cache mit 32 Seiten und fünf Minuten Gültigkeit |
 | `src/playback/proxy.cpp` | Loopback-Listener, begrenzte Worker, befristeter Grant und Range-Streaming |
 | `src/config` | Benutzergebundene DPAPI-Datei und atomarer Austausch |
@@ -16,6 +19,10 @@
 | `tests` | SDK-Host, synthetischer PMS-Transport und Tests unabhängiger Komponenten |
 
 Die Ansicht verwendet `LVS_OWNERDATA` und lädt bis zu 250 Einträge je Seite. Suche wird verzögert ausgelöst. Ein neuer Auftrag bricht den alten ab; eine Generationsnummer verhindert die Veröffentlichung überholter Ergebnisse. Album- und Playlistwiedergabe lösen Titel im Worker auf, bevor der UI-Thread sie an Winamp übergibt.
+
+Für sichtbare Album- und Titelzeilen arbeitet ein zusätzlicher Bild-Worker. Er lädt Originalcover über geprüfte `/library/metadata/{id}/thumb`-Pfade und skaliert sie mit Windows Imaging Component auf höchstens 48 × 48 Pixel. Download, Quelldimensionen und Pixelzahl sind begrenzt. Die Ansicht besitzt die Bildliste; GDI-Bitmaps werden nach der Übergabe freigegeben. Fehlender `thumb` oder HTTP 404 bedeutet kein Bild. Andere HTTP- oder Bildfehler werden sichtbar gemeldet. Eine fehlende Albumtitelanzahl wird über eine Kinderseite mit Größe 1 und deren Gesamtzahl ermittelt. Bis zu 64 Ergebnisse bleiben fünf Minuten im Cache.
+
+Ein Titel verwendet seinen eigenen `thumb` oder das geerbte Albumcover aus `parentThumb`. Vor der Playlistübergabe lädt der Katalog-Worker jedes benötigte Cover einmal pro Auftrag mit maximal 256 Pixeln Kantenlänge. Der registrierte `svc_albumArtProvider` liefert ausschließlich diese vorbereiteten BMP-Daten für eigene URLs. Bilder und MIME-Texte werden über Winamps `api_memmgr` allokiert. Mehrere Titel teilen dasselbe Bild; der Prozesscache ist auf 64 MiB und 10000 Zuordnungen begrenzt. Widerruf und Plugin-Beendigung entfernen Zuordnungen und registrierten Dienst. Fehlende Hostdienste werden als Initialisierungsfehler behandelt.
 
 `ML_IPC_SKINWINDOW` bindet Dialog und direkte Steuerelemente an die Skin-Engine der Medienbibliothek. Schrift, Farben und Cursor gehören Winamp; eigene Farbpaletten werden nicht eingebaut. Kontextmenüs verwenden `ML_IPC_TRACKSKINNEDPOPUPEX`. Die Skin-Unterklassen entfernen sich bei `WM_NCDESTROY`. Die Ansicht enthält keine eigene Wiedergabesteuerung.
 

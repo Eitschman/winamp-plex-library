@@ -25,7 +25,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog` und `security`. Der aktuelle Lauf bestand 5 von 5 Tests in 6,53 Sekunden. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants und deren gezielten Widerruf. Der SDK-Host prüft Skin-Registrierung und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
+CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider` und `security`. Sieben von sieben Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den BMP-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Der SDK-Host prüft Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
 
 ## Phase-1-Schranke
 
@@ -76,7 +76,13 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 
 ### Bibliotheken und Erweiterungen
 
-Künstler → Alben → Titel, einzelne Playlistübergabe und die vier Baumansichten sind real geprüft. Album-/Mehrfachwiedergabe, Kontextmenü-Ausführung, Sortierung und Suche brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Cover sind noch umzusetzen; der reale Test soll das vom Benutzer genannte neue Dimmu-Borgir-Album und ein Album ohne Cover einschließen. Wiedergabestatus, Verlauf und Bewertungen benötigen eine tatsächliche API-Rückleseprüfung. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
+Künstler → Alben → Titel, einzelne Playlistübergabe und die vier Baumansichten sind real geprüft. Das native, skinned Kontextmenü hat das Testalbum mit 13 Titeln an Winamp übergeben und abgespielt. Seeking lieferte Rückgabewert 0 und anschließend Position 10429 ms. Die gespeicherte Playlist enthält ausschließlich lokale Capability-URLs. Alte Testeinträge wurden auf Benutzerwunsch entfernt; weitere Testläufe dürfen keine doppelten Alben hinterlassen. Wiedergabetests werden stumm ausgeführt und danach gestoppt; die vorherige Lautstärke wird erst nach Stop wiederhergestellt.
+
+„Grand Serpent Rising“ von Dimmu Borgir wurde in der Albumansicht mit Cover, Jahr 2026 und 13 Titeln visuell geprüft. Der reale Katalog-Livetest bestätigt Album-ID und vorhandenen Coverpfad für alle 13 Titel. Ein Album ohne Bild ist synthetisch einschließlich HTTP 404 geprüft, noch nicht als reale fehlende Coveranzeige. Die horizontale Tabellenposition wird beim Spaltenwechsel zurückgesetzt und wurde visuell geprüft.
+
+Die zusätzliche Player-Coveranzeige ist offen: Der `DATABASE`-Album-Art-Dienst ist im echten Host registriert und besitzt 13 Bildzuordnungen. Big Bento fragt diesen Dienst während der HTTP-Wiedergabe nicht ab; dessen Playerfelder zeigen weiterhin das Standardbild. Artist-/Album-/Titelmetadaten werden dagegen über `ML_IPC_HOOKEXTINFOW` übernommen und sind sichtbar. Die Bibliotheks-Cover sind davon getrennt. Die Titelansicht mit geerbten Miniaturen benötigt ihre eigene Sichtprüfung.
+
+Weitere Mehrfachauswahl, Sortierung, Paging und Sprache brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Wiedergabestatus, Verlauf und Bewertungen benötigen eine tatsächliche API-Rückleseprüfung. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
 
 ## Grenzen
 

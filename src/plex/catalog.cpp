@@ -61,12 +61,15 @@ PlexItem parse_item(const nlohmann::json& item) {
             }
         }
     }
+    if (item.contains("parentRatingKey")) track.album_identifier = identifier(item.at("parentRatingKey"));
+    track.album_thumb = field(item, "parentThumb");
     return track;
 }
 }
 
 const std::string& item_identifier(const PlexItem& item) { return std::visit([](const auto& value) -> const std::string& { return value.identifier; }, item); }
 const std::string& item_title(const PlexItem& item) { return std::visit([](const auto& value) -> const std::string& { return value.title; }, item); }
+const std::string& track_artwork(const PlexTrack& track) { return track.thumb.empty() ? track.album_thumb : track.thumb; }
 
 std::vector<PlexMediaPart> direct_parts(const PlexTrack& track) {
     // Eine vorhandene Variante auswählen, ohne Medien zu transcodieren oder nach Fehlern auszuweichen.

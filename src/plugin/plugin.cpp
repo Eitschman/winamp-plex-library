@@ -6,13 +6,15 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <array>
+#include <mutex>
 
 namespace plex::plugin {
 namespace {
 int initialize() noexcept;
 void shutdown() noexcept;
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept;
-struct QueueItem { PlaybackSource source; std::wstring title; int seconds; };
+using Metadata = std::unordered_map<std::wstring, std::wstring>;
+struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; };
 void enqueue_items(std::vector<QueueItem> items, bool play);
 char description[] = "Winamp Plex Library 0.1 (Phase 1)";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
@@ -23,6 +25,17 @@ std::unique_ptr<PlaybackProxy> proxy;
 DWORD ui_thread = 0;
 PlexConnectionSettings settings;
 std::unordered_map<std::wstring, std::wstring> playback_titles;
+std::unordered_map<std::wstring, Metadata> playback_metadata;
+std::mutex metadata_mutex;
+
+std::wstring unicode(const std::string& value) {
+    if (value.empty()) return {};
+    const auto size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (!size) throw std::invalid_argument("metadata_encoding");
+    std::wstring result(static_cast<std::size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), result.data(), size);
+    return result;
+}
 
 std::string utf8(const std::wstring& value) {
     const auto size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
@@ -81,6 +94,7 @@ int initialize() noexcept {
             if (!child.id) throw std::runtime_error("child_navigation");
             child_ids[index] = child.id;
         }
+        initialize_artwork_provider(reinterpret_cast<api_service*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_API_SERVICE)));
         return 0;
     } catch (...) { shutdown(); return 1; }
 }
@@ -88,6 +102,7 @@ int initialize() noexcept {
 void shutdown() noexcept {
     destroy_views();
     stop_playback();
+    shutdown_artwork_provider();
     if (tree_id && IsWindow(plugin.hwndLibraryParent)) {
         const auto handle = SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, tree_id, ML_IPC_TREEITEM_GETHANDLE);
         if (handle) SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, handle, ML_IPC_TREEITEM_DELETE);
@@ -98,7 +113,19 @@ void shutdown() noexcept {
 
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
     try {
+        if (type == ML_IPC_HOOKEXTINFOW && first) {
+            std::lock_guard<std::mutex> lock(metadata_mutex);
+            auto* metadata = reinterpret_cast<extendedFileInfoStructW*>(first);
+            if (!metadata->filename || !metadata->metadata || !metadata->ret || !metadata->retlen) return 0;
+            const auto entry = playback_metadata.find(metadata->filename);
+            if (entry == playback_metadata.end()) return 0;
+            const auto field = entry->second.find(metadata->metadata);
+            if (field == entry->second.end()) return 0;
+            wcsncpy_s(metadata->ret, metadata->retlen, field->second.c_str(), _TRUNCATE);
+            return 1;
+        }
         if (type == ML_IPC_HOOKTITLEW && first) {
+            std::lock_guard<std::mutex> lock(metadata_mutex);
             auto* metadata = reinterpret_cast<waHookTitleStructW*>(first);
             if (metadata->filename && metadata->title) {
                 const auto found = playback_titles.find(metadata->filename);
@@ -150,7 +177,10 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
             else local = proxy->add(std::move(item.source));
             issued.push_back(local);
             for (auto& character : item.title) if (character < 32 || character == 127) character = L' ';
-            playback_titles[std::wstring(local.begin(), local.end())] = item.title;
+            { std::lock_guard<std::mutex> lock(metadata_mutex);
+              playback_titles[std::wstring(local.begin(), local.end())] = item.title;
+              playback_metadata[std::wstring(local.begin(), local.end())] = std::move(item.metadata); }
+            bind_playback_artwork(std::wstring(local.begin(), local.end()), std::move(item.artwork));
             entries.push_back({local, utf8(item.title), item.seconds});
         }
     const TemporaryPlaylist playlist(make_playlist(entries));
@@ -171,7 +201,10 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
     } catch (...) {
         for (const auto& url : issued) {
             if (proxy) proxy->revoke(url);
-            playback_titles.erase(std::wstring(url.begin(), url.end()));
+            { std::lock_guard<std::mutex> lock(metadata_mutex);
+              playback_titles.erase(std::wstring(url.begin(), url.end()));
+              playback_metadata.erase(std::wstring(url.begin(), url.end())); }
+            unbind_playback_artwork(std::wstring(url.begin(), url.end()));
         }
         throw;
     }
@@ -182,7 +215,7 @@ void start_playback(PlaybackSource source, const std::wstring& title, int second
     enqueue_items({{std::move(source), title, seconds}}, true);
 }
 
-void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play) {
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork) {
     std::vector<QueueItem> items;
     for (const auto& track : tracks) {
         const auto parts = direct_parts(track);
@@ -191,11 +224,16 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play) {
         if (!size) throw std::invalid_argument("title_encoding");
         std::wstring title(static_cast<std::size_t>(size), L'\0');
         MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, label.data(), static_cast<int>(label.size()), title.data(), size);
+        const auto cover = artwork.find(track_artwork(track));
+        Metadata metadata{{L"title", title}, {L"artist", unicode(track.artist)}, {L"albumartist", unicode(track.artist)},
+                          {L"album", unicode(track.album)}, {L"year", track.year ? std::to_wstring(track.year) : L""},
+                          {L"track", track.number ? std::to_wstring(track.number) : L""},
+                          {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)}};
         for (const auto& part : parts) {
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
             items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, title,
-                part.duration_ms ? static_cast<int>(seconds) : -1});
+                part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata});
         }
     }
     enqueue_items(std::move(items), play);
@@ -206,11 +244,15 @@ void stop_playback() noexcept {
         if (proxy && GetCurrentThreadId() == ui_thread && IsWindow(plugin.hwndWinampParent)) {
             const auto index = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTPOS);
             const auto* url = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, index, IPC_GETPLAYLISTFILEW));
-            if (url && playback_titles.find(url) != playback_titles.end())
+            bool owns = false;
+            { std::lock_guard<std::mutex> lock(metadata_mutex); owns = url && playback_titles.find(url) != playback_titles.end(); }
+            if (owns)
                 SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON4, 0), 0);
         }
     } catch (...) {}
-    proxy.reset(); playback_titles.clear();
+    proxy.reset();
+    { std::lock_guard<std::mutex> lock(metadata_mutex); playback_titles.clear(); playback_metadata.clear(); }
+    clear_playback_artwork();
 }
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
 bool playback_active() noexcept { return proxy != nullptr; }
@@ -218,6 +260,8 @@ PlexConnectionSettings connection_settings() { return settings; }
 void update_connection_settings(PlexConnectionSettings value) {
     value.language = german() ? "de" : "en";
     save_settings(settings_path(), value);
+    if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin ||
+        value.server_token != settings.server_token || value.library_identifier != settings.library_identifier) clear_library_cache();
     if (value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
 }

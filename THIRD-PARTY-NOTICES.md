@@ -13,7 +13,15 @@ Das gesamte SDK enthält weitere Beispiele und Komponenten mit eigenen Bedingung
 
 `gen_tray/WINAMPCMD.H` liefert die ursprünglichen numerischen Befehlsdefinitionen, insbesondere `WINAMP_BUTTON2`. Dieser reine Definitionsheader enthält keinen eigenen Lizenztext und wird ebenfalls ausschließlich lokal aus dem originalen SDK beschafft. Der Header und die SDK-Beispiele werden nicht mit dem Projekt weitergegeben; es wird kein Beispielprogramm übernommen.
 
-`gen_ml/ml_ipc_0313.h` liefert die Skin-Schnittstellen und deren ursprüngliche Strukturen. Auch dieser unveränderte Header stammt aus dem geprüften SDK-Archiv und wird nicht weitergegeben. Er enthält keinen eigenen Lizenztext. Die Skin-Engine gehört zu Winamp und wird durch Schnittstellenaufrufe verwendet; SDK-Beispielcode wird nicht in das Projekt übernommen.
+Die Album-Art-Schnittstelle verwendet außerdem die unveränderten Wasabi-/Agave-Header aus dem SDK-5.55-Archiv. Die konkrete Liste mit Prüfsummen steht in `cmake/WinampArtworkSdk.cmake`. Diese Header enthalten keinen einheitlichen eigenen Lizenztext und werden ausschließlich lokal beschafft. Es wird keine pauschale Erlaubnis zur Weitergabe dieser Dateien behauptet. Das Beispiel `coverdirectory` wird als Schnittstellenreferenz gelesen, nicht in das Projekt kopiert.
+
+## Veröffentlichter Skin-Schnittstellenheader von 2016
+
+Quelle: https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h
+
+SHA-256: `922e6d21b0b8f2e9fe536456c87e51e05bba82b579ec6eaa77264cbdb25c4e42`
+
+Dieser unveränderte Header liefert die Skin-Schnittstellen und deren ursprüngliche Strukturen, insbesondere den 48-Byte-Vertrag für `MLSKINNEDPOPUP`. Er wird ausschließlich lokal beschafft und nicht weitergegeben. Er enthält keinen eigenen Lizenztext; eine freie Weitergabelizenz wird daraus nicht abgeleitet. Die Skin-Engine gehört zum Host und wird durch Schnittstellenaufrufe verwendet; SDK-Beispielcode wird nicht in das Projekt übernommen.
 
 ## nlohmann/json 3.12.0
 

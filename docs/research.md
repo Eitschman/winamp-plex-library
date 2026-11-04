@@ -12,6 +12,8 @@ Das Beispiel `ml_xmlex/main.cpp` registriert einen Unicode-Baumknoten über `MLT
 
 Die lokal vorgefundene `winamp.exe` meldet Dateiversion `5,9,2,10042`. `gen_ml.dll`, `in_mp3.dll`, `in_flac.dll`, `in_mp4.dll` und `in_vorbis.dll` sind vorhanden. Die verwendeten Schnittstellen wurden zusätzlich mit der tatsächlichen Winamp-Testkopie geprüft. Die Aussage gilt nicht automatisch für andere Winamp- oder WACUP-Versionen.
 
+Für skinned Kontextmenüs wird der unveränderte veröffentlichte Header `gen_ml/ml_ipc_0313.h` von 2016 verwendet. Der Zielhost benötigt dessen 48-Byte-Struktur einschließlich der Anpassungsfelder. Die 40-Byte-Fassung im SDK-5.55-Archiv öffnet dort kein Popup. Hashes, Quellen und positive Laufzeitprüfung stehen in `winamp-sdk.md`. Das SDK-Beispiel `coverdirectory` belegt den Album-Art-Providervertrag und die Freigabe über `api_memmgr`. Es wird kein Beispielcode übernommen. Der `DATABASE`-Provider wird von Big Bento für die getesteten HTTP-Titel nicht abgefragt; Player-Cover sind deshalb ein offener Integrationspunkt.
+
 ## Plex und Plexa
 
 Die [offizielle PMS-API](https://developer.plex.tv/pms/) beschreibt JSON und XML, Token-Header, Bibliotheken, Metadaten, Pagination und Authentifizierung. JSON wird ausdrücklich über `Accept` angefordert. Die alte [Plex-Supportbeschreibung](https://support.plex.tv/articles/201638786-plex-media-server-url-commands/) enthält ergänzende XML-Beispiele für Server und Bibliotheken.

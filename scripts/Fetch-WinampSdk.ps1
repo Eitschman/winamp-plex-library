@@ -17,6 +17,14 @@ if (-not (Test-Path -LiteralPath $archive)) {
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'D88ABBB9882ADD625E6286DC68FB7598645862A191D63577BE84B72EF0870370') {
     throw 'SDK-Prüfsumme stimmt nicht überein.'
 }
-& $SevenZip x $archive ('-o' + $sdk) '-y' 'gen_ml\ml.h' 'gen_ml\ml_ipc_0313.h' 'Winamp\wa_ipc.h' 'gen_tray\WINAMPCMD.H'
+& $SevenZip x $archive ('-o' + $sdk) '-y' 'gen_ml\ml.h' 'Winamp\wa_ipc.h' 'gen_tray\WINAMPCMD.H' 'Agave\AlbumArt\svc_albumArtProvider.h' 'Wasabi\*'
 if ($LASTEXITCODE -ne 0) { throw 'SDK konnte nicht extrahiert werden.' }
+$skinDirectory = Join-Path $localDirectory 'skin-sdk\gen_ml'
+if (Test-Path -LiteralPath $skinDirectory) { throw 'Skin-SDK existiert bereits. Keine Dateien überschrieben.' }
+New-Item -ItemType Directory -Path $skinDirectory | Out-Null
+$skinHeader = Join-Path $skinDirectory 'ml_ipc_0313.h'
+Invoke-WebRequest -UseBasicParsing -Uri 'https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h' -OutFile $skinHeader
+if ((Get-FileHash -LiteralPath $skinHeader -Algorithm SHA256).Hash -ne '922E6D21B0B8F2E9FE536456C87E51E05BBA82B579EC6EAA77264CBDB25C4E42') {
+    throw 'Skin-SDK-Prüfsumme stimmt nicht überein.'
+}
 Write-Output 'Unveränderte SDK-Header mit Lizenztext lokal extrahiert.'
