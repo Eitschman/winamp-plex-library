@@ -77,6 +77,7 @@ int wmain(int count, wchar_t** arguments) {
             check(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41999, reinterpret_cast<INT_PTR>(window), 0) == 0, "unrelated_node");
             const auto view = reinterpret_cast<HWND>(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41000, reinterpret_cast<INT_PTR>(window), 0));
             check(IsWindow(view) && GetParent(view) == window, "plugin_view");
+            check(GetDlgItem(view, 1002) == nullptr && IsWindow(GetDlgItem(view, 1050)), "catalog_without_manual_token_test_control");
             if (iteration % 2 == 0) DestroyWindow(view);
             plugin->quit();
             check(!services.registered && services.memory.memory.allocations == 0, "artwork_service_released");

@@ -211,10 +211,6 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
 }
 }
 
-void start_playback(PlaybackSource source, const std::wstring& title, int seconds) {
-    enqueue_items({{std::move(source), title, seconds}}, true);
-}
-
 void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork) {
     std::vector<QueueItem> items;
     for (const auto& track : tracks) {

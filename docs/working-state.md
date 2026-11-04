@@ -9,7 +9,7 @@ Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `
 1. Die implementierten Bibliotheksansichten und Mehrfach-Grants weiter im regulären Benutzerablauf prüfen: Album-/Mehrfachwiedergabe, Suche, Sortierung, Paging, Kontextmenüs und Sprache. Die API-/Modellschicht, Hintergrundjobs und der begrenzte Seiten-Cache sind vorhanden.
 2. Cover sind in Album-/Titelansicht und beiden Big-Bento-Playerfeldern visuell geprüft. Die Titel übernehmen `parentThumb`; der dateibezogene `EMBEDDED`-Provider liefert vorbereitete PNG-Daten mit SDK-Dateitypkennung `png`. Der letzte stumme Lauf meldet 14 erfolgreiche Abfragen für 13 Zuordnungen. `DATABASE` wird für HTTP-Titel nicht abgefragt, V5-BMP wurde trotz WIC-Erfolg nicht angezeigt. Fehlende Bilder sind synthetisch geprüft; eine reale Gegenprobe fehlt noch.
 3. Einstellungen und zuverlässig nachweisbare Erweiterungen sowie die übrigen Tests des PRP bearbeiten. Weitere echte Audioformate und Fehlerzustände prüfen. Die neue Ansicht besitzt entsprechend Benutzerentscheidung keine Player-Steuerleiste. Classic, Modern, Bento und Big Bento sind über die gen_ml-Skin-Engine angebunden und visuell geprüft.
-4. Den manuellen Token-Testdialog und das überholte Token-Skript durch den regulären Bibliotheksablauf ersetzen. Die Browseranmeldung bleibt der Benutzerablauf.
+4. Der Wiedergabetest verwendet ausschließlich die reguläre Winamp-Playlist und benötigt keine Zugangsdaten. Der manuelle Token-Testdialog und das Token-Skript sind entfernt. Die Browseranmeldung bleibt der Benutzerablauf.
 
 ## Lokal vorhandene Umgebung
 
@@ -28,7 +28,7 @@ Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `
 
 Der aktuelle reale Erfolgsnachweis liegt in `.local/logs/playback-metadata-hook.log`. Die festen lokalen Fehlercodes sind in `ProxyStatus` verfügbar, ohne rohe Requests zu speichern. Eine Winamp-Anfrage ohne Port im Host-Header ist geprüft und wird ausschließlich für `127.0.0.1` zugelassen. Falsche explizite Ports und fremde Hosts bleiben verboten. `IPC_STARTPLAY` setzt in der Zielversion die Position auf 0; `WINAMP_BUTTON2` erhält die gesetzte Position. Alte ignorierte Debuglogs sind keine Nachweise aktueller Testläufe.
 
-Die nativen Screenshots liegen nur unter `.local`. Root-Ansicht, Anmeldedialoge, Bibliotheksansichten in vier Skins und Albumcover wurden visuell angesehen. Das manuelle Token-Skript `scripts/Set-PlexTestAccess.ps1` und der manuelle Testdialog sind noch zu bereinigen, sobald der reguläre Ablauf sie ersetzt. Die vorhandene Testplaylist enthält nur das aktuelle Album einmal; Wiedergabe ist gestoppt. Nicht ungefragt erneut dauerhaft abspielen.
+Die nativen Screenshots liegen nur unter `.local`. Root-Ansicht, Anmeldedialoge, Bibliotheksansichten in vier Skins und Albumcover wurden visuell angesehen. `scripts/Test-PlexPlayback.ps1` prüft die reguläre Testplaylist stumm mit Fortschritt, Länge, Seeking und sicheren lokalen URLs. Leere Playlist und zu kurzer Titel wurden als Gegenproben erkannt. Der entfernte manuelle Token-Testpfad ist bei Bedarf aus dem lokalen Git-Checkpoint rekonstruierbar. Die vorhandene Testplaylist enthält nur das aktuelle Album einmal; Wiedergabe ist gestoppt. Nicht ungefragt erneut dauerhaft abspielen.
 
 ## Freigaben und Grenzen
 

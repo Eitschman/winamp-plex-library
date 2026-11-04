@@ -84,6 +84,10 @@ Die Player-Coveranzeige ist in Big Bento visuell geprüft: Beide Player-Coverfel
 
 Weitere Mehrfachauswahl, Sortierung, Paging und Sprache brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Wiedergabestatus, Verlauf und Bewertungen benötigen eine tatsächliche API-Rückleseprüfung. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
 
+## Regulärer Wiedergabetest
+
+`scripts/Test-PlexPlayback.ps1` arbeitet mit der bereits über die Bibliothek gefüllten Testplaylist. Es liest keine DPAPI-Datei und übernimmt keine manuell eingetragenen Tokens. Der reale positive Lauf prüft Fortschritt, bekannte Länge, Seeking auf zehn Sekunden und ausschließlich lokale Capability-URLs. Die Gegenproben mit leerer Playlist sowie mit einer Seek-Zeit hinter dem Titelende scheitern sichtbar. Nach dem stummen Test wird Stop geprüft, bevor die vorherige Lautstärke wiederhergestellt wird. Das entfernte manuelle Testskript und der Testdialog gehören nicht zum Produktpfad; ihre Quellen bleiben im lokalen Git-Verlauf rekonstruierbar.
+
 ## Grenzen
 
 Der SDK-Testhost simuliert Winamp-Nachrichten, nicht den gesamten Player. Eine positive HTTP-Antwort beweist keine Audioausgabe. Ein Fortschrittszeiger belegt die Verarbeitung durch Winamp, ersetzt aber kein menschliches Hörurteil. Die zwei Stunden Grant-Lebensdauer wurden noch nicht durch einen entsprechend langen Lauf geprüft. Die aktuellen Prüfungen belegen keinen allgemeinen Ausschluss von Speicherlecks.
