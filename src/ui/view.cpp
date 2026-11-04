@@ -39,16 +39,10 @@ void localize_view(HWND dialog) noexcept {
     SetDlgItemTextW(dialog, IDC_LANGUAGE_LABEL, text(L"Sprache", L"Language"));
     SetDlgItemTextW(dialog, IDC_LOGIN, text(L"Mit Plex anmelden...", L"Sign in with Plex..."));
     SetDlgItemTextW(dialog, IDC_TEST_PLAYBACK, text(L"Wiedergabe testen...", L"Test playback..."));
-    SetDlgItemTextW(dialog, IDC_STOP_CONNECTION, text(L"Verbindung beenden", L"End connection"));
 }
 
 void update_status(HWND dialog) noexcept {
-    if (!playback_active()) {
-        SetDlgItemTextW(dialog, IDC_STATUS, text(L"Kein Wiedergabetest gestartet.", L"No playback test started."));
-        EnableWindow(GetDlgItem(dialog, IDC_STOP_CONNECTION), FALSE);
-        return;
-    }
-    EnableWindow(GetDlgItem(dialog, IDC_STOP_CONNECTION), TRUE);
+    if (!playback_active()) return;
     const auto status = playback_status();
     std::array<wchar_t, 256> message{};
     if (status.local_rejection)
@@ -61,9 +55,7 @@ void update_status(HWND dialog) noexcept {
         swprintf_s(message.data(), message.size(), text(L"Verbindungsfehler (Windows-Code %lu).", L"Connection error (Windows code %lu)."), status.transport_error);
     else if (status.upstream_status >= 300)
         swprintf_s(message.data(), message.size(), text(L"Plex-Anfrage abgelehnt (HTTP %lu).", L"Plex request rejected (HTTP %lu)."), status.upstream_status);
-    else if (status.upstream_status)
-        swprintf_s(message.data(), message.size(), text(L"HTTP %lu | %llu Bytes übertragen", L"HTTP %lu | %llu bytes transferred"), status.upstream_status, status.bytes_sent);
-    else wcscpy_s(message.data(), message.size(), text(L"Warte auf Winamps Streaming-Anfrage.", L"Waiting for Winamp's streaming request."));
+    else return;
     SetDlgItemTextW(dialog, IDC_STATUS, message.data());
 }
 
@@ -125,51 +117,28 @@ INT_PTR CALLBACK view_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM
     try {
         if (message == WM_INITDIALOG) {
             views.push_back(dialog);
-            SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Deutsch"));
-            SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"English"));
-            SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_SETCURSEL, german() ? 0 : 1, 0);
-            localize_view(dialog); update_status(dialog); SetTimer(dialog, 1, 500, nullptr);
-            return TRUE;
+            localize_view(dialog); SetTimer(dialog, 1, 500, nullptr);
         }
-        if (message == WM_SIZE) {
-            const int width = LOWORD(detail);
-            RECT units{0, 0, 10, 10}; MapDialogRect(dialog, &units);
-            const int padding = units.right;
-            const auto language = GetDlgItem(dialog, IDC_LANGUAGE);
-            RECT bounds{}; GetWindowRect(language, &bounds);
-            POINT point{bounds.left, bounds.top}; ScreenToClient(dialog, &point);
-            const int combo_width = bounds.right - bounds.left;
-            MoveWindow(language, (std::max)(padding, width - combo_width - padding), point.y, combo_width, bounds.bottom - bounds.top, TRUE);
-            const auto label = GetDlgItem(dialog, IDC_LANGUAGE_LABEL);
-            GetWindowRect(label, &bounds); point = {bounds.left, bounds.top}; ScreenToClient(dialog, &point);
-            MoveWindow(label, (std::max)(padding, width - combo_width - padding - 65), point.y, 60, bounds.bottom - bounds.top, TRUE);
-            const auto status = GetDlgItem(dialog, IDC_STATUS);
-            GetWindowRect(status, &bounds); point = {bounds.left, bounds.top}; ScreenToClient(dialog, &point);
-            MoveWindow(status, point.x, point.y, (std::max)(10, width - 2 * padding), bounds.bottom - bounds.top, TRUE);
-            return TRUE;
-        }
-        if (message == WM_TIMER) { update_status(dialog); return TRUE; }
+        if (message == WM_TIMER && parameter == 1) { update_status(dialog); return TRUE; }
         if (message == WM_COMMAND) {
-            if (LOWORD(parameter) == IDC_LOGIN) { show_login(dialog); update_status(dialog); return TRUE; }
             if (LOWORD(parameter) == IDC_TEST_PLAYBACK) { show_playback_test(dialog); update_status(dialog); return TRUE; }
-            if (LOWORD(parameter) == IDC_STOP_CONNECTION) { stop_playback(); update_status(dialog); return TRUE; }
-            if (LOWORD(parameter) == IDC_LANGUAGE && HIWORD(parameter) == CBN_SELCHANGE) {
-                set_german(SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_GETCURSEL, 0, 0) == 0);
-                localize_view(dialog); update_status(dialog); return TRUE;
-            }
         }
         if (message == WM_DESTROY) {
             KillTimer(dialog, 1);
             views.erase(std::remove(views.begin(), views.end(), dialog), views.end());
-            return TRUE;
         }
-    } catch (...) { return FALSE; }
+        return library_view_message(dialog, message, parameter, detail);
+    } catch (...) {
+        SetDlgItemTextW(dialog, IDC_STATUS, text(L"Der Vorgang konnte nicht ausgeführt werden.", L"The operation could not be completed."));
+        return TRUE;
+    }
     return FALSE;
 }
 }
 
-HWND create_view(HWND parent) noexcept {
-    return CreateDialogParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_VIEW), parent, view_dialog, 0);
+HWND create_view(HWND parent, BrowseKind kind) noexcept {
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES}; InitCommonControlsEx(&controls);
+    return CreateDialogParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_VIEW), parent, view_dialog, static_cast<LPARAM>(kind));
 }
 
 void show_playback_test(HWND parent) noexcept {

@@ -19,7 +19,7 @@ struct ProxyStatus {
     const char* local_rejection = nullptr;
 };
 
-// Eine Instanz besitzt genau einen unveränderlichen, befristeten Wiedergabe-Grant.
+// Ein Listener bedient begrenzt viele unabhängige, befristete Wiedergabe-Grants.
 class PlaybackProxy {
 public:
     explicit PlaybackProxy(PlaybackSource source);
@@ -27,6 +27,8 @@ public:
     PlaybackProxy(const PlaybackProxy&) = delete;
     PlaybackProxy& operator=(const PlaybackProxy&) = delete;
     const std::string& url() const;
+    std::string add(PlaybackSource source);
+    void revoke(const std::string& url);
     ProxyStatus status() const;
 private:
     struct State;

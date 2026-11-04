@@ -21,6 +21,11 @@ int main() {
     const auto path = directory / L"connection.dpapi";
     try {
         check(!std::filesystem::exists(directory), "isolated_test_directory");
+        check(SetEnvironmentVariableW(L"WINAMP_PLEX_CONFIG_DIRECTORY", directory.c_str()) != FALSE, "set_isolated_configuration");
+        check(plex::settings_path() == path, "explicit_configuration_directory");
+        SetEnvironmentVariableW(L"WINAMP_PLEX_CONFIG_DIRECTORY", L"relative-directory");
+        rejects([] { plex::settings_path(); }, "relative_configuration_directory_rejected");
+        SetEnvironmentVariableW(L"WINAMP_PLEX_CONFIG_DIRECTORY", nullptr);
         const auto empty = plex::load_settings(path);
         check(empty.client_identifier.size() == 36 && empty.server_token.empty(), "new_configuration");
         plex::PlexConnectionSettings settings{empty.client_identifier, "synthetic-server-id", "https://music.example:32400", "Synthetic server",

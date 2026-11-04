@@ -13,6 +13,8 @@ Das gesamte SDK enthält weitere Beispiele und Komponenten mit eigenen Bedingung
 
 `gen_tray/WINAMPCMD.H` liefert die ursprünglichen numerischen Befehlsdefinitionen, insbesondere `WINAMP_BUTTON2`. Dieser reine Definitionsheader enthält keinen eigenen Lizenztext und wird ebenfalls ausschließlich lokal aus dem originalen SDK beschafft. Der Header und die SDK-Beispiele werden nicht mit dem Projekt weitergegeben; es wird kein Beispielprogramm übernommen.
 
+`gen_ml/ml_ipc_0313.h` liefert die Skin-Schnittstellen und deren ursprüngliche Strukturen. Auch dieser unveränderte Header stammt aus dem geprüften SDK-Archiv und wird nicht weitergegeben. Er enthält keinen eigenen Lizenztext. Die Skin-Engine gehört zu Winamp und wird durch Schnittstellenaufrufe verwendet; SDK-Beispielcode wird nicht in das Projekt übernommen.
+
 ## nlohmann/json 3.12.0
 
 Quelle: https://github.com/nlohmann/json/releases/tag/v3.12.0

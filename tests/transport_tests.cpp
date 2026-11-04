@@ -186,6 +186,10 @@ int main() {
         check(fixture.hits.load() == before, "rejections_never_contact_upstream");
         check(fetch(url, L"GET", L"Host: 127.0.0.1\r\n").body == fixture.media, "winamp_host_transfers_media");
         check(!proxy->status().local_rejection, "valid_request_clears_rejection_diagnostic");
+        const auto second_url = proxy->add({server, "synthetic-test-token", "/library/parts/2/file.flac"});
+        check(fetch(second_url).body == fixture.media && fetch(url).body == fixture.media, "independent_grants_share_listener");
+        proxy->revoke(second_url);
+        check(fetch(second_url).status == 403 && fetch(url).status == 200, "single_grant_revocation");
         const auto origin_end = url.find('/', 7);
         check(fetch(url.substr(0, origin_end) + "/stream/invalid/audio.mp3").status == 403, "invalid_capability");
         proxy.reset();

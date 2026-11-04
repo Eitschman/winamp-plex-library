@@ -5,15 +5,19 @@
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>
+#include <array>
 
 namespace plex::plugin {
 namespace {
 int initialize() noexcept;
 void shutdown() noexcept;
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept;
+struct QueueItem { PlaybackSource source; std::wstring title; int seconds; };
+void enqueue_items(std::vector<QueueItem> items, bool play);
 char description[] = "Winamp Plex Library 0.1 (Phase 1)";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
+std::array<UINT_PTR, 4> child_ids{};
 bool use_german = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_GERMAN;
 std::unique_ptr<PlaybackProxy> proxy;
 DWORD ui_thread = 0;
@@ -68,8 +72,17 @@ int initialize() noexcept {
         item.imageIndex = -1;
         SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, reinterpret_cast<WPARAM>(&item), ML_IPC_TREEITEM_ADDW);
         tree_id = item.id;
-        return tree_id ? 0 : 1;
-    } catch (...) { return 1; }
+        if (!tree_id) return 1;
+        const std::array<const wchar_t*, 4> labels = use_german ? std::array{L"Künstler", L"Alben", L"Titel", L"Playlists"} : std::array{L"Artists", L"Albums", L"Tracks", L"Playlists"};
+        for (std::size_t index = 0; index < labels.size(); ++index) {
+            MLTREEITEMW child{}; child.size = sizeof(child); child.parentId = tree_id;
+            child.title = const_cast<wchar_t*>(labels[index]); child.imageIndex = -1;
+            SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, reinterpret_cast<WPARAM>(&child), ML_IPC_TREEITEM_ADDW);
+            if (!child.id) throw std::runtime_error("child_navigation");
+            child_ids[index] = child.id;
+        }
+        return 0;
+    } catch (...) { shutdown(); return 1; }
 }
 
 void shutdown() noexcept {
@@ -80,6 +93,7 @@ void shutdown() noexcept {
         if (handle) SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, handle, ML_IPC_TREEITEM_DELETE);
     }
     tree_id = 0;
+    child_ids.fill(0);
 }
 
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
@@ -97,8 +111,12 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
         }
         if (type == ML_MSG_TREE_ONCREATEVIEW && tree_id && static_cast<UINT_PTR>(first) == tree_id)
             return reinterpret_cast<INT_PTR>(create_view(reinterpret_cast<HWND>(second)));
+        if (type == ML_MSG_TREE_ONCREATEVIEW && first)
+            for (std::size_t index = 0; index < child_ids.size(); ++index)
+                if (static_cast<UINT_PTR>(first) == child_ids[index])
+                    return reinterpret_cast<INT_PTR>(create_view(reinterpret_cast<HWND>(second), static_cast<BrowseKind>(index)));
         if (type == ML_MSG_CONFIG) {
-            show_playback_test(IsWindow(reinterpret_cast<HWND>(first)) ? reinterpret_cast<HWND>(first) : plugin.hwndLibraryParent);
+            show_login(IsWindow(reinterpret_cast<HWND>(first)) ? reinterpret_cast<HWND>(first) : plugin.hwndLibraryParent);
             return 1;
         }
     } catch (...) { return 0; }
@@ -108,16 +126,34 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
 
 winampMediaLibraryPlugin& descriptor() noexcept { return plugin; }
 bool german() noexcept { return use_german; }
-void set_german(bool enabled) noexcept { use_german = enabled; }
+void set_german(bool enabled) noexcept {
+    use_german = enabled;
+    const std::array<const wchar_t*, 4> labels = enabled ? std::array{L"Künstler", L"Alben", L"Titel", L"Playlists"} : std::array{L"Artists", L"Albums", L"Tracks", L"Playlists"};
+    for (std::size_t index = 0; index < child_ids.size(); ++index) if (child_ids[index]) {
+        MLTREEITEMINFOW information{}; information.item.size = sizeof(information.item); information.item.id = child_ids[index];
+        information.item.title = const_cast<wchar_t*>(labels[index]); information.mask = MLTI_TEXT;
+        SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, reinterpret_cast<WPARAM>(&information), ML_IPC_TREEITEM_SETINFOW);
+    }
+}
 
-void start_playback(PlaybackSource source, const std::wstring& title, int seconds) {
-    if (GetCurrentThreadId() != ui_thread || title.empty() || seconds < -1) throw std::invalid_argument("playback_input");
-    auto next = std::make_unique<PlaybackProxy>(std::move(source));
-    const auto& local = next->url();
-    auto safe_title = title;
-    for (auto& character : safe_title) if (character < 32 || character == 127) character = L' ';
-    playback_titles[std::wstring(local.begin(), local.end())] = std::move(safe_title);
-    const TemporaryPlaylist playlist(make_playlist({{local, utf8(title), seconds}}));
+namespace {
+void enqueue_items(std::vector<QueueItem> items, bool play) {
+    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000)
+        throw std::invalid_argument("playback_input");
+    std::vector<PlaylistEntry> entries;
+    std::vector<std::string> issued;
+    try {
+        for (auto& item : items) {
+            if (item.title.empty() || item.seconds < -1) throw std::invalid_argument("playback_input");
+            std::string local;
+            if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source)); local = proxy->url(); }
+            else local = proxy->add(std::move(item.source));
+            issued.push_back(local);
+            for (auto& character : item.title) if (character < 32 || character == 127) character = L' ';
+            playback_titles[std::wstring(local.begin(), local.end())] = item.title;
+            entries.push_back({local, utf8(item.title), item.seconds});
+        }
+    const TemporaryPlaylist playlist(make_playlist(entries));
     const auto url = playlist.path().wstring();
     COPYDATASTRUCT item{};
     item.dwData = IPC_ENQUEUEFILEW;
@@ -126,20 +162,63 @@ void start_playback(PlaybackSource source, const std::wstring& title, int second
     const auto position = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
     SendMessageW(plugin.hwndWinampParent, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&item));
     const auto length = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
-    if (length != position + 1) throw std::runtime_error("playlist_enqueue");
-    proxy = std::move(next);
-    SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
-    // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
-    SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON2, 0), 0);
+    if (length != position + static_cast<LRESULT>(entries.size())) throw std::runtime_error("playlist_enqueue");
+    if (play) {
+        SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
+        // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
+        SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON2, 0), 0);
+    }
+    } catch (...) {
+        for (const auto& url : issued) {
+            if (proxy) proxy->revoke(url);
+            playback_titles.erase(std::wstring(url.begin(), url.end()));
+        }
+        throw;
+    }
+}
 }
 
-void stop_playback() noexcept { proxy.reset(); playback_titles.clear(); }
+void start_playback(PlaybackSource source, const std::wstring& title, int seconds) {
+    enqueue_items({{std::move(source), title, seconds}}, true);
+}
+
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play) {
+    std::vector<QueueItem> items;
+    for (const auto& track : tracks) {
+        const auto parts = direct_parts(track);
+        std::string label = track.title.empty() ? (german() ? "(Ohne Titel)" : "(Untitled)") : track.title;
+        const auto size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, label.data(), static_cast<int>(label.size()), nullptr, 0);
+        if (!size) throw std::invalid_argument("title_encoding");
+        std::wstring title(static_cast<std::size_t>(size), L'\0');
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, label.data(), static_cast<int>(label.size()), title.data(), size);
+        for (const auto& part : parts) {
+            const auto seconds = part.duration_ms / 1000;
+            if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
+            items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, title,
+                part.duration_ms ? static_cast<int>(seconds) : -1});
+        }
+    }
+    enqueue_items(std::move(items), play);
+}
+
+void stop_playback() noexcept {
+    try {
+        if (proxy && GetCurrentThreadId() == ui_thread && IsWindow(plugin.hwndWinampParent)) {
+            const auto index = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTPOS);
+            const auto* url = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, index, IPC_GETPLAYLISTFILEW));
+            if (url && playback_titles.find(url) != playback_titles.end())
+                SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON4, 0), 0);
+        }
+    } catch (...) {}
+    proxy.reset(); playback_titles.clear();
+}
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
 bool playback_active() noexcept { return proxy != nullptr; }
 PlexConnectionSettings connection_settings() { return settings; }
 void update_connection_settings(PlexConnectionSettings value) {
     value.language = german() ? "de" : "en";
     save_settings(settings_path(), value);
+    if (value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
 }
 }

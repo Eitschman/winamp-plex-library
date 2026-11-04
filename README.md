@@ -10,7 +10,11 @@ Die Anmeldung folgt dem Plexa-Ablauf: **Mit Plex anmelden**, Freigabe im Systemb
 
 Der Wiedergabe-Prototyp übergibt ausschließlich befristete Loopback-URLs an Winamp. WinHTTP übernimmt die Plex-Authentifizierung. Ein echter Plex-MP3-Titel wurde in der Zielversion mit fortschreitender Wiedergabe, Seeking, Länge und Plex-Titel geprüft. Die exportierte Testplaylist enthält keine Plex-Zugangsdaten. Weitere Audioformate und Fehlerfälle benötigen eigene Integrationsprüfungen.
 
-Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der Stand und die offenen Nachweise stehen in [docs/testing.md](docs/testing.md). Künstler-, Album-, Titel- und Playlistansichten, Suche, Cover, Cache und Plex-Schreibfunktionen werden auf dieser Basis entwickelt und sind noch keine zugesicherten Produktfunktionen.
+Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Plex-Playlists. Native Tabellen laden Seiten im Hintergrund, unterstützen Suche, Sortierung, Mehrfachauswahl und Kontextmenüs. Künstler → Alben → Titel → Winamp-Playlist wurde mit realen Daten geprüft. Ein begrenzter Metadaten-Cache hält bereits geladene Seiten vor.
+
+Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_ml`. Classic, Winamp Modern, Bento und Big Bento wurden in der getrennten Testkopie visuell geprüft. Das ist kein Nachweis für jeden fremden Skin oder jede DPI-Einstellung. Es gibt keine zusätzliche Player-Steuerleiste: Doppelklick und Kontextmenü übergeben Medien an Winamp; der Player steuert die Wiedergabe.
+
+Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Weitere Nachweise, Cover und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md).
 
 ## Build
 
@@ -39,7 +43,7 @@ Zur Deinstallation Winamp beenden und ausschließlich die selbst installierte `m
 - Wiedergabe-URLs enthalten weder Plex-Token noch Serveradresse oder Plex-Medienpfad.
 - Der Proxy bindet ausschließlich an `127.0.0.1` auf einem dynamisch vergebenen Port. Jeder Grant besitzt 192 Bit Zufall und eine feste Laufzeit von zwei Stunden.
 - Ein Grant endet bei Austausch, Verbindungsende oder Plugin-Beendigung. Gespeicherte Winamp-Playlists können danach nicht wiederverwendbare lokale URLs enthalten.
-- Der Prototyp besitzt einen Wiedergabe-Grant. Eine allgemeine Album- oder Mehrtitelliste erfordert eine eigene Grant-Verwaltung.
+- Ein gemeinsamer Listener verwaltet bis zu 10000 unabhängige Wiedergabe-Grants; die Workerzahl steigt nicht mit der Playlistlänge.
 - Direct Play wird verwendet. Es gibt weder einen eigenen Decoder noch einen automatischen Transcoding-Pfad.
 - Externes HTTP, ungültige TLS-Zertifikate, fremde Redirects und nicht unterstützte Medienpfade werden abgewiesen. IPv6-Origin-Adressen sind noch nicht unterstützt.
 - Browseranmeldung und Serververzeichnis verwenden Plex-Dienste; Medienbytes kommen direkt vom ausgewählten Plex Media Server.

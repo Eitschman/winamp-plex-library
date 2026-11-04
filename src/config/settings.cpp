@@ -7,6 +7,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <vector>
+#include <array>
 
 namespace plex {
 std::string create_client_identifier() {
@@ -20,6 +21,15 @@ std::string create_client_identifier() {
 }
 
 std::filesystem::path settings_path() {
+    // Prozesslokale Umleitung erlaubt isolierte Testhosts ohne Zugriff auf echte Zugänge.
+    std::array<wchar_t, 32768> override_path{};
+    const auto count = GetEnvironmentVariableW(L"WINAMP_PLEX_CONFIG_DIRECTORY", override_path.data(), static_cast<DWORD>(override_path.size()));
+    if (count) {
+        if (count >= override_path.size()) throw std::runtime_error("settings_override");
+        const std::filesystem::path directory(override_path.data());
+        if (!directory.is_absolute()) throw std::runtime_error("settings_override");
+        return directory / L"connection.dpapi";
+    }
     wchar_t* local = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local)))
         throw std::runtime_error("settings_directory");

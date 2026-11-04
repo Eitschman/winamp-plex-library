@@ -9,6 +9,8 @@
 #include <chrono>
 #include <thread>
 #include <stdexcept>
+#include <mutex>
+#include <unordered_map>
 
 namespace plex {
 namespace {
@@ -43,21 +45,39 @@ PlaybackSource::~PlaybackSource() {
 }
 
 struct PlaybackProxy::State {
-    PlaybackSource source;
+    struct Grant {
+        PlaybackSource source;
+        std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::now() + std::chrono::hours(2);
+    };
+    std::mutex grants_mutex;
+    std::unordered_map<std::string, std::shared_ptr<Grant>> grants;
     SOCKET listener = INVALID_SOCKET;
     bool sockets_started = false;
     HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     std::array<std::thread, 4> workers;
     std::string authority;
-    std::string capability;
     std::string local_url;
-    std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::now() + std::chrono::hours(2);
     std::atomic<DWORD> upstream{0};
     std::atomic<DWORD> error{0};
     std::atomic<const char*> rejection{nullptr};
     std::atomic<unsigned long long> bytes{0};
 
-    explicit State(PlaybackSource value) : source(std::move(value)) {}
+    std::string add(PlaybackSource source) {
+        validate_token(source.token);
+        validate_media_path(source.media_path);
+        const auto extension = media_extension(source.media_path);
+        const auto origin = std::string(source.server.secure ? "https://" : "http://") + source.server.host + ":" + std::to_string(source.server.port);
+        source.server = parse_server_address(origin);
+        const auto capability = "/stream/" + random_key() + "/audio" + extension;
+        std::lock_guard<std::mutex> lock(grants_mutex);
+        const auto now = std::chrono::steady_clock::now();
+        for (auto entry = grants.begin(); entry != grants.end();) {
+            if (entry->second->expires <= now) entry = grants.erase(entry); else ++entry;
+        }
+        if (grants.size() >= 10000) throw std::invalid_argument("grant_limit");
+        grants.emplace(capability, std::make_shared<Grant>(Grant{std::move(source)}));
+        return "http://" + authority + capability;
+    }
 
     void serve(SOCKET client) {
         DWORD timeout = 500;
@@ -65,7 +85,6 @@ struct PlaybackProxy::State {
         setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
         bool response_started = false;
         try {
-            if (std::chrono::steady_clock::now() >= expires) { send_status(client, 410); return; }
             std::string request;
             std::array<char, 2048> chunk{};
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -78,9 +97,21 @@ struct PlaybackProxy::State {
                 request.append(chunk.data(), static_cast<std::size_t>(count));
                 if (request.size() > 16384) throw std::invalid_argument("headers_limit");
             }
+            const auto first_space = request.find(' ');
+            const auto target_end = first_space == request.npos ? request.npos : request.find(' ', first_space + 1);
+            if (target_end == request.npos) throw std::invalid_argument("request_line");
+            const auto capability = request.substr(first_space + 1, target_end - first_space - 1);
+            std::shared_ptr<Grant> grant;
+            {
+                std::lock_guard<std::mutex> lock(grants_mutex);
+                const auto found = grants.find(capability);
+                if (found == grants.end()) throw std::invalid_argument("request_target");
+                grant = found->second;
+            }
+            if (std::chrono::steady_clock::now() >= grant->expires) { send_status(client, 410); return; }
             const auto parsed = parse_local_request(request, authority, capability);
             rejection.store(nullptr);
-            HttpStream stream(source.server, source.token, source.media_path, parsed.head, parsed.range, stop);
+            HttpStream stream(grant->source.server, grant->source.token, grant->source.media_path, parsed.head, parsed.range, stop);
             const auto status = stream.status();
             upstream.store(status); error.store(0);
             if (status != 200 && status != 206 && status != 416) {
@@ -160,15 +191,9 @@ struct PlaybackProxy::State {
     }
 };
 
-PlaybackProxy::PlaybackProxy(PlaybackSource source) : state_(std::make_unique<State>(std::move(source))) {
+PlaybackProxy::PlaybackProxy(PlaybackSource source) : state_(std::make_unique<State>()) {
     auto& state = *state_;
-    validate_token(state.source.token);
-    validate_media_path(state.source.media_path);
-    const auto extension = media_extension(state.source.media_path);
     // Auch Aufrufer außerhalb der UI müssen die Origin-Sicherheitsregeln einhalten.
-    const auto origin = std::string(state.source.server.secure ? "https://" : "http://") +
-                        state.source.server.host + ":" + std::to_string(state.source.server.port);
-    state.source.server = parse_server_address(origin);
     if (!state.stop) throw std::runtime_error("stop_event");
     WSADATA socket_data{};
     if (WSAStartup(MAKEWORD(2, 2), &socket_data) != 0) throw std::runtime_error("socket_startup");
@@ -189,12 +214,18 @@ PlaybackProxy::PlaybackProxy(PlaybackSource source) : state_(std::make_unique<St
     u_long nonblocking = 1;
     if (ioctlsocket(state.listener, FIONBIO, &nonblocking) != 0) throw std::runtime_error("socket_mode");
     state.authority = "127.0.0.1:" + std::to_string(ntohs(address.sin_port));
-    state.capability = "/stream/" + random_key() + "/audio" + extension;
-    state.local_url = "http://" + state.authority + state.capability;
+    state.local_url = state.add(std::move(source));
     for (auto& worker : state.workers) worker = std::thread([&state] { state.run(); });
 }
 
 PlaybackProxy::~PlaybackProxy() = default;
 const std::string& PlaybackProxy::url() const { return state_->local_url; }
+std::string PlaybackProxy::add(PlaybackSource source) { return state_->add(std::move(source)); }
+void PlaybackProxy::revoke(const std::string& url) {
+    const auto origin = "http://" + state_->authority;
+    if (url.substr(0, origin.size()) != origin) throw std::invalid_argument("grant_origin");
+    std::lock_guard<std::mutex> lock(state_->grants_mutex);
+    state_->grants.erase(url.substr(origin.size()));
+}
 ProxyStatus PlaybackProxy::status() const { return {state_->upstream.load(), state_->error.load(), state_->bytes.load(), state_->rejection.load()}; }
 }

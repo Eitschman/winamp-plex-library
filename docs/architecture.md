@@ -5,15 +5,19 @@
 | Bereich | Verantwortung |
 | --- | --- |
 | `src/plugin` | SDK-Descriptor, Export, Knotenregistrierung, Lifecycle, Winamp-Playlist-IPC und Besitz des Wiedergabe-Proxys |
-| `src/ui` | Native Unicode-Dialoge, deutsche und englische Beschriftungen, Anmeldung, Verbindungsstatus |
+| `src/ui` | Native Unicode-Dialoge, virtuelle Tabellen, getrennte UI-Zeilen, Hintergrundaufträge, Anmeldung und Skin-Anbindung |
 | `src/plex/http_stream.cpp` | Asynchrone WinHTTP-Requests, TLS, Timeouts, Abbruch, Header- und Bytezugriff |
 | `src/plex/auth.cpp` | Starker PIN, Browser-Anmelde-URL, Ressourcen, Serveridentität und Musikbibliotheken |
+| `src/plex/catalog.cpp` | Typisierte Modelle, Künstler, Alben, Titel, Playlists, Query-Prüfung und Pagination |
+| `src/cache` | Thread-sicherer LRU-Metadaten-Cache mit 32 Seiten und fünf Minuten Gültigkeit |
 | `src/playback/proxy.cpp` | Loopback-Listener, begrenzte Worker, befristeter Grant und Range-Streaming |
 | `src/config` | Benutzergebundene DPAPI-Datei und atomarer Austausch |
 | `src/common` | Origin-, Token-, Pfad-, Request- und Range-Prüfung sowie Query-Encoding |
 | `tests` | SDK-Host, synthetischer PMS-Transport und Tests unabhängiger Komponenten |
 
-Eine eigenständige Cache- und allgemeine Bibliotheksschicht wird erst nach der ersten echten Wiedergabevalidierung ergänzt. Leere Produktmodule werden nicht als implementierte Funktion angelegt.
+Die Ansicht verwendet `LVS_OWNERDATA` und lädt bis zu 250 Einträge je Seite. Suche wird verzögert ausgelöst. Ein neuer Auftrag bricht den alten ab; eine Generationsnummer verhindert die Veröffentlichung überholter Ergebnisse. Album- und Playlistwiedergabe lösen Titel im Worker auf, bevor der UI-Thread sie an Winamp übergibt.
+
+`ML_IPC_SKINWINDOW` bindet Dialog und direkte Steuerelemente an die Skin-Engine der Medienbibliothek. Schrift, Farben und Cursor gehören Winamp; eigene Farbpaletten werden nicht eingebaut. Kontextmenüs verwenden `ML_IPC_TRACKSKINNEDPOPUPEX`. Die Skin-Unterklassen entfernen sich bei `WM_NCDESTROY`. Die Ansicht enthält keine eigene Wiedergabesteuerung.
 
 ## Datenfluss
 
@@ -41,7 +45,7 @@ Der Proxy besitzt vier begrenzte Worker. Sie bedienen einen nicht blockierenden 
 
 WinHTTP verwendet asynchrone Handles. Ein Worker wartet auf Abschluss oder Abbruch, während die Winamp-Oberfläche weiterarbeitet. Ein WinHTTP-Callback greift nur auf seinen Request-Kontext zu. Der Kontext wird erst nach `HANDLE_CLOSING` freigegeben. Beim Beenden werden Stop-Events gesetzt, ausstehende Requests abgebrochen und Threads verbunden. Ein eigener Thread wird nicht detached weiterlaufen gelassen.
 
-Die Wiedergabe gehört dem Plugin-Core und überlebt das Zerstören einer Bibliotheksansicht. Der Phase-1-Grant repräsentiert genau eine Datei. Mehrere Titel benötigen eine spätere Zuordnung mehrerer unabhängiger Grants, einschließlich Lebensdauer und Freigabe.
+Die Wiedergabe gehört dem Plugin-Core und überlebt das Zerstören einer Bibliotheksansicht. Ein Listener mit vier Workern verwaltet bis zu 10000 unabhängige Grants. Neue Titel widerrufen keine bereits angehängten Titel. Bei fehlgeschlagener Playlistübergabe werden nur die dabei neu ausgegebenen Grants zurückgenommen. Das Ende der Verbindung beendet alle Grants.
 
 ## Authentifizierung und Konfiguration
 
@@ -63,4 +67,4 @@ An Plex werden Token und Client-Header serverseitig angefügt. Zertifikatsprüfu
 
 Alle ABI-Einstiegspunkte und Thread-Einstiege fangen Ausnahmen ab. JSON-Parserfehler werden vor der UI-Grenze in feste Fehlertypen übersetzt. Die UI zeigt Zustände und Codes, keine fremden Antworttexte. Eine nicht erreichbare Verbindung startet kein Transcoding und wechselt nicht auf unsicheres HTTP.
 
-Für die nächsten Schritte werden API-Modelle von Ansichtszeilen getrennt. Stabile Plex-IDs werden verwendet; UI-Zeilenpositionen sind keine Identität. Seiten sollen anhand tatsächlicher Offsets verarbeitet werden. Ein begrenzter, zeitlich gültiger Metadaten-Cache muss Server, Bibliothek, Query und Sortierung in seinen Schlüssel aufnehmen. Der Cache darf weder Tokens noch vollständige authentifizierte URLs speichern. Noch nicht implementierte Bereiche sind in [testing.md](testing.md) aufgeführt.
+API-Modelle und formatierte Ansichtszeilen sind getrennt. Stabile Plex-IDs werden verwendet; UI-Zeilenpositionen sind keine Identität. Pagination verwendet tatsächliche Offsets und Ergebnismengen. Der Cache-Schlüssel enthält Serveridentität, Verbindungsgeneration und die geprüfte Abfrage mit Bibliothek und Sortierung. Tokens stehen nicht im Schlüssel. Eine neue Verbindung oder explizite Cache-Leerung verwirft den Cache. Noch nicht implementierte Bereiche stehen in [testing.md](testing.md).

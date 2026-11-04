@@ -30,7 +30,21 @@ nlohmann::json PlexAuth::request(const std::string& origin, const std::string& t
             if (body.size() + size > 16 * 1024 * 1024) throw std::invalid_argument("response_limit");
             body.append(buffer.data(), size);
         }
-        auto response = nlohmann::json::parse(body);
+        auto response = nlohmann::json::parse(body, [](int depth, nlohmann::json::parse_event_t, nlohmann::json&) {
+            if (depth > 64) throw std::invalid_argument("api_depth");
+            return true;
+        });
+        // Einige Server liefern Pagination nur als Antwortheader.
+        if (response.is_object() && response.contains("MediaContainer")) {
+            auto& container = response.at("MediaContainer");
+            for (const auto& header : {std::pair{L"X-Plex-Container-Start", "offset"}, std::pair{L"X-Plex-Container-Total-Size", "totalSize"}}) {
+                const auto value = stream.header(header.first);
+                if (!container.contains(header.second) && !value.empty()) {
+                    if (value.size() > 10 || value.find_first_not_of("0123456789") != value.npos) throw std::invalid_argument("pagination_header");
+                    container[header.second] = std::stoull(value);
+                }
+            }
+        }
         SecureZeroMemory(body.data(), body.size());
         return response;
     } catch (...) {

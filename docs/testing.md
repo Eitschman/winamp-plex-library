@@ -12,6 +12,9 @@ Prüfdatum: 04.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen 
 - Authentifizierungs-Parsing mit synthetischen Serverressourcen, getrenntem Server-Token, HTTPS-Verbindungen, leerer Musikbibliotheksliste und fehlerhaften Antworten.
 - Tatsächliche Winamp-Testkopie der Version 5.9.2 Build 10042: DLL erkannt, Plex-Knoten und eigene Ansicht sichtbar. Die Darstellung wurde als Screenshot angesehen. Die Instanz wurde regulär beendet und mit ausgetauschter Test-DLL neu gestartet.
 - Native Browseranmeldung: starke PIN erstellt, Systembrowser geöffnet, Benutzer hat den Zugriff für die Anwendung bestätigt, Serverressourcen wurden geladen. Die ausgewählte HTTPS-Verbindung und Serveridentität wurden geprüft; eine Musikbibliothek wurde angezeigt und zur Speicherung ausgewählt.
+- Katalog-Livetest: Künstler, Alben, Titel und Audio-Playlists, zweite Seiten, Suchabfragen und Unterelemente gegen den echten Server geprüft. Album-Kinder werden ohne zusätzliche Sortierung abgefragt; die reale Disc-/Titelreihenfolge wurde geprüft. Ein leerer erster Playlistinhalt wird korrekt als leer behandelt.
+- `scripts/Test-PlexLibrary.ps1`: Künstler → drei Alben → fünf Titel → einen Titel an die bestehende Winamp-Playlist angehängt; Zurück-Navigation und alle vier Baumansichten geprüft. Die reale Testbibliothek meldete 305 Künstler, 1333 Alben und 20770 Titel. Private Inhalte bleiben im lokalen Testordner.
+- Classic, Winamp Modern, Bento und Big Bento tatsächlich geladen und Screenshots angesehen. Farben, Tabellenkopf, Scrollbalken und Steuerelemente wechseln mit dem Skin. Die Darstellung wurde außerdem bei 1000 × 450 Pixeln im Bento-Container geprüft. Keine Zusage für sämtliche fremden Skins, DPI-Stufen oder Farbschemata.
 
 Die Screenshots und aktuellen Buildlogs liegen nur im ignorierten lokalen Testordner. Sie enthalten gegebenenfalls private Anzeigeinformationen und werden nicht veröffentlicht. Synthetische Testdaten enthalten keine echten Plex-Zugänge.
 
@@ -22,7 +25,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest enthält `plugin_lifecycle`, `transport`, `config_auth` und `security`. Einzelprogramme melden ihre Anzahl von Prüfbedingungen. Eine gezählte Bedingung ist keine Aussage über die Abdeckung aller Produktfunktionen. Die allgemeine Bibliotheks-, Pagination- und Cache-Schicht ist noch nicht implementiert und hat deshalb noch keine entsprechende Testsuite.
+CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog` und `security`. Der aktuelle Lauf bestand 5 von 5 Tests in 6,53 Sekunden. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants und deren gezielten Widerruf. Der SDK-Host prüft Skin-Registrierung und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
 
 ## Phase-1-Schranke
 
@@ -49,7 +52,7 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 
 - [x] Plex-Browseranmeldung mit Benutzerfreigabe.
 - [x] Server- und Musikbibliotheksabfrage über eine gültige HTTPS-Verbindung.
-- [ ] Neustart mit gespeicherter DPAPI-Verbindung.
+- [x] Neustart mit gespeicherter DPAPI-Verbindung.
 - [ ] Widerrufenes echtes Token und erneute Anmeldung.
 - [ ] Nicht erreichbarer Server, DNS-Fehler und Zertifikatsfehler im nativen Dialog.
 - [ ] Leere Musikbibliothek und Konto ohne Server.
@@ -73,7 +76,7 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 
 ### Bibliotheken und Erweiterungen
 
-Noch umzusetzen und danach zu testen: Künstler → Alben → Titel, Album-/Mehrfachwiedergabe, Playlists, Sortierung, Suche, serverseitige Pagination, große Ergebnismengen, Unicode-Zeilendarstellung, Cover, begrenzter Metadaten-Cache und Cache-Leerung. Wiedergabestatus, Verlauf und Bewertungen benötigen zusätzlich eine tatsächliche API-Rückleseprüfung. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
+Künstler → Alben → Titel, einzelne Playlistübergabe und die vier Baumansichten sind real geprüft. Album-/Mehrfachwiedergabe, Kontextmenü-Ausführung, Sortierung und Suche brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Cover sind noch umzusetzen; der reale Test soll das vom Benutzer genannte neue Dimmu-Borgir-Album und ein Album ohne Cover einschließen. Wiedergabestatus, Verlauf und Bewertungen benötigen eine tatsächliche API-Rückleseprüfung. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
 
 ## Grenzen
 

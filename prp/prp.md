@@ -17,7 +17,10 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 - Implementiert und getestet: Plex-Browseranmeldung mit bestätigter Freigabe, HTTPS-Serverprüfung, Musikbibliotheksabfrage und DPAPI-Speicherung.
 - Implementiert und mit synthetischen Daten getestet: HTTP-Transport, Loopback-Proxy, Bereiche für Seeking, Abbruch, URL-Sicherheitsprüfungen und Fehlerstatus.
 - Implementiert und in Winamp 5.9.2 Build 10042 getestet: echte Plex-MP3-Wiedergabe über den lokalen Proxy, Seeking auf zehn Sekunden, Länge und Plex-Titel in der tokenfreien Winamp-Playlist. Verwendet werden die dokumentierte `WM_COPYDATA`-Playlistübergabe, der Titel-Hook und der Play-Befehl des SDK. Unbekannte ABI-Felder werden nicht ergänzt.
-- Geplant: allgemeine Bibliotheksansichten, Suche, Mehrfach- und Albumwiedergabe, Cache und die nachfolgend beschriebenen Erweiterungen. Diese gelten erst nach Umsetzung und den jeweiligen Nachweisen als getestet.
+- Implementiert: typisierte Bibliotheksabfragen, Pagination, Suche, Sortierung, virtuelle Tabellen, Album-/Mehrfachübergabe, Plex-Playlists und begrenzter Metadaten-Cache. Künstler → Alben → Titel → Winamp-Playlist und vier Navigationsansichten sind mit realen Daten geprüft; weitere Nachweise stehen in `docs/testing.md`.
+- Die Darstellung verwendet Winamps Skin-Engine und ist in Classic, Winamp Modern, Bento und Big Bento visuell geprüft. Es gibt keine eigene Player-Steuerleiste. Doppelklick und Kontextmenü übergeben die Auswahl an Winamp, dessen vorhandene Bedienelemente Wiedergabe, Pause, Stop und Seeking übernehmen.
+- Cover müssen auch bei Alben ohne Bild sauber behandelt werden. Für den realen Cover-Test wird das vom Benutzer genannte neue Dimmu-Borgir-Album im Serverkatalog gesucht. Der genaue Titel wird aus Plex übernommen.
+- Geplant beziehungsweise noch nachzuweisen: Cover, weitere Audioformate, erweiterte Fehler- und Bedienungstests sowie Plex-Schreibfunktionen.
 
 ## 1. Projektziel
 

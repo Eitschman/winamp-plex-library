@@ -17,7 +17,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Fetch-WinampSdk.ps1 
   -SevenZip "C:\Program Files\7-Zip\7z.exe"
 ```
 
-Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert nur `gen_ml/ml.h` und `Winamp/wa_ipc.h` nach `.local/sdk`. Ein vorhandener SDK-Ordner wird nicht überschrieben.
+Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `gen_ml/ml_ipc_0313.h`, `Winamp/wa_ipc.h` und `gen_tray/WINAMPCMD.H` nach `.local/sdk`. CMake prüft alle vier Header einzeln. Ein vorhandener SDK-Ordner wird nicht überschrieben.
 
 Ein manuell entpacktes SDK kann mit `-DWINAMP_SDK_ROOT=C:/Pfad/zum/SDK` angegeben werden. Die Prüfsummen müssen zur untersuchten SDK-5.55-Fassung passen. Andere Fassungen erfordern eine gesonderte ABI-Prüfung und bewusste Änderung des Buildvertrags.
 
@@ -48,7 +48,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Prepare-WinampTest.p
   -WinampDirectory "C:\tatsächlich-geprüfter-Pfad\Winamp"
 ```
 
-Die Kopie liegt unter `.local/winamp-test`. Ihre `paths.ini` verwendet ein eigenes `settings`-Verzeichnis und die Fensterklasse `WinampPlexTest`. Nur Programmdateien, Systemkomponenten und die für den Test benötigten Plugins werden übernommen. Die vorhandene Benutzerkonfiguration wird nicht kopiert. Keine Dateizuordnungen einrichten und keinen Test als Administrationsbedarf interpretieren.
+Die Kopie liegt unter `.local/winamp-test`. Ihre `paths.ini` verwendet ein eigenes `settings`-Verzeichnis und die Fensterklasse `WinampPlexTest`. Programmdateien, Systemkomponenten, Audio-Plugins sowie `gen_ff.dll`, `freeform` und vorhandene Skins werden für die Classic-/Modern-Prüfung übernommen. Die vorhandene Benutzerkonfiguration wird nicht kopiert. Keine Dateizuordnungen einrichten und keinen Test als Administrationsbedarf interpretieren.
+
+Der Testhost setzt ausschließlich für seinen Prozess `WINAMP_PLEX_CONFIG_DIRECTORY` auf einen absoluten temporären Pfad. Dadurch liest er keine echte Plugin-Verbindung und sendet keine echten Plex-Anfragen. Relative Umleitungen werden abgewiesen. Im regulären Betrieb bleibt die DPAPI-Datei unter `%LOCALAPPDATA%/WinampPlexLibrary`.
 
 ## Manuelle Installation
 

@@ -6,9 +6,9 @@ Die Entwicklung läuft am ursprünglichen Plugin-Auftrag einschließlich Bibliot
 
 Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `src/plugin/plugin.cpp` verwendet `WM_COPYDATA` mit einer temporären M3U8-Datei, `ML_IPC_HOOKTITLEW` und den im SDK dokumentierten Play-Befehl. Wiedergabe, Seeking, 306 Sekunden Länge und Plex-Titel sind nachgewiesen; die exportierte Testplaylist ist tokenfrei. Details und konkrete Messwerte stehen in `docs/testing.md`.
 
-1. Die allgemeine API-/Modellschicht und Bibliotheksansichten mit Pagination, Suche und Sortierung umsetzen. UI- und API-Modelle trennen, Anfragen abbrechen und alte Ergebnisse verwerfen.
-2. Album-/Mehrfachwiedergabe und Plex-Playlists ergänzen. Dafür einen begrenzten Listener mit mehreren unabhängigen Grants verwenden, keine vier Threads pro Titel anlegen.
-3. Cache, Cover und zuverlässig nachweisbare Erweiterungen sowie die übrigen Tests des PRP bearbeiten. Weitere echte Audioformate und Fehlerzustände prüfen.
+1. Die implementierten Bibliotheksansichten und Mehrfach-Grants weiter im regulären Benutzerablauf prüfen: Album-/Mehrfachwiedergabe, Suche, Sortierung, Paging, Kontextmenüs und Sprache. Die API-/Modellschicht, Hintergrundjobs und der begrenzte Seiten-Cache sind vorhanden.
+2. Cover transportieren und in der nativen Albumansicht prüfen. Das vom Benutzer genannte neue Dimmu-Borgir-Album im realen Serverkatalog suchen; zusätzlich ein Album ohne Bild prüfen. Fehlende Bilder sind kein Verbindungsfehler.
+3. Einstellungen und zuverlässig nachweisbare Erweiterungen sowie die übrigen Tests des PRP bearbeiten. Weitere echte Audioformate und Fehlerzustände prüfen. Die neue Ansicht besitzt entsprechend Benutzerentscheidung keine Player-Steuerleiste. Classic, Modern, Bento und Big Bento sind über die gen_ml-Skin-Engine angebunden und visuell geprüft.
 4. Den manuellen Token-Testdialog und das überholte Token-Skript durch den regulären Bibliotheksablauf ersetzen. Die Browseranmeldung bleibt der Benutzerablauf.
 
 ## Lokal vorhandene Umgebung
@@ -18,13 +18,13 @@ Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `
 - Debugger: `C:\Program Files (x86)\Windows Kits\10\Debuggers\x86\cdb.exe`.
 - Unveränderte SDK-5.55-Header: `.local/sdk`. CMake prüft die dokumentierten SHA-256-Werte.
 - Getrennte Testkopie: `.local/winamp-test`. Eigene Klasse `WinampPlexTest`, eigene Einstellungen unter `.local/winamp-test/settings`. Nur diese Kopie für Installation und Laufzeittests verwenden.
-- Die normale Winamp-Installation ist nicht verändert. Beim Anhalten lief ausschließlich deren Prozess mit ID 28052 weiter; vor weiteren Tests den tatsächlichen Pfad erneut prüfen.
+- Die normale Winamp-Installation ist nicht verändert. Vor weiteren Prozessaktionen den tatsächlichen Pfad erneut prüfen. Die Testkopie enthält auch die vorhandenen Skins und deren Modern-Engine.
 - Die Browseranmeldung ist bestätigt. Der Plugin-eigene Zugriff liegt DPAPI-geschützt unter `%LOCALAPPDATA%\WinampPlexLibrary\connection.dpapi`. Ausschließlich den dokumentierten Anwendungszugriff verwenden, keine Zugangsdaten suchen oder ausgeben.
 - Die derzeit in der Testkopie liegende DLL kann vom nächsten Quellbuild abweichen. Vor dem nächsten Start bei geschlossener Testkopie den aktuellen Build kopieren.
 
 ## Nachweise und Diagnoseartefakte
 
-`docs/testing.md` enthält den fachlichen Prüfstand. Beim Anhalten wurde der aktuelle MSVC-x86-Release-Build erfolgreich gebaut. Der anschließende CTest-Lauf bestand alle vier Tests `plugin_lifecycle`, `transport`, `config_auth` und `security` in 5,97 Sekunden. Allgemeine Bibliotheks- und Cachetests fehlen noch. Es waren danach keine Plugin-Test- oder Debuggerprozesse aktiv; die Testkopie ließ sich regulär über `WM_CLOSE` beenden.
+`docs/testing.md` enthält den fachlichen Prüfstand. Der MSVC-x86-Release-Build und alle fünf CTest-Suiten sind erfolgreich gelaufen. Der Katalog-Livetest und der native Navigationstest sind bestanden. Die Testkopie läuft mit der gespeicherten DPAPI-Verbindung und wurde ausschließlich regulär beendet beziehungsweise neu gestartet. Eine Korrektur der horizontalen Scrollposition bei geänderten Tabellenspalten wird als nächster sichtbarer Nachweis geprüft.
 
 Der aktuelle reale Erfolgsnachweis liegt in `.local/logs/playback-metadata-hook.log`. Die festen lokalen Fehlercodes sind in `ProxyStatus` verfügbar, ohne rohe Requests zu speichern. Eine Winamp-Anfrage ohne Port im Host-Header ist geprüft und wird ausschließlich für `127.0.0.1` zugelassen. Falsche explizite Ports und fremde Hosts bleiben verboten. `IPC_STARTPLAY` setzt in der Zielversion die Position auf 0; `WINAMP_BUTTON2` erhält die gesetzte Position. Alte ignorierte Debuglogs sind keine Nachweise aktueller Testläufe.
 

@@ -41,6 +41,12 @@ Nach `IPC_SETPLAYLISTPOS` wird wie im zugehörigen SDK-Kommentar `WM_COMMAND` mi
 
 Der SDK-Kommentar zu `IPC_WRITEPLAYLIST` beschreibt die Speicherung in `winamp.m3u` und auf Unicode-Systemen zusätzlich `winamp.m3u8`. Somit müssen bereits die übergebenen URLs tokenfrei sein. Ein nachträgliches Redigieren von Logs löst dieses Problem nicht.
 
+## Skin-Anbindung
+
+Die geprüfte SDK-Erweiterung `gen_ml/ml_ipc_0313.h` enthält `MLSKINWINDOW`, `ML_IPC_SKINWINDOW` und `MLSKINNEDPOPUP`. Ihre SHA-256 ist `3a1cb197ba4e32ea856af2e3d83b74c12924371863eb38286829551ed0fbfb96`. Dialog, Tabellen und Steuerelemente werden mit `SWS_USESKINCOLORS`, `SWS_USESKINFONT` und `SWS_USESKINCURSORS` registriert. Die Registrierung erfolgt zuerst am Dialog, damit die erforderliche Nachrichtenreflexion vorhanden ist. Laut Header entfernt Winamp die Skin-Unterklasse bei `WM_NCDESTROY` selbst. Kontextmenüs werden über `ML_IPC_TRACKSKINNEDPOPUPEX` angezeigt.
+
+Die getrennte Zielinstallation enthält für die Prüfung auch `gen_ff.dll`, dessen `freeform`-Komponenten und die vorhandenen Skins. Classic, Winamp Modern, Bento und Big Bento wurden tatsächlich geladen und die Ansicht visuell geprüft. Eine Prüfung dieser vier Skins ist keine Aussage über beliebige Drittanbieter-Skins oder alle Schriftgrößen.
+
 ## Lifecycle-Grenzen
 
 Beim Beenden werden eigene Ansichten zerstört, Hintergrundaufträge abgebrochen, deren Threads beendet und Navigationsknoten entfernt. Es gibt keine Arbeit in `DllMain`, keine globale Winamp-Fensterunterklasse und keinen unbegrenzt weiterlaufenden Dienst. Netzwerk-Callbacks müssen vor dem Entladen der DLL beendet sein.

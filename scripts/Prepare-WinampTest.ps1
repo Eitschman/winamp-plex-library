@@ -17,16 +17,19 @@ New-Item -ItemType Directory -Path $target | Out-Null
 # Keine Benutzerkonfiguration übernehmen; nur vorhandene Programmdateien kopieren.
 Get-ChildItem -LiteralPath $source -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'winamp.exe' } |
     Copy-Item -Destination $target
-foreach ($directory in @('Shared', 'System')) {
+foreach ($directory in @('Shared', 'System', 'Skins')) {
     $directorySource = Join-Path $source $directory
     if (Test-Path -LiteralPath $directorySource -PathType Container) { Copy-Item -LiteralPath $directorySource -Destination $target -Recurse }
 }
 $plugins = New-Item -ItemType Directory -Path (Join-Path $target 'Plugins')
-foreach ($name in @('gen_ml.dll', 'in_mp3.dll', 'in_flac.dll', 'in_mp4.dll', 'in_vorbis.dll', 'in_wave.dll', 'out_ds.dll')) {
+foreach ($name in @('gen_ml.dll', 'gen_ff.dll', 'in_mp3.dll', 'in_flac.dll', 'in_mp4.dll', 'in_vorbis.dll', 'in_wave.dll', 'out_ds.dll')) {
     $pluginSource = Join-Path $source ('Plugins\' + $name)
     if (-not (Test-Path -LiteralPath $pluginSource -PathType Leaf)) { throw ('Erforderliches Test-Plugin fehlt: ' + $name) }
     Copy-Item -LiteralPath $pluginSource -Destination $plugins.FullName
 }
+$freeform = Join-Path $source 'Plugins\freeform'
+if (-not (Test-Path -LiteralPath $freeform -PathType Container)) { throw 'Modern-Skin-Komponenten fehlen.' }
+Copy-Item -LiteralPath $freeform -Destination $plugins.FullName -Recurse
 Copy-Item -LiteralPath $plugin -Destination $plugins.FullName
 $settings = New-Item -ItemType Directory -Path (Join-Path $target 'settings')
 $paths = "[Winamp]`r`ninidir=$($settings.FullName)`r`nclass=WinampPlexTest`r`n"
