@@ -2,6 +2,7 @@
 #include "plex/http_stream.h"
 #include <array>
 #include <stdexcept>
+#include <algorithm>
 
 namespace plex {
 namespace {
@@ -85,7 +86,7 @@ nlohmann::json PlexAuth::get_server(const std::string& origin, const std::string
 }
 
 std::vector<PlexServer> parse_servers(const nlohmann::json& response) {
-    if (!response.is_array()) throw std::invalid_argument("resources_shape");
+    if (!response.is_array() || response.size() > 64) throw std::invalid_argument("resources_shape");
     std::vector<PlexServer> result;
     for (const auto& resource : response) {
         const auto provides = resource.value("provides", std::string{});
@@ -95,7 +96,11 @@ std::vector<PlexServer> parse_servers(const nlohmann::json& response) {
         server.name = resource.at("name").get<std::string>();
         server.access_token = resource.at("accessToken").get<std::string>();
         validate_token(server.access_token);
+        validate_token(server.identifier);
+        if (!resource.at("connections").is_array() || resource.at("connections").size() > 32)
+            throw std::invalid_argument("connections_shape");
         for (const auto& connection : resource.at("connections")) {
+            if (server.connections.size() >= 32) throw std::invalid_argument("connections_limit");
             const auto uri = connection.at("uri").get<std::string>();
             // Unsichere Verbindungen werden dem Benutzer nicht als sichere Wahl angeboten.
             if (uri.substr(0, 8) != "https://") continue;
@@ -105,6 +110,20 @@ std::vector<PlexServer> parse_servers(const nlohmann::json& response) {
         result.push_back(std::move(server));
     }
     return result;
+}
+
+// Die Erreichbarkeit wird im Hintergrund geprüft. Lokal hat Vorrang vor Fernzugriff
+// und Relay; eine fehlerhafte Authentifizierung löst keine weitere Auswahl aus.
+PlexConnection select_server_connection(const PlexServer& server, const std::function<bool(const PlexConnection&)>& reachable) {
+    if (server.connections.size() > 32) throw std::invalid_argument("connections_limit");
+    auto connections = server.connections;
+    const auto rank = [](const PlexConnection& connection) { return connection.relay ? 2 : connection.local ? 0 : 1; };
+    std::stable_sort(connections.begin(), connections.end(), [&](const auto& left, const auto& right) { return rank(left) < rank(right); });
+    for (const auto& connection : connections) {
+        if (!parse_server_address(connection.uri).secure) throw std::invalid_argument("https_required");
+        if (reachable(connection)) return connection;
+    }
+    throw HttpError(ERROR_NOT_CONNECTED);
 }
 
 std::vector<PlexLibrary> parse_libraries(const nlohmann::json& response) {

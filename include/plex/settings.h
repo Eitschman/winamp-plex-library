@@ -2,8 +2,20 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace plex {
+struct PlexConnection {
+    std::string uri;
+    bool local = false;
+    bool relay = false;
+};
+struct PlexServer {
+    std::string identifier;
+    std::string name;
+    std::string access_token;
+    std::vector<PlexConnection> connections;
+};
 struct PlexConnectionSettings {
     std::string client_identifier;
     std::string server_identifier;
@@ -12,7 +24,10 @@ struct PlexConnectionSettings {
     std::string server_token;
     std::string library_identifier;
     std::string library_title;
-    std::string language;
+    bool cache_enabled = true;
+    std::string preferred_origin;
+    std::vector<PlexConnection> server_connections;
+    std::vector<PlexServer> known_servers;
 };
 std::filesystem::path settings_path();
 PlexConnectionSettings load_settings(const std::filesystem::path& path);

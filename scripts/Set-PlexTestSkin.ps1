@@ -4,6 +4,28 @@ Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
 $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq 'WinampPlexTest'
 if (-not $main) { throw 'Hauptfenster der isolierten Testkopie fehlt.' }
+if ($Skin -eq 'Classic') {
+    # Die eingebaute Classic-Auswahl ist kein Skin-Verzeichnis. Winamps eigener
+    # Auswahldialog setzt zusätzlich die nötigen Skin-Modus-Einstellungen.
+    [void][PlexNative]::PostMessage($main.Handle, 1024, [IntPtr]40, [IntPtr]380)
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $preferences = @([PlexNative]::Windows($process.Id) | Where-Object Text -match '^Winamp (Preferences|Einstellungen)$')
+        if ($preferences.Count -eq 1) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($preferences.Count -ne 1) { throw 'Winamps Skin-Auswahl wurde nicht geöffnet.' }
+    $list = [PlexNative]::Children($preferences[0].Handle) | Where-Object ControlId -eq 1122
+    if (-not $list -or [PlexNative]::ListItemText($list.Handle, 0) -notmatch '^Winamp (Classic|Klassisch)$') {
+        throw 'Eingebaute Classic-Auswahl wurde nicht gefunden.'
+    }
+    [void][PlexNative]::Query($list.Handle, 390, [IntPtr]::Zero, [IntPtr]::Zero)
+    [void][PlexNative]::PostMessage([PlexNative]::GetParent($list.Handle), 273, [IntPtr](1122 + 65536), [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 500
+    [void][PlexNative]::PostMessage($preferences[0].Handle, 273, [IntPtr]1, [IntPtr]::Zero)
+    Write-Output 'Eingebauter Classic-Skin in Winamps nativer Auswahl gewählt.'
+    return
+}
 # IPC_SETSKINW erwartet einen Zeiger im Zielprozess, keinen lokalen PowerShell-Zeiger.
 Add-Type -TypeDefinition @'
 using System;
@@ -36,7 +58,7 @@ public static class PlexTestSkin {
   }
 }
 '@
-$path = if ($Skin -eq 'Classic') { '' } else { Join-Path (Split-Path $process.Path -Parent) ('Skins\' + $Skin) }
+$path = Join-Path (Split-Path $process.Path -Parent) ('Skins\' + $Skin)
 if ($path -and -not (Test-Path -LiteralPath $path -PathType Container)) { throw 'Skin fehlt in der Testkopie.' }
 [PlexTestSkin]::Set($process.Id, $main.Handle, $path)
 Write-Output ('Skin-Wechsel in der Testkopie angefordert: ' + $Skin)

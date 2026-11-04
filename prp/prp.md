@@ -5,6 +5,8 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 ## Verbindliche Projektentscheidungen
 
 - Die Plex-Anmeldung erfolgt wie bei Plexa im Browser über den Plex-PIN-Anmeldevorgang. Der Benutzer gibt sein Passwort ausschließlich bei Plex ein. Eine manuelle Token-Eingabe gehört nicht zum regulären Ablauf.
+- Einstellungen öffnen zunächst ohne Browseranmeldung. Die normale Ansicht enthält Anmeldung, Server und Musikbibliothek; feste Verbindungswege und eine manuelle HTTPS-Adresse stehen unter „Erweitert“. Erreichbare lokale HTTPS-Verbindungen werden vor Fernzugriff und Relay gewählt. Der tatsächliche Zugangsweg wird angezeigt.
+- Die Sprache folgt ausschließlich dem aktiven Winamp-Sprachpaket. Es gibt weder in der Bibliotheksansicht noch in den Einstellungen eine eigene Sprachauswahl. Deutsch und Englisch sind enthalten.
 - Plexa dient als Referenz für Anmeldung, Serverauswahl und Musikzugriff. Winamp übernimmt die Wiedergabe. Alexa und ein dauerhaft laufender externer Dienst gehören nicht zur Architektur.
 - Plex-Tokens bleiben technisch für API-Zugriffe erforderlich. Sie werden nach der Browserfreigabe vom Plugin bezogen, mit Windows DPAPI gespeichert und ausschließlich als HTTP-Header an den ausgewählten, geprüften Server übertragen.
 - Winamp erhält ausschließlich zeitlich begrenzte Loopback-URLs ohne Plex-Token. Der lokale Proxy verwendet Direct Play und prüft TLS-Zertifikate für den Plex-Zugriff.
@@ -239,7 +241,7 @@ Speichere:
 - ausgewählte Musikbibliothek
 - UI-Präferenzen
 - Cache-Einstellungen
-- Sprache
+- Die Sprache aus dem aktiven Winamp-Sprachpaket übernehmen; keine eigene Spracheinstellung speichern.
 
 Speichere Zugangsdaten mit Windows DPAPI oder einem gleichwertigen Windows-Mechanismus.
 
@@ -324,7 +326,7 @@ Die Suche darf die Benutzeroberfläche nicht blockieren.
 
 Stelle einen Einstellungsdialog bereit mit:
 
-- Plex-Serveradresse
+- Server auswählen; feste Verbindung und Plex-HTTPS-Adresse unter „Erweitert“.
 - Anmeldung mit Plex im Browser sowie Verbindungsstatus
 - Verbindung testen
 - Musikbibliothek auswählen

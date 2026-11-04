@@ -68,6 +68,13 @@ int main() {
             loader.submit(1, {"43", "Album without cover", "Artist", "", 2026, 3}, {}, "test");
             const auto restored = wait();
             check(restored.generation == 3 && restored.row == 1 && !restored.error && restored.track_count == 3U, "worker_recovers_for_new_selection");
+            loader.submit(1, {"43", "Cached album", "Artist", "", 2026, 9}, {}, "test");
+            check(wait().track_count == 3U, "cache_reuses_metadata");
+            plex::PlexConnectionSettings uncached; uncached.cache_enabled = false;
+            loader.submit(1, {"43", "Uncached album", "Artist", "", 2026, 9}, uncached, "test");
+            check(wait().track_count == 9U, "disabled_cache_uses_current_metadata");
+            loader.submit(1, {"43", "Cached album", "Artist", "", 2026, 11}, {}, "test");
+            check(wait().track_count == 3U, "disabled_cache_does_not_replace_metadata");
         }
         DestroyWindow(window);
         CoUninitialize();

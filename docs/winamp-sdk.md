@@ -1,5 +1,9 @@
 # Winamp-Schnittstellen
 
+## Sprache des Hosts
+
+Die Oberfläche übernimmt die aktive Winamp-Sprache über `IPC_GETLANGUAGEPACKINSTANCE` und `MAKEWPARAM(5, LANG_LANG_CODE)`. Der unveränderte SDK-5.55-Header `Winamp/wa_ipc.h`, Zeilen 1648 bis 1665, dokumentiert diesen Vertrag seit Winamp 5.51. Die Zielversion liefert damit `de` beziehungsweise `en`. Deutsch verwendet die deutschen Plugin-Texte; andere Sprachcodes verwenden die englischen Texte. Fehlt die Schnittstelle, schlägt die Initialisierung ausdrücklich fehl. Eine Windows-Sprache oder gespeicherte Plugin-Sprachauswahl wird nicht ersatzweise verwendet. Das SDK-Testprogramm prüft Deutsch, Englisch und eine fehlende Hostantwort; die echte Testkopie wurde mit englischem Winamp und aktiviertem deutschem Sprachpaket geprüft.
+
 ## Herkunft und unveränderte Header
 
 Verwendet wird [SDK 5.55](https://download.nullsoft.com/winamp/plugin-dev/WA5.55_SDK.exe). CMake prüft die Header vor dem Build:

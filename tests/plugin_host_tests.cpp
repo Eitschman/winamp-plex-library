@@ -15,9 +15,54 @@ bool deny_navigation = false;
 unsigned child_count = 0;
 unsigned skin_dialogs = 0, skin_lists = 0;
 MockServices services;
+unsigned settings_case = 0;
+bool settings_valid = false;
+bool german_host = true;
+bool deny_language = false;
+bool diagnostics_requested = false, diagnostics_checked = false, diagnostics_valid = false;
+BOOL CALLBACK inspect_settings(HWND dialog, LPARAM) {
+    const auto frame = dialog;
+    dialog = GetDlgItem(dialog, 1081);
+    if (const auto diagnostic = GetDlgItem(dialog, 1084)) {
+        wchar_t information[2049]{}; GetWindowTextW(diagnostic, information, 2049);
+        diagnostics_valid = wcsstr(information, L"Windows DPAPI") && wcsstr(information, L"HTTP:") &&
+                            !wcsstr(information, L"https://") && !wcsstr(information, L"X-Plex-Token");
+        diagnostics_checked = true;
+        PostMessageW(frame, WM_COMMAND, IDCANCEL, 0); return FALSE;
+    }
+    if (!GetDlgItem(dialog, 1078)) return TRUE;
+    wchar_t status[160]{};
+    GetDlgItemTextW(dialog, 1004, status, 160);
+    const auto address = GetDlgItem(dialog, 1074);
+    settings_valid = IsWindowEnabled(address) && !(GetWindowLongPtrW(address, GWL_STYLE) & ES_READONLY) &&
+                     (((settings_case == 0 || settings_case == 3) && diagnostics_requested) || !(GetWindowLongPtrW(address, GWL_STYLE) & WS_VISIBLE)) &&
+                     (wcscmp(status, L"Nicht bei Plex angemeldet.") == 0 || wcscmp(status, L"Not signed in to Plex.") == 0);
+    if (!(GetWindowLongPtrW(address, GWL_STYLE) & WS_VISIBLE)) SendMessageW(dialog, WM_COMMAND, 1078, 0);
+    settings_valid = settings_valid && (GetWindowLongPtrW(address, GWL_STYLE) & WS_VISIBLE);
+    if ((settings_case == 0 || settings_case == 3) && !diagnostics_checked) {
+        if (!diagnostics_requested) { diagnostics_requested = true; PostMessageW(dialog, WM_COMMAND, 1073, 0); }
+        return FALSE;
+    }
+    if (settings_case == 1) {
+        SetWindowTextW(address, L"https://synthetic.example:32400");
+        SendDlgItemMessageW(dialog, 1071, CB_SETCURSEL, 1, 0);
+    } else if (settings_case == 2) {
+        wchar_t value[160]{}; GetWindowTextW(address, value, 160);
+        settings_valid = settings_valid && wcscmp(value, L"https://synthetic.example:32400") == 0 &&
+                         SendDlgItemMessageW(dialog, 1071, CB_GETCURSEL, 0, 0) == 1;
+    }
+    PostMessageW(dialog, WM_COMMAND, settings_case == 1 ? IDOK : IDCANCEL, 0);
+    return FALSE;
+}
+VOID CALLBACK inspect_settings_timer(HWND, UINT, UINT_PTR, DWORD) {
+    EnumThreadWindows(GetCurrentThreadId(), inspect_settings, 0);
+}
 LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operation) {
+    if (message == WM_WA_IPC && operation == IPC_GETLANGUAGEPACKINSTANCE && parameter == MAKEWPARAM(5, LANG_LANG_CODE))
+        return deny_language ? 0 : reinterpret_cast<LRESULT>(german_host ? L"de" : L"en");
     if (message == WM_WA_IPC && operation == IPC_GET_API_SERVICE) return reinterpret_cast<LRESULT>(&services);
     if (message == WM_ML_IPC) {
+        if (operation == ML_IPC_UNSKINWINDOW) return IsWindow(reinterpret_cast<HWND>(parameter));
         if (operation == ML_IPC_SKINWINDOW) {
             const auto* skin = reinterpret_cast<const MLSKINWINDOW*>(parameter);
             if (!skin || !IsWindow(skin->hwndToSkin) || !(skin->style & SWS_USESKINCOLORS) || !(skin->style & SWS_USESKINFONT)) return FALSE;
@@ -58,8 +103,16 @@ int wmain(int count, wchar_t** arguments) {
         const auto window = CreateWindowW(window_class.lpszClassName, L"SDK ABI test host", WS_OVERLAPPEDWINDOW,
                                           0, 0, 800, 600, nullptr, nullptr, window_class.hInstance, nullptr);
         check(window != nullptr, "create_host");
+        // Windows erzeugt beim ersten Eingabefokus pro Thread eigene IME-Fenster.
+        // Diese Betriebssystemressourcen gehören nicht zum Plugin-Lebenszyklus.
+        const auto input = CreateWindowW(L"EDIT", L"", WS_CHILD, 0, 0, 100, 20, window, nullptr, window_class.hInstance, nullptr);
+        check(input != nullptr, "initialize_input_context");
+        SetFocus(input); SetFocus(window); DestroyWindow(input);
         const auto baseline = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+        const auto gdi_baseline = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+        DWORD warm_gdi = 0;
         for (int iteration = 0; iteration < 100; ++iteration) {
+            german_host = iteration % 2 == 0;
             const auto library = LoadLibraryW(arguments[1]);
             check(library != nullptr, "load_plugin");
             const auto get = reinterpret_cast<winampMediaLibraryPlugin* (__cdecl*)()>(GetProcAddress(library, "winampGetMediaLibraryPlugin"));
@@ -69,6 +122,9 @@ int wmain(int count, wchar_t** arguments) {
             plugin->hwndWinampParent = window;
             plugin->hwndLibraryParent = window;
             plugin->hDllInstance = library;
+            deny_language = true;
+            check(plugin->init() != 0, "missing_host_language_rejected");
+            deny_language = false;
             deny_navigation = true;
             check(plugin->init() != 0, "failed_navigation_init");
             deny_navigation = false;
@@ -78,16 +134,56 @@ int wmain(int count, wchar_t** arguments) {
             const auto view = reinterpret_cast<HWND>(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41000, reinterpret_cast<INT_PTR>(window), 0));
             check(IsWindow(view) && GetParent(view) == window, "plugin_view");
             check(GetDlgItem(view, 1002) == nullptr && IsWindow(GetDlgItem(view, 1050)), "catalog_without_manual_token_test_control");
+            wchar_t caption[80]{}; GetDlgItemTextW(view, 1007, caption, 80);
+            check(wcscmp(caption, german_host ? L"Einstellungen..." : L"Settings...") == 0 && !GetDlgItem(view, 1005), "language_inherited_from_winamp_without_selector");
+            if (iteration == 0) {
+                for (settings_case = 0; settings_case < 3; ++settings_case) {
+                    settings_valid = false;
+                    const auto timer = SetTimer(window, 1, 25, inspect_settings_timer);
+                    check(timer != 0, "settings_inspection_timer");
+                    plugin->MessageProc(ML_MSG_CONFIG, reinterpret_cast<INT_PTR>(window), 0, 0);
+                    KillTimer(window, timer);
+                    check(settings_valid, "settings_without_automatic_auth_and_advanced_preferences");
+                    if (settings_case == 0) check(diagnostics_checked && diagnostics_valid, "skinned_diagnostics_without_credentials");
+                    if (settings_case == 0) check(!std::filesystem::exists(configuration), "settings_cancel_without_write");
+                }
+            } else {
+                settings_case = 3;
+                diagnostics_requested = diagnostics_checked = diagnostics_valid = false;
+                settings_valid = false;
+                const auto timer = SetTimer(window, 1, 25, inspect_settings_timer);
+                check(timer != 0, "repeat_settings_timer");
+                plugin->MessageProc(ML_MSG_CONFIG, reinterpret_cast<INT_PTR>(window), 0, 0);
+                KillTimer(window, timer);
+                check(settings_valid && diagnostics_checked && diagnostics_valid, "repeat_settings_and_diagnostics");
+            }
             if (iteration % 2 == 0) DestroyWindow(view);
             plugin->quit();
             check(!services.registered && services.memory.memory.allocations == 0, "artwork_service_released");
             check(!IsWindow(view), "view_destroyed_on_quit");
             check(FreeLibrary(library) != 0, "unload_plugin");
+            // Die erste vollständige Runde initialisiert gemeinsame Windows-Control-
+            // Ressourcen. Weitere 99 Lade- und Dialogrunden dürfen nichts akkumulieren.
+            if (iteration == 0) warm_gdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+            else check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == warm_gdi, "no_gdi_growth_across_settings_cycles");
+            if (iteration == 0 || iteration == 49 || iteration == 99)
+                std::cerr << "GDI objects after cycle " << iteration + 1 << ": " << GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) << ", baseline=" << gdi_baseline << '\n';
         }
         check(additions == 500 && removals == 100, "balanced_navigation");
-        check(skin_dialogs == 100 && skin_lists == 100, "native_skin_registration");
-        check(GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) == baseline, "balanced_user_handles");
+        check(skin_dialogs == 302 && skin_lists == 100, "native_skin_registration");
+        const auto handles = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+        if (handles != baseline) {
+            std::cerr << "USER objects: before=" << baseline << ", after=" << handles << '\n';
+            EnumThreadWindows(GetCurrentThreadId(), [](HWND handle, LPARAM) -> BOOL {
+                wchar_t type[100]{}; GetClassNameW(handle, type, 100);
+                std::wcerr << L"Remaining window: " << type << L'\n'; return TRUE;
+            }, 0);
+        }
+        check(handles == baseline, "balanced_user_handles");
+        check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == warm_gdi, "balanced_gdi_handles");
         DestroyWindow(window);
+        check(std::filesystem::remove(configuration / L"connection.dpapi"), "settings_test_file_cleanup");
+        check(std::filesystem::remove(configuration), "settings_test_directory_cleanup");
         std::cout << "100 load/init/view/quit/unload cycles passed; failed init and foreign nodes rejected\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }

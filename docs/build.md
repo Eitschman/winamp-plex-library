@@ -48,7 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Prepare-WinampTest.p
   -WinampDirectory "C:\tatsächlich-geprüfter-Pfad\Winamp"
 ```
 
-Die Kopie liegt unter `.local/winamp-test`. Ihre `paths.ini` verwendet ein eigenes `settings`-Verzeichnis und die Fensterklasse `WinampPlexTest`. Programmdateien, Systemkomponenten, Audio-Plugins sowie `gen_ff.dll`, `freeform` und vorhandene Skins werden für die Classic-/Modern-Prüfung übernommen. Die vorhandene Benutzerkonfiguration wird nicht kopiert. Keine Dateizuordnungen einrichten und keinen Test als Administrationsbedarf interpretieren.
+Die Kopie liegt unter `.local/winamp-test`. Ihre `paths.ini` verwendet ein eigenes `settings`-Verzeichnis und die Fensterklasse `WinampPlexTest`. Programmdateien, Systemkomponenten, Audio-Plugins sowie `gen_ff.dll`, `freeform`, vorhandene Skins und Sprachpakete unter `Lang` werden für die Skin- und Sprachprüfung übernommen. Die vorhandene Benutzerkonfiguration wird nicht kopiert. Sprache und Skin ausschließlich in der Testkopie auswählen. Keine Dateizuordnungen einrichten und keinen Test als Administrationsbedarf interpretieren.
 
 Der Testhost setzt ausschließlich für seinen Prozess `WINAMP_PLEX_CONFIG_DIRECTORY` auf einen absoluten temporären Pfad. Dadurch liest er keine echte Plugin-Verbindung und sendet keine echten Plex-Anfragen. Relative Umleitungen werden abgewiesen. Im regulären Betrieb bleibt die DPAPI-Datei unter `%LOCALAPPDATA%/WinampPlexLibrary`.
 

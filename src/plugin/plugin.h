@@ -11,7 +11,6 @@
 namespace plex::plugin {
 winampMediaLibraryPlugin& descriptor() noexcept;
 bool german() noexcept;
-void set_german(bool enabled) noexcept;
 void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork = {});
 void stop_playback() noexcept;
 ProxyStatus playback_status() noexcept;
@@ -19,8 +18,10 @@ bool playback_active() noexcept;
 HWND create_view(HWND parent, BrowseKind kind = BrowseKind::artists) noexcept;
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail);
 void destroy_views() noexcept;
-void show_login(HWND parent) noexcept;
+bool show_settings(HWND parent) noexcept;
 PlexConnectionSettings connection_settings();
+PlexConnectionSettings request_connection_settings();
 void update_connection_settings(PlexConnectionSettings settings);
 void clear_library_cache();
+void skin_library_dialog(HWND dialog);
 }

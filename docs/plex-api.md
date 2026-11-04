@@ -10,8 +10,8 @@ Primärquelle ist die [offizielle PMS-API](https://developer.plex.tv/pms/). Die 
 4. `GET /api/v2/pins/{id}` bei `plex.tv` etwa einmal pro Sekunde abfragen, bis `authToken` gesetzt ist, die Anforderung abläuft oder der Benutzer abbricht.
 5. Mit dem Account-Token `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0` abfragen.
 6. Nur Ressourcen mit `provides=server` anbieten. Server besitzen `clientIdentifier`, `name`, `accessToken` und `connections[]`. Der Server-Token kann sich vom Account-Token unterscheiden.
-7. Eine konkrete HTTPS-Verbindung auswählen und deren `/identity` mit dem Ressourcen-Token prüfen. `machineIdentifier` muss zur ausgewählten Serverressource passen.
-8. Serverzugang und Musikbibliothek mit Windows DPAPI speichern. Der Account-Token wird nach der Ressourcenermittlung nicht dauerhaft benötigt.
+7. Die von Plex gelieferten HTTPS-Verbindungen im Hintergrund auf Erreichbarkeit prüfen, lokal vor direktem Fernzugriff und Relay. `/identity` wird ohne Token abgefragt; `machineIdentifier` muss zur ausgewählten Serverressource passen. Erst danach wird der Ressourcen-Token für `/library/sections` verwendet. Eine manuelle Origin wird mit demselben Verfahren geprüft.
+8. Serverprofile, Verbindungen, ausgewählten Zugang und Musikbibliothek mit Windows DPAPI speichern. Der Account-Token wird nach der Ressourcenermittlung nicht dauerhaft benötigt. Eine erneute Browseranmeldung erfolgt ausschließlich über den Anmeldebutton.
 
 Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und Token-Erneuerung. Der Prototyp verwendet den ebenfalls offiziell beschriebenen starken PIN-Ablauf. Abgelaufene oder widerrufene Serverzugänge erfordern eine sichtbare erneute Anmeldung, keinen stillen Wechsel auf andere Tokens.
 

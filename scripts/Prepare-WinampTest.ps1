@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $target | Out-Null
 # Keine Benutzerkonfiguration übernehmen; nur vorhandene Programmdateien kopieren.
 Get-ChildItem -LiteralPath $source -File | Where-Object { $_.Extension -eq '.dll' -or $_.Name -eq 'winamp.exe' } |
     Copy-Item -Destination $target
-foreach ($directory in @('Shared', 'System', 'Skins')) {
+foreach ($directory in @('Shared', 'System', 'Skins', 'Lang')) {
     $directorySource = Join-Path $source $directory
     if (Test-Path -LiteralPath $directorySource -PathType Container) { Copy-Item -LiteralPath $directorySource -Destination $target -Recurse }
 }

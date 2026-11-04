@@ -1,23 +1,14 @@
 #pragma once
 
 #include "plex/security.h"
+#include "plex/settings.h"
 #include <windows.h>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace plex {
-struct PlexConnection {
-    std::string uri;
-    bool local = false;
-    bool relay = false;
-};
-struct PlexServer {
-    std::string identifier;
-    std::string name;
-    std::string access_token;
-    std::vector<PlexConnection> connections;
-};
 struct PlexLibrary { std::string identifier; std::string title; };
 struct PinRequest { std::string identifier; std::string code; std::string auth_url; int expires_in = 0; };
 
@@ -36,4 +27,5 @@ private:
 };
 std::vector<PlexServer> parse_servers(const nlohmann::json& response);
 std::vector<PlexLibrary> parse_libraries(const nlohmann::json& response);
+PlexConnection select_server_connection(const PlexServer& server, const std::function<bool(const PlexConnection&)>& reachable);
 }

@@ -24,6 +24,21 @@ public static class PlexNative {
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, string second);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr first, IntPtr second, uint flags, uint timeout, out IntPtr result);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr first, StringBuilder second, uint flags, uint timeout, out IntPtr result);
+  public static string ControlText(IntPtr window) {
+    var buffer = new StringBuilder(2049); IntPtr result;
+    if(SendMessageTimeout(window,13,(IntPtr)buffer.Capacity,buffer,2,3000,out result)==IntPtr.Zero)
+      throw new InvalidOperationException("Control text timeout");
+    return buffer.ToString();
+  }
+  public static string ListItemText(IntPtr window, int index) {
+    int length = QueryInt32(window,394,(IntPtr)index,IntPtr.Zero);
+    if(length < 0 || length > 2048) throw new InvalidOperationException("Invalid list text length");
+    var buffer = new StringBuilder(length+1); IntPtr result;
+    if(SendMessageTimeout(window,393,(IntPtr)index,buffer,2,3000,out result)==IntPtr.Zero)
+      throw new InvalidOperationException("List text timeout");
+    return buffer.ToString();
+  }
   public static IntPtr Query(IntPtr window, uint message, IntPtr first, IntPtr second) {
     IntPtr result;
     if(window==IntPtr.Zero || SendMessageTimeout(window,message,first,second,2,3000,out result)==IntPtr.Zero)
@@ -37,8 +52,29 @@ public static class PlexNative {
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongW")] public static extern int WindowStyle(IntPtr window, int index);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window, int left, int top, int width, int height, bool repaint);
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] struct GuiThreadInfo {
+    public int Size; public uint Flags;
+    public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+    public Rect CaretRectangle;
+  }
+  [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo information);
+  public static int FocusedControl(IntPtr window) {
+    uint owner; var thread=GetWindowThreadProcessId(window,out owner);
+    var information = new GuiThreadInfo { Size=Marshal.SizeOf(typeof(GuiThreadInfo)) };
+    if(!GetGUIThreadInfo(thread,ref information)) throw new InvalidOperationException("GUI focus unavailable");
+    return GetDlgCtrlID(information.Focus);
+  }
+  public static IntPtr FocusedWindow(IntPtr window) {
+    uint owner; var thread=GetWindowThreadProcessId(window,out owner);
+    var information = new GuiThreadInfo { Size=Marshal.SizeOf(typeof(GuiThreadInfo)) };
+    if(!GetGUIThreadInfo(thread,ref information)) throw new InvalidOperationException("GUI focus unavailable");
+    return information.Focus;
+  }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
   [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);

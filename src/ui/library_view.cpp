@@ -28,6 +28,7 @@ const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de
 void skin_view(HWND dialog) {
     const auto library = descriptor().hwndLibraryParent;
     constexpr UINT style = SWS_USESKINCOLORS | SWS_USESKINFONT | SWS_USESKINCURSORS;
+    if (!(GetWindowLongPtrW(dialog, GWL_STYLE) & WS_CHILD)) throw std::invalid_argument("skin_requires_embedded_dialog");
     MLSKINWINDOW window{dialog, SKINNEDWND_TYPE_DIALOG, style};
     if (!MLSkinWindow(library, &window)) throw std::runtime_error("skin_dialog");
     for (auto child = GetWindow(dialog, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
@@ -200,7 +201,7 @@ struct View {
             if (!album && !track) continue;
             const PlexAlbum inherited = track ? PlexAlbum{track->album_identifier.empty() ? track->identifier : track->album_identifier,
                 track->album, track->artist, track_artwork(*track), track->year, 1} : PlexAlbum{};
-            artwork->submit(static_cast<std::size_t>(index), album ? *album : inherited, connection_settings(),
+            artwork->submit(static_cast<std::size_t>(index), album ? *album : inherited, request_connection_settings(),
                             std::to_string(cache_scope.load()) + (track ? "|track" : "|album"));
             requested_artwork[static_cast<std::size_t>(index)] = true;
         }
@@ -258,9 +259,9 @@ struct View {
                 }
                 if (job.action == Action::browse) {
                     const auto key = std::to_string(job.cache_scope) + "|" + job.settings.server_identifier + "|" + catalog_path(job.query);
-                    const auto cached = cache.get(key);
+                    const auto cached = job.settings.cache_enabled ? cache.get(key) : std::nullopt;
                     result.page = cached ? *cached : client.page(job.query);
-                    if (!cached) cache.put(key, result.page);
+                    if (!cached && job.settings.cache_enabled) cache.put(key, result.page);
                 } else {
                     for (const auto& item : job.selected) {
                         if (std::holds_alternative<PlexTrack>(item)) result.tracks.push_back(std::get<PlexTrack>(item));
@@ -310,7 +311,7 @@ struct View {
         EnableWindow(list, !busy);
     }
     void submit(Job job) {
-        job.settings = connection_settings(); job.query = current.query;
+        job.settings = request_connection_settings(); job.query = current.query;
         job.cache_scope = cache_scope.load();
         if (job.settings.server_origin.empty() || job.settings.library_identifier.empty()) {
             SetDlgItemTextW(dialog, IDC_STATUS, text(L"Bitte mit Plex anmelden und eine Musikbibliothek auswählen.", L"Sign in with Plex and choose a music library."));
@@ -443,8 +444,7 @@ void layout(HWND dialog) {
     };
     place(IDC_PAGE_TITLE, padding, vertical(7), narrow ? width - horizontal(188) : horizontal(70), vertical(13));
     const int library_y = narrow ? vertical(25) : vertical(5);
-    place(IDC_LIBRARY, narrow ? padding : horizontal(82), library_y, narrow ? width - 2 * padding : width - horizontal(270), vertical(100));
-    place(IDC_LANGUAGE, width - horizontal(182), vertical(5), horizontal(68), vertical(100));
+    place(IDC_LIBRARY, narrow ? padding : horizontal(82), library_y, narrow ? width - 2 * padding : width - horizontal(196), vertical(100));
     place(IDC_LOGIN, width - horizontal(108), vertical(5), horizontal(102), vertical(15));
     const int search_y = narrow ? vertical(45) : vertical(27);
     place(IDC_BACK, padding, search_y, horizontal(48), vertical(15));
@@ -462,6 +462,7 @@ void layout(HWND dialog) {
 }
 
 void clear_library_cache() { clear_cache(); }
+void skin_library_dialog(HWND dialog) { skin_view(dialog); }
 
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) {
     if (message == artwork_diagnostic_message) {
@@ -472,9 +473,6 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
     if (message == WM_INITDIALOG) {
         auto created = std::make_unique<View>(dialog, static_cast<BrowseKind>(detail));
         view = created.get(); SetWindowLongPtrW(dialog, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(view)); created.release();
-        SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Deutsch"));
-        SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"English"));
-        SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_SETCURSEL, german() ? 0 : 1, 0);
         SendDlgItemMessageW(dialog, IDC_SEARCH, EM_SETLIMITTEXT, 1024, 0);
         ListView_SetExtendedListViewStyle(GetDlgItem(dialog, IDC_CATALOG), LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
         const auto settings = connection_settings();
@@ -515,19 +513,16 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             view->current.offsets.pop_back(); view->current.query.offset = view->current.offsets.back(); view->load(); return TRUE;
         }
         if (control == IDC_LOGIN) {
-            show_login(dialog); clear_cache(); view->libraries.clear(); view->history.clear(); view->current = Navigation{};
-            view->current.query.kind = view->root; view->current.caption = kind_title(view->root);
-            view->suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, L""); view->suppress_search = false;
+            const auto previous = connection_settings();
+            if (!show_settings(dialog)) return TRUE;
+            const auto next = connection_settings();
+            clear_cache(); view->libraries.clear();
+            if (previous.server_origin != next.server_origin || previous.library_identifier != next.library_identifier) {
+                view->history.clear(); view->current = Navigation{};
+                view->current.query.kind = view->root; view->current.caption = kind_title(view->root);
+                view->suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, L""); view->suppress_search = false;
+            } else if (view->history.empty()) view->current.caption = kind_title(view->root);
             view->localize(); view->load(); return TRUE;
-        }
-        if (control == IDC_LANGUAGE && HIWORD(parameter) == CBN_SELCHANGE) {
-            set_german(SendDlgItemMessageW(dialog, IDC_LANGUAGE, CB_GETCURSEL, 0, 0) == 0);
-            update_connection_settings(connection_settings());
-            if (view->history.empty()) view->current.caption = kind_title(view->root);
-            view->localize(); for (auto& row : view->rows) {
-                const auto image_ready = row.image_ready; row = make_row(row.item); row.image_ready = image_ready;
-            }
-            InvalidateRect(GetDlgItem(dialog, IDC_CATALOG), nullptr, TRUE); return TRUE;
         }
         if (control == IDC_LIBRARY && HIWORD(parameter) == CBN_SELCHANGE) {
             const auto index = SendDlgItemMessageW(dialog, IDC_LIBRARY, CB_GETCURSEL, 0, 0);

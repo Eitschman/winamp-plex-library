@@ -6,7 +6,7 @@ Natives Media-Library-Plugin für Winamp Legacy unter Windows 10/11, x86. Zielve
 
 Der technische Prototyp erzeugt den Plex-Navigationsknoten und eine native Ansicht. Die DLL wurde in einer getrennten Kopie der Zielversion geladen, die Ansicht gerendert und die Testinstanz regulär beendet. Ein SDK-Testhost prüft zusätzlich wiederholtes Laden und Entladen.
 
-Die Anmeldung folgt dem Plexa-Ablauf: **Mit Plex anmelden**, Freigabe im Systembrowser, Server auswählen, HTTPS-Verbindung prüfen und Musikbibliothek auswählen. Das Plugin erhält Tokens intern. Ein Passwort oder eine manuelle Token-Eingabe ist für diesen Ablauf nicht vorgesehen. Der Zugriff wird benutzergebunden mit Windows DPAPI gespeichert.
+Die Anmeldung folgt dem Plexa-Ablauf: **Einstellungen → Mit Plex anmelden**, Freigabe im Systembrowser, Server und Musikbibliothek auswählen. Das Öffnen der Einstellungen startet keine Browseranmeldung. Das Plugin bezieht Tokens intern und speichert den Zugriff benutzergebunden mit Windows DPAPI. Ein Passwort oder eine manuelle Token-Eingabe ist nicht vorgesehen.
 
 Der Wiedergabe-Prototyp übergibt ausschließlich befristete Loopback-URLs an Winamp. WinHTTP übernimmt die Plex-Authentifizierung. Ein echter Plex-MP3-Titel wurde in der Zielversion mit fortschreitender Wiedergabe, Seeking, Länge und Plex-Titel geprüft. Die exportierte Testplaylist enthält keine Plex-Zugangsdaten. Weitere Audioformate und Fehlerfälle benötigen eigene Integrationsprüfungen.
 
@@ -34,7 +34,9 @@ Ergebnis: `build/Release/ml_plex.dll`. SDK-Beschaffung, Debug-Build und Hinweise
 
 Winamp beenden und die DLL manuell in das **tatsächlich von dieser Winamp-Installation verwendete Plugins-Verzeichnis** kopieren. `gen_ml.dll` muss vorhanden sein. Das Plugin gehört neben `gen_ml.dll`, nicht in dessen Datenverzeichnis `Plugins/ml`. Keine automatische Installation in die vorhandene Installation ausführen.
 
-In der Medienbibliothek **Plex → Mit Plex anmelden** öffnen und die Anmeldung bei Plex bestätigen. Die Verbindung wird erst nach einer HTTPS-Anfrage mit normaler Zertifikatsprüfung und einem Vergleich der Serveridentität gespeichert. Bei einer fehlerhaften Verbindung erfolgt kein automatischer Wechsel auf HTTP oder eine andere Verbindung.
+In der Medienbibliothek **Plex → Einstellungen → Mit Plex anmelden** öffnen und die Anmeldung bei Plex bestätigen. Danach Server und Musikbibliothek auswählen und speichern. Die automatische Erreichbarkeitsprüfung bevorzugt eine passende lokale HTTPS-Verbindung, danach direkten Fernzugriff und schließlich Plex Relay. Vor der authentifizierten Bibliotheksabfrage werden Zertifikat und Serveridentität geprüft. Fehlerhafte Authentifizierung startet keine Suche nach anderen Tokens oder Servern.
+
+Unter **Erweitert** stehen eine feste Verbindung und eine eigene HTTPS-Basisadresse zur Verfügung. Eine Änderung muss vor dem Speichern geprüft werden. **Automatisch** hebt die feste Auswahl auf. Die Sprache folgt dem aktiven Winamp-Sprachpaket; eine eigene Sprachauswahl gibt es nicht. Deutsch und Englisch sind enthalten; weitere Winamp-Sprachen verwenden die englischen Plugin-Texte. Der Metadaten- und Cover-Cache lässt sich abschalten und leeren. Diagnoseinformationen enthalten feste Statuscodes und Zähler.
 
 Die eigene Konfiguration liegt unter `%LOCALAPPDATA%/WinampPlexLibrary/connection.dpapi`. Sie enthält keine Klartext-Tokens. Beschädigte oder nicht entschlüsselbare Dateien werden als Fehler behandelt. Die Winamp- und Plex-Konfiguration werden nicht verändert.
 

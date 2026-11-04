@@ -46,7 +46,7 @@ void ArtworkLoader::run() noexcept {
                 const auto cached = std::find_if(cache_.begin(), cache_.end(), [&](const auto& entry) {
                     return entry.key == job.key && std::chrono::steady_clock::now() < entry.expires;
                 });
-                if (cached != cache_.end()) {
+                if (job.settings.cache_enabled && cached != cache_.end()) {
                     auto value = std::move(*cached); cache_.erase(cached);
                     result.pixels = value.pixels; result.track_count = value.track_count; cache_.push_front(std::move(value));
                 } else {
@@ -61,8 +61,10 @@ void ArtworkLoader::run() noexcept {
                         else if (!page.more) result.track_count = static_cast<unsigned>(page.items.size());
                     }
                     result.pixels = fetch_artwork(job.settings, job.album.thumb, stop_);
-                    cache_.push_front({job.key, result.pixels, result.track_count});
-                    if (cache_.size() > 64) cache_.pop_back();
+                    if (job.settings.cache_enabled) {
+                        cache_.push_front({job.key, result.pixels, result.track_count});
+                        if (cache_.size() > 64) cache_.pop_back();
+                    }
                 }
             } catch (const HttpError& error) { result.error = error.code; }
               catch (...) { result.error = ERROR_INVALID_DATA; }

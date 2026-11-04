@@ -16,11 +16,11 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept
 using Metadata = std::unordered_map<std::wstring, std::wstring>;
 struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; };
 void enqueue_items(std::vector<QueueItem> items, bool play);
-char description[] = "Winamp Plex Library 0.1 (Phase 1)";
+char description[] = "Winamp Plex Library 0.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
-bool use_german = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_GERMAN;
+bool use_german = false;
 std::unique_ptr<PlaybackProxy> proxy;
 DWORD ui_thread = 0;
 PlexConnectionSettings settings;
@@ -78,7 +78,10 @@ int initialize() noexcept {
             return 1;
         ui_thread = GetCurrentThreadId();
         settings = load_settings(settings_path());
-        if (!settings.language.empty()) use_german = settings.language == "de";
+        const auto language = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC,
+                                                                                 MAKEWPARAM(5, LANG_LANG_CODE), IPC_GETLANGUAGEPACKINSTANCE));
+        if (reinterpret_cast<UINT_PTR>(language) <= 65535) throw std::runtime_error("host_language_unavailable");
+        use_german = CompareStringOrdinal(language, -1, L"de", -1, TRUE) == CSTR_EQUAL;
         MLTREEITEMW item{};
         item.size = sizeof(item);
         item.title = const_cast<wchar_t*>(L"Plex");
@@ -143,7 +146,7 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
                 if (static_cast<UINT_PTR>(first) == child_ids[index])
                     return reinterpret_cast<INT_PTR>(create_view(reinterpret_cast<HWND>(second), static_cast<BrowseKind>(index)));
         if (type == ML_MSG_CONFIG) {
-            show_login(IsWindow(reinterpret_cast<HWND>(first)) ? reinterpret_cast<HWND>(first) : plugin.hwndLibraryParent);
+            show_settings(IsWindow(reinterpret_cast<HWND>(first)) ? reinterpret_cast<HWND>(first) : plugin.hwndLibraryParent);
             return 1;
         }
     } catch (...) { return 0; }
@@ -153,15 +156,6 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
 
 winampMediaLibraryPlugin& descriptor() noexcept { return plugin; }
 bool german() noexcept { return use_german; }
-void set_german(bool enabled) noexcept {
-    use_german = enabled;
-    const std::array<const wchar_t*, 4> labels = enabled ? std::array{L"Künstler", L"Alben", L"Titel", L"Playlists"} : std::array{L"Artists", L"Albums", L"Tracks", L"Playlists"};
-    for (std::size_t index = 0; index < child_ids.size(); ++index) if (child_ids[index]) {
-        MLTREEITEMINFOW information{}; information.item.size = sizeof(information.item); information.item.id = child_ids[index];
-        information.item.title = const_cast<wchar_t*>(labels[index]); information.mask = MLTI_TEXT;
-        SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, reinterpret_cast<WPARAM>(&information), ML_IPC_TREEITEM_SETINFOW);
-    }
-}
 
 namespace {
 void enqueue_items(std::vector<QueueItem> items, bool play) {
@@ -253,11 +247,17 @@ void stop_playback() noexcept {
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
 bool playback_active() noexcept { return proxy != nullptr; }
 PlexConnectionSettings connection_settings() { return settings; }
+// Hintergrundanfragen benötigen nur den ausgewählten Zugang, keine weiteren
+// Server-Tokens oder Kopien aller gespeicherten Verbindungen pro Coverauftrag.
+PlexConnectionSettings request_connection_settings() {
+    return {settings.client_identifier, settings.server_identifier, settings.server_origin, settings.server_name,
+            settings.server_token, settings.library_identifier, settings.library_title, settings.cache_enabled};
+}
 void update_connection_settings(PlexConnectionSettings value) {
-    value.language = german() ? "de" : "en";
     save_settings(settings_path(), value);
     if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin ||
-        value.server_token != settings.server_token || value.library_identifier != settings.library_identifier) clear_library_cache();
+        value.server_token != settings.server_token || value.library_identifier != settings.library_identifier ||
+        value.cache_enabled != settings.cache_enabled) clear_library_cache();
     if (value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
 }

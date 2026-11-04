@@ -5,7 +5,7 @@ Prüfdatum: 04.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen 
 ## Ausgeführte Prüfungen
 
 - MSVC-Release-Build mit Visual Studio 2022 Build Tools, x86. Die DLL entsteht unter `build/Release/ml_plex.dll`.
-- SDK-Testhost: 100 Folgen aus Laden, fehlgeschlagener Knotenregistrierung, erfolgreicher Initialisierung, Ansichtserzeugung, Beenden und Entladen. Fremde Knoten-IDs werden nicht akzeptiert; die Anzahl der USER-Handles bleibt im Test gleich.
+- SDK-Testhost: 100 Folgen aus Laden, fehlgeschlagener Knotenregistrierung, erfolgreicher Initialisierung, Ansichtserzeugung, Einstellungen, Diagnose, Beenden und Entladen. Fremde Knoten-IDs werden nicht akzeptiert; USER-Handles bleiben gleich und GDI-Handles wachsen nach dem ersten Dialogzyklus nicht weiter.
 - Sicherheitsprüfungen mit gültigen und ungültigen Origins, Headern, Medienpfaden, Query-Encoding, Capabilities und Byte-Ranges.
 - Transport gegen einen synthetischen Loopback-PMS: bytegenaue Vollantwort, HEAD, begrenzte und offene Ranges, Suffix-Range, 416, 401/403/404, 302/500, kein Weiterreichen privater Header, ungültige Capabilities, Origin-/Host-Prüfung und Abbruch einer tatsächlich ausstehenden Anfrage.
 - DPAPI-Roundtrip mit Unicode, Prüfung auf fehlende Klartext-Zugangsdaten, atomarer Austausch sowie Gegenproben mit beschädigter Konfiguration und unsicherer Origin.
@@ -25,11 +25,11 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider` und `security`. Sieben von sieben Tests sind durchgelaufen; der PNG-Lauf dauerte 7,18 Sekunden. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Der SDK-Host prüft Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
+CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider` und `security`. Sieben von sieben Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Konfigurationsprüfungen umfassen DPAPI, Größenlimits, beschädigte Profile, Cache-Optionen und die priorisierte Verbindungsauswahl mit synthetischer Erreichbarkeit. Der SDK-Host prüft beide Hostsprachen, Einstellungen, Diagnose, Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
 
 ## Phase-1-Schranke
 
-Der echte Wiedergabenachweis läuft separat über `scripts/Test-PlexPlayback.ps1` gegen die isolierte Instanz. Das Skript entschlüsselt ausschließlich die vom Plugin gespeicherte eigene DPAPI-Datei, fragt eine begrenzte Titelseite ab und verwendet den nativen Testdialog. Es gibt weder Tokens noch private Medienpfade aus. Eine Prüfung ist erst erfolgreich, wenn Winamps Wiedergabezeiger fortschreitet und ein Seek auf zehn Sekunden nachgewiesen ist.
+Der echte Wiedergabenachweis läuft separat über `scripts/Test-PlexPlayback.ps1` gegen die isolierte Instanz und deren reguläre Playlist. Das Skript benötigt keine Zugangsdaten und entschlüsselt keine Konfiguration. Es prüft ausschließlich lokale Capability-URLs, Wiedergabefortschritt, Länge und Seeking. Der Test startet stumm, stoppt im `finally`-Pfad und stellt erst danach die vorherige Lautstärke wieder her.
 
 Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. Der aktuelle Lauf in `.local/logs/playback-metadata-hook.log` meldet 551 ms fortschreitende Wiedergabe, HTTP 200 und 262144 übertragene Bytes. Seeking liefert Ergebnis 0 und danach 10569 ms. Die Länge beträgt 306 Sekunden. Der Plex-Titel wurde in der exportierten Winamp-Playlist verglichen; diese enthält weder Plex-Token noch Plex-Serveradresse. Die allgemeinen Bibliotheksansichten können damit auf dieser geprüften Transportbasis entwickelt werden.
 
@@ -53,10 +53,15 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 - [x] Plex-Browseranmeldung mit Benutzerfreigabe.
 - [x] Server- und Musikbibliotheksabfrage über eine gültige HTTPS-Verbindung.
 - [x] Neustart mit gespeicherter DPAPI-Verbindung.
+- [x] Öffnen der Einstellungen ohne Browseranmeldung, manuelle Adresse nur unter „Erweitert“, keine zusätzliche Sprachauswahl.
+- [x] Explizite erneute Browseranmeldung mit Benutzerfreigabe, automatische HTTPS-Auswahl, Speicherung und Wiederöffnung eines realen Servers mit 13 Verbindungen.
+- [x] Cache-Option speichern, wieder öffnen und ursprünglichen Wert wiederherstellen; ausgeschalteten Cache unabhängig testen.
+- [x] HTTP-Adresse abweisen; DNS-Fehler verständlich anzeigen; während einer Anfrage abbrechen; Abbrechen verändert die DPAPI-Datei nicht.
+- [x] Sprache aus dem aktiven deutschen Winamp-Sprachpaket und englischem Winamp übernehmen. Der SDK-Testhost prüft beide Sprachen ohne eigenen Sprachschalter.
 - [ ] Widerrufenes echtes Token und erneute Anmeldung.
-- [ ] Nicht erreichbarer Server, DNS-Fehler und Zertifikatsfehler im nativen Dialog.
+- [x] Nicht erreichbarer Server, DNS-Fehler und Zertifikatsfehler im nativen Dialog. Der TLS-Test verwendet einen kurzlebigen selbstsignierten Loopback-Server ohne Änderung des Windows-Zertifikatsspeichers; eine gepinnte Gegenprobe bestätigt zuerst dessen Erreichbarkeit. WinHTTP weist das Zertifikat ab und sendet keine Anwendungsdaten.
 - [ ] Leere Musikbibliothek und Konto ohne Server.
-- [ ] Deutsche und englische Dialoge, Tastatur und Fokus visuell prüfen.
+- [x] Deutsche und englische Einstellungen sowie Classic, Modern und Big Bento visuell prüfen. Tab-Reihenfolge im normalen Dialog und Escape zum Abbrechen sind in der Zielversion geprüft; verborgene erweiterte Eingaben bleiben außerhalb der Tab-Reihenfolge. Diagnose ohne abgeschnittene letzte Zeile geprüft.
 
 ### Audio
 
