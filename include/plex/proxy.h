@@ -16,6 +16,7 @@ struct ProxyStatus {
     unsigned long upstream_status = 0;
     unsigned long transport_error = 0;
     unsigned long long bytes_sent = 0;
+    const char* local_rejection = nullptr;
 };
 
 // Eine Instanz besitzt genau einen unveränderlichen, befristeten Wiedergabe-Grant.

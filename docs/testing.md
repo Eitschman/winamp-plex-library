@@ -1,6 +1,6 @@
 # Prüfstand und Integrationscheckliste
 
-Prüfdatum: 03.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen Produktanforderungen.
+Prüfdatum: 04.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen Produktanforderungen.
 
 ## Ausgeführte Prüfungen
 
@@ -28,11 +28,9 @@ CTest enthält `plugin_lifecycle`, `transport`, `config_auth` und `security`. Ei
 
 Der echte Wiedergabenachweis läuft separat über `scripts/Test-PlexPlayback.ps1` gegen die isolierte Instanz. Das Skript entschlüsselt ausschließlich die vom Plugin gespeicherte eigene DPAPI-Datei, fragt eine begrenzte Titelseite ab und verwendet den nativen Testdialog. Es gibt weder Tokens noch private Medienpfade aus. Eine Prüfung ist erst erfolgreich, wenn Winamps Wiedergabezeiger fortschreitet und ein Seek auf zehn Sekunden nachgewiesen ist.
 
-Ein technischer Proxytest allein erfüllt diese Schranke nicht. Der aktuelle echte Wiedergabe- und Seeking-Nachweis ist noch offen. Vor dessen Ergebnis wird die allgemeine Bibliotheksimplementierung nicht als nutzbar beschrieben.
+Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. Der aktuelle Lauf in `.local/logs/playback-metadata-hook.log` meldet 551 ms fortschreitende Wiedergabe, HTTP 200 und 262144 übertragene Bytes. Seeking liefert Ergebnis 0 und danach 10569 ms. Die Länge beträgt 306 Sekunden. Der Plex-Titel wurde in der exportierten Winamp-Playlist verglichen; diese enthält weder Plex-Token noch Plex-Serveradresse. Die allgemeinen Bibliotheksansichten können damit auf dieser geprüften Transportbasis entwickelt werden.
 
-Der echte MP3-Test mit `enqueueFileWithMetaStructW` stürzt innerhalb von Winamp bei `IPC_ENQUEUEFILEW` ab. Der Debugger zeigt einen Lesezugriff auf `0x132`, den übergebenen Wert der Titellänge. Die entsprechende API-Regression ist auch im offiziellen Winamp-Forum für 5.9.1/5.9.2 gemeldet. Es wird keine alternative Struktur geraten. Mit `WM_COPYDATA` lässt sich ein Titel anhängen, ohne diesen Absturz auszulösen. Dieser Test scheitert anschließend: Winamp meldet `access denied`, der Proxy hat noch keinen Plex-Upstream-Status. Der genaue Ablehnungsgrund der lokalen Anfrage ist offen. Die aktuelle Übergabe transportiert außerdem noch keinen Plex-Titel und keine vorgegebene Länge.
-
-Die lokale Übergabe ist somit ein untersuchter Implementierungsstand, kein erfolgreicher Audio-Nachweis. Der nächste Schritt ist die sichere Diagnose des lokalen Request-Validators mit Winamps tatsächlicher Anfrage. Anschließend müssen Metadaten, fortschreitende Wiedergabe und Seeking gemeinsam geprüft werden.
+Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anstelle der dort abstürzenden alten Metadatenstruktur. Eine temporäre M3U8-Datei überträgt Länge und Unicode-Titel; sie wird nach der synchronen Verarbeitung entfernt. `ML_IPC_HOOKTITLEW` erhält den Plex-Titel auch dann, wenn die Dateitags abweichen. `IPC_SETPLAYLISTPOS` wird gemäß SDK mit `WINAMP_BUTTON2` kombiniert; `IPC_STARTPLAY` setzt die Position in der Zielversion auf 0 zurück. Der Proxy akzeptiert Winamps nachgewiesenen Host-Header ohne Port ausschließlich für die konkrete Loopback-Adresse. Fremde Hosts, falsche explizite Ports, doppelte Hosts, Origins und falsche Capabilities werden weiterhin abgewiesen.
 
 ## Manuelle Checkliste für die Zielversion
 
@@ -61,7 +59,7 @@ Die lokale Übergabe ist somit ein untersuchter Implementierungsstand, kein erfo
 
 | Format | Echtes Plex Direct Play | Länge / Titel | Seeking | Abbruch / Neustart |
 | --- | --- | --- | --- | --- |
-| MP3 | offen | offen | offen | offen |
+| MP3 | getestet | getestet | getestet | weitere Fehlerfälle offen |
 | FLAC | offen | offen | offen | offen |
 | AAC | offen | offen | offen | offen |
 | M4A | offen | offen | offen | offen |

@@ -17,6 +17,6 @@ if (-not (Test-Path -LiteralPath $archive)) {
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'D88ABBB9882ADD625E6286DC68FB7598645862A191D63577BE84B72EF0870370') {
     throw 'SDK-Prüfsumme stimmt nicht überein.'
 }
-& $SevenZip x $archive ('-o' + $sdk) '-y' 'gen_ml\ml.h' 'Winamp\wa_ipc.h'
+& $SevenZip x $archive ('-o' + $sdk) '-y' 'gen_ml\ml.h' 'Winamp\wa_ipc.h' 'gen_tray\WINAMPCMD.H'
 if ($LASTEXITCODE -ne 0) { throw 'SDK konnte nicht extrahiert werden.' }
 Write-Output 'Unveränderte SDK-Header mit Lizenztext lokal extrahiert.'

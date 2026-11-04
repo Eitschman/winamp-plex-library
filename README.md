@@ -8,9 +8,9 @@ Der technische Prototyp erzeugt den Plex-Navigationsknoten und eine native Ansic
 
 Die Anmeldung folgt dem Plexa-Ablauf: **Mit Plex anmelden**, Freigabe im Systembrowser, Server auswählen, HTTPS-Verbindung prüfen und Musikbibliothek auswählen. Das Plugin erhält Tokens intern. Ein Passwort oder eine manuelle Token-Eingabe ist für diesen Ablauf nicht vorgesehen. Der Zugriff wird benutzergebunden mit Windows DPAPI gespeichert.
 
-Der Wiedergabe-Prototyp übergibt ausschließlich befristete Loopback-URLs an Winamp. WinHTTP übernimmt die Plex-Authentifizierung. Der Proxy wurde mit synthetischen Medienbytes und Fehlerantworten getestet. Ein erfolgreicher Transporttest belegt noch keine Decoder-, Audio- oder Seeking-Kompatibilität mit echten Plex-Medien.
+Der Wiedergabe-Prototyp übergibt ausschließlich befristete Loopback-URLs an Winamp. WinHTTP übernimmt die Plex-Authentifizierung. Ein echter Plex-MP3-Titel wurde in der Zielversion mit fortschreitender Wiedergabe, Seeking, Länge und Plex-Titel geprüft. Die exportierte Testplaylist enthält keine Plex-Zugangsdaten. Weitere Audioformate und Fehlerfälle benötigen eigene Integrationsprüfungen.
 
-Der Auftrag enthält eine verbindliche Integrationsschranke: Vor der allgemeinen Bibliotheksimplementierung muss ein echter Plex-Titel in Winamp geprüft werden. Der Stand und die offenen Nachweise stehen in [docs/testing.md](docs/testing.md). Künstler-, Album-, Titel- und Playlistansichten, Suche, Cover, Cache und Plex-Schreibfunktionen sind noch keine zugesicherten Produktfunktionen.
+Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der Stand und die offenen Nachweise stehen in [docs/testing.md](docs/testing.md). Künstler-, Album-, Titel- und Playlistansichten, Suche, Cover, Cache und Plex-Schreibfunktionen werden auf dieser Basis entwickelt und sind noch keine zugesicherten Produktfunktionen.
 
 ## Build
 

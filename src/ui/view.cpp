@@ -51,8 +51,10 @@ void update_status(HWND dialog) noexcept {
     EnableWindow(GetDlgItem(dialog, IDC_STOP_CONNECTION), TRUE);
     const auto status = playback_status();
     std::array<wchar_t, 256> message{};
-    if (status.upstream_status == 401 || status.upstream_status == 403)
-        wcscpy_s(message.data(), message.size(), text(L"Zugriff verweigert. Plex-Token prüfen.", L"Access denied. Check the Plex token."));
+    if (status.local_rejection)
+        swprintf_s(message.data(), message.size(), text(L"Lokale Anfrage abgewiesen (%hs).", L"Local request rejected (%hs)."), status.local_rejection);
+    else if (status.upstream_status == 401 || status.upstream_status == 403)
+        wcscpy_s(message.data(), message.size(), text(L"Zugriff verweigert. Erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
     else if (status.upstream_status == 404)
         wcscpy_s(message.data(), message.size(), text(L"Mediendatei nicht gefunden.", L"Media file not found."));
     else if (status.transport_error)

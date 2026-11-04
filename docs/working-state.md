@@ -1,16 +1,15 @@
 # Arbeitsstand und Wiedereinstieg
 
-Die Entwicklung ist auf Benutzerwunsch für heute angehalten. „Weiter“ bedeutet, den ursprünglichen Plugin-Auftrag einschließlich Bibliotheksansichten, Wiedergabe und Qualitätssicherung fortzuführen. Das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument.
+Die Entwicklung läuft am ursprünglichen Plugin-Auftrag einschließlich Bibliotheksansichten, Wiedergabe und Qualitätssicherung weiter. Das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument. Der Benutzer hat den lokalen Proxy als Architektur bestätigt.
 
 ## Nächster konkreter Schritt
 
-Die Phase-1-Wiedergabeprüfung ist offen. `src/plugin/plugin.cpp` verwendet derzeit `WM_COPYDATA` mit `IPC_ENQUEUEFILEW` und der lokalen Unicode-URL. Das Anhängen verursacht damit keinen Strukturabsturz. Der lokale Proxy lehnt die anschließende Winamp-Anfrage jedoch ab. Es gibt noch keinen erfolgreichen echten Audio- oder Seeking-Nachweis. Titel und Länge werden auf diesem Übergabepfad noch nicht transportiert.
+Die Phase-1-Wiedergabeprüfung ist für einen echten Plex-MP3-Titel bestanden. `src/plugin/plugin.cpp` verwendet `WM_COPYDATA` mit einer temporären M3U8-Datei, `ML_IPC_HOOKTITLEW` und den im SDK dokumentierten Play-Befehl. Wiedergabe, Seeking, 306 Sekunden Länge und Plex-Titel sind nachgewiesen; die exportierte Testplaylist ist tokenfrei. Details und konkrete Messwerte stehen in `docs/testing.md`.
 
-1. Den festen Ablehnungsgrund aus `parse_local_request` sicher diagnostizieren. Keine vollständigen Requests, Token, Serveradressen oder Medienpfade protokollieren. Den tatsächlich von Winamp verwendeten HTTP-Request prüfen, bevor Validierungsregeln geändert werden.
-2. Die Ursache im regulären Transportpfad beheben und positive sowie negative Sicherheitsfälle ergänzen. TLS-Prüfung, Host-Bindung, Capability und Redirect-Schutz erhalten.
-3. Die dokumentierte Übergabe einschließlich Unicode-Titel und Länge lösen, ohne unbekannte SDK-Strukturfelder zu erfinden. Das direkte `WM_WA_IPC` mit alter Metadatenstruktur ist für diese Zielversion nachgewiesen ungeeignet.
-4. `scripts/Test-PlexPlayback.ps1` gegen die getrennte Testkopie erneut ausführen. Der Test benötigt fortschreitende Wiedergabe und Seeking auf zehn Sekunden. Das Skript sollte vor weiteren Debugläufen begrenzt auf vorhandene Fenster warten und IPC-Zeitüberschreitungen verständlich behandeln.
-5. Erst nach diesem Nachweis die allgemeine API-/Modellschicht und Bibliotheksansichten mit Pagination, Suche, Sortierung, Album-/Mehrfachwiedergabe und Plex-Playlists umsetzen. Danach Cache, Cover und zuverlässig nachweisbare Erweiterungen sowie die übrigen Tests des PRP bearbeiten.
+1. Die allgemeine API-/Modellschicht und Bibliotheksansichten mit Pagination, Suche und Sortierung umsetzen. UI- und API-Modelle trennen, Anfragen abbrechen und alte Ergebnisse verwerfen.
+2. Album-/Mehrfachwiedergabe und Plex-Playlists ergänzen. Dafür einen begrenzten Listener mit mehreren unabhängigen Grants verwenden, keine vier Threads pro Titel anlegen.
+3. Cache, Cover und zuverlässig nachweisbare Erweiterungen sowie die übrigen Tests des PRP bearbeiten. Weitere echte Audioformate und Fehlerzustände prüfen.
+4. Den manuellen Token-Testdialog und das überholte Token-Skript durch den regulären Bibliotheksablauf ersetzen. Die Browseranmeldung bleibt der Benutzerablauf.
 
 ## Lokal vorhandene Umgebung
 
@@ -27,7 +26,7 @@ Die Phase-1-Wiedergabeprüfung ist offen. `src/plugin/plugin.cpp` verwendet derz
 
 `docs/testing.md` enthält den fachlichen Prüfstand. Beim Anhalten wurde der aktuelle MSVC-x86-Release-Build erfolgreich gebaut. Der anschließende CTest-Lauf bestand alle vier Tests `plugin_lifecycle`, `transport`, `config_auth` und `security` in 5,97 Sekunden. Allgemeine Bibliotheks- und Cachetests fehlen noch. Es waren danach keine Plugin-Test- oder Debuggerprozesse aktiv; die Testkopie ließ sich regulär über `WM_CLOSE` beenden.
 
-Die ignorierten lokalen Dateien `.local/logs/playback-debug-current.log`, `.local/logs/playback-copydata.log`, `.local/logs/playback-copydata-debug.log` und `.local/logs/playback-copydata-probe.log` enthalten die konkreten Diagnoseversuche. Der Strukturabsturz zeigt den Zugriff auf `0x132`, die übergebene Titellänge. Die aktuelle Proxy-Diagnose lieferte keinen festen Ablehnungsgrund. Ein temporärer `OutputDebugStringA`-Aufruf wurde aus dem Quellcode entfernt. Diese Artefakte sind keine Erfolgsmeldung für Wiedergabe.
+Der aktuelle reale Erfolgsnachweis liegt in `.local/logs/playback-metadata-hook.log`. Die festen lokalen Fehlercodes sind in `ProxyStatus` verfügbar, ohne rohe Requests zu speichern. Eine Winamp-Anfrage ohne Port im Host-Header ist geprüft und wird ausschließlich für `127.0.0.1` zugelassen. Falsche explizite Ports und fremde Hosts bleiben verboten. `IPC_STARTPLAY` setzt in der Zielversion die Position auf 0; `WINAMP_BUTTON2` erhält die gesetzte Position. Alte ignorierte Debuglogs sind keine Nachweise aktueller Testläufe.
 
 Die nativen Screenshots liegen nur unter `.local`. Root-Ansicht und Plex-Anmeldedialoge wurden visuell angesehen. Die vollständigen Bibliotheksansichten existieren noch nicht. Das manuelle Token-Skript `scripts/Set-PlexTestAccess.ps1` und der manuelle Testdialog sind noch zu bereinigen, sobald der reguläre Ablauf sie ersetzt.
 

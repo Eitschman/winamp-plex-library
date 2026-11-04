@@ -38,9 +38,15 @@ try {
     }
     if (-not $selection) { throw 'Auf der ersten Testseite wurde kein unterstützter Audio-Medienpart gefunden.' }
     $process = Get-PlexTestProcess
-    $windows = [PlexNative]::Windows($process.Id)
-    $library = $windows | Where-Object {$_.Text -eq 'Winamp Library'}
-    $button = [PlexNative]::Children($library.Handle) | Where-Object {$_.ControlId -eq 1002}
+    $button = $null
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while (-not $button -and [DateTime]::UtcNow -lt $deadline) {
+        $windows = [PlexNative]::Windows($process.Id)
+        $library = $windows | Where-Object {$_.Text -eq 'Winamp Library'}
+        if ($library) { $button = [PlexNative]::Children($library.Handle) | Where-Object {$_.ControlId -eq 1002} }
+        if (-not $button) { Start-Sleep -Milliseconds 100 }
+    }
+    if (-not $button) { throw 'Plex-Testansicht nicht innerhalb von zehn Sekunden gefunden.' }
     $view = [PlexNative]::GetParent($button.Handle)
     [PlexNative]::PostMessage($view,273,[IntPtr]1002,[IntPtr]::Zero) | Out-Null
     $dialog = $null
@@ -66,16 +72,26 @@ try {
     $progress = 0
     while ($progress -lt 500 -and [DateTime]::UtcNow -lt $deadline) {
         Start-Sleep -Milliseconds 200
-        $progress = [PlexNative]::SendMessage($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105).ToInt32()
+        $progress = [PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105).ToInt32()
     }
     $status = [PlexNative]::Children($library.Handle) | Where-Object {$_.ControlId -eq 1004}
     Write-Output ('Format=' + [IO.Path]::GetExtension([string]$selection.part.key) + '; WiedergabepositionMs=' + $progress + '; ' + $status.Text)
     if ($progress -lt 500) { throw 'Kein fortschreitender Winamp-Wiedergabezeiger nachgewiesen.' }
-    $seek = [PlexNative]::SendMessage($main.Handle,1024,[IntPtr]10000,[IntPtr]106).ToInt32()
+    $seek = [PlexNative]::Query($main.Handle,1024,[IntPtr]10000,[IntPtr]106).ToInt32()
     Start-Sleep -Milliseconds 800
-    $afterSeek = [PlexNative]::SendMessage($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105).ToInt32()
+    $afterSeek = [PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105).ToInt32()
     Write-Output ('SeekResult=' + $seek + '; PositionNachSeekMs=' + $afterSeek)
     if ($seek -ne 0 -or $afterSeek -lt 10000) { throw 'Seeking wurde nicht nachgewiesen.' }
+    $seconds = [PlexNative]::Query($main.Handle,1024,[IntPtr]1,[IntPtr]105).ToInt32()
+    $expectedSeconds = [int][Math]::Floor($selection.track.duration / 1000)
+    if ([Math]::Abs($seconds - $expectedSeconds) -gt 2) { throw 'Winamp-Laufzeit stimmt nicht mit Plex überein.' }
+    [PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]120) | Out-Null
+    $saved = [IO.File]::ReadAllText((Join-Path $ProjectRoot '.local\winamp-test\settings\Winamp.m3u8'), [Text.Encoding]::UTF8)
+    $safeTitle = ([string]$selection.track.title) -replace '[\x00-\x1f\x7f]', ' '
+    $titles = @($saved -split "`r?`n" | Where-Object { $_.StartsWith('#EXTINF:') } | ForEach-Object { $_.Substring($_.IndexOf(',') + 1) })
+    if ($titles -cnotcontains $safeTitle) { throw ('Plex-Titel wurde nicht übernommen; erwartete Zeichen=' + $safeTitle.Length + '; letzter Playlisttitel=' + $titles[-1].Length) }
+    if ($saved -match 'X-Plex-Token|plex\.direct') { throw 'Unerlaubte Plex-Zugangsdaten oder Serveradresse in der Testplaylist.' }
+    Write-Output ('MetadatenTitel=True; LaufzeitSekunden=' + $seconds + '; TokenfreiePlaylist=True')
 } finally {
     $client.Dispose(); $handler.Dispose(); $settings = $null; $values = $null
 }

@@ -154,7 +154,10 @@ LocalRequest parse_local_request(std::string_view headers, std::string_view auth
         const auto value = trim(line.substr(colon + 1));
         if (value.find_first_of("\r\n") != value.npos) throw std::invalid_argument("header_value");
         if (name == "host") {
-            if (host_seen || value != authority) throw std::invalid_argument("request_host");
+            // Winamps HTTP-Client lässt den Port weg. Die Verbindung ist bereits
+            // an den konkreten Loopback-Port gebunden; fremde Hosts bleiben verboten.
+            const bool winamp_host = value == "127.0.0.1" && authority.substr(0, 10) == "127.0.0.1:";
+            if (host_seen || (value != authority && !winamp_host)) throw std::invalid_argument("request_host");
             host_seen = true;
         } else if (name == "range") {
             if (range_seen) throw std::invalid_argument("duplicate_range");

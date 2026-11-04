@@ -1,7 +1,10 @@
 #include "plugin/plugin.h"
 #include <Winamp/wa_ipc.h>
+#include <gen_tray/WINAMPCMD.H>
+#include "plex/playlist.h"
 #include <cstddef>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace plex::plugin {
 namespace {
@@ -15,6 +18,35 @@ bool use_german = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_GERMAN;
 std::unique_ptr<PlaybackProxy> proxy;
 DWORD ui_thread = 0;
 PlexConnectionSettings settings;
+std::unordered_map<std::wstring, std::wstring> playback_titles;
+
+std::string utf8(const std::wstring& value) {
+    const auto size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (!size) throw std::invalid_argument("title_encoding");
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+class TemporaryPlaylist {
+public:
+    explicit TemporaryPlaylist(const std::string& content) {
+        const auto identifier = create_client_identifier();
+        path_ = std::filesystem::temp_directory_path() / (L"WinampPlex-" + std::wstring(identifier.begin(), identifier.end()) + L".m3u8");
+        const auto file = CreateFileW(path_.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+        if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("playlist_create");
+        DWORD written = 0;
+        const auto success = WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr);
+        const auto closed = CloseHandle(file);
+        if (!success || written != content.size() || !closed) {
+            DeleteFileW(path_.c_str()); throw std::runtime_error("playlist_write");
+        }
+    }
+    ~TemporaryPlaylist() { DeleteFileW(path_.c_str()); }
+    const std::filesystem::path& path() const { return path_; }
+private:
+    std::filesystem::path path_;
+};
 
 // Diese Layoutprüfungen beziehen sich auf die unveränderten SDK-5.55-Header.
 static_assert(sizeof(void*) == 4);
@@ -52,6 +84,17 @@ void shutdown() noexcept {
 
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR) noexcept {
     try {
+        if (type == ML_IPC_HOOKTITLEW && first) {
+            auto* metadata = reinterpret_cast<waHookTitleStructW*>(first);
+            if (metadata->filename && metadata->title) {
+                const auto found = playback_titles.find(metadata->filename);
+                if (found != playback_titles.end()) {
+                    wcsncpy_s(metadata->title, 2048, found->second.c_str(), _TRUNCATE);
+                    return TRUE;
+                }
+            }
+            return 0;
+        }
         if (type == ML_MSG_TREE_ONCREATEVIEW && tree_id && static_cast<UINT_PTR>(first) == tree_id)
             return reinterpret_cast<INT_PTR>(create_view(reinterpret_cast<HWND>(second)));
         if (type == ML_MSG_CONFIG) {
@@ -71,7 +114,11 @@ void start_playback(PlaybackSource source, const std::wstring& title, int second
     if (GetCurrentThreadId() != ui_thread || title.empty() || seconds < -1) throw std::invalid_argument("playback_input");
     auto next = std::make_unique<PlaybackProxy>(std::move(source));
     const auto& local = next->url();
-    const std::wstring url(local.begin(), local.end());
+    auto safe_title = title;
+    for (auto& character : safe_title) if (character < 32 || character == 127) character = L' ';
+    playback_titles[std::wstring(local.begin(), local.end())] = std::move(safe_title);
+    const TemporaryPlaylist playlist(make_playlist({{local, utf8(title), seconds}}));
+    const auto url = playlist.path().wstring();
     COPYDATASTRUCT item{};
     item.dwData = IPC_ENQUEUEFILEW;
     item.lpData = const_cast<wchar_t*>(url.c_str());
@@ -82,10 +129,11 @@ void start_playback(PlaybackSource source, const std::wstring& title, int second
     if (length != position + 1) throw std::runtime_error("playlist_enqueue");
     proxy = std::move(next);
     SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
-    SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_STARTPLAY);
+    // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
+    SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON2, 0), 0);
 }
 
-void stop_playback() noexcept { proxy.reset(); }
+void stop_playback() noexcept { proxy.reset(); playback_titles.clear(); }
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
 bool playback_active() noexcept { return proxy != nullptr; }
 PlexConnectionSettings connection_settings() { return settings; }

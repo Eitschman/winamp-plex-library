@@ -23,6 +23,13 @@ public static class PlexNative {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder text, int maximum);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr first, string second);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr first, IntPtr second, uint flags, uint timeout, out IntPtr result);
+  public static IntPtr Query(IntPtr window, uint message, IntPtr first, IntPtr second) {
+    IntPtr result;
+    if(window==IntPtr.Zero || SendMessageTimeout(window,message,first,second,2,3000,out result)==IntPtr.Zero)
+      throw new InvalidOperationException("Winamp IPC timeout or invalid window");
+    return result;
+  }
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr first, IntPtr second);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);

@@ -2,12 +2,13 @@
 
 ## Herkunft und unveränderte Header
 
-Verwendet wird [SDK 5.55](https://download.nullsoft.com/winamp/plugin-dev/WA5.55_SDK.exe). CMake prüft beide Header vor dem Build:
+Verwendet wird [SDK 5.55](https://download.nullsoft.com/winamp/plugin-dev/WA5.55_SDK.exe). CMake prüft die Header vor dem Build:
 
 | Datei | SHA-256 |
 | --- | --- |
 | `gen_ml/ml.h` | `afc20588bfcf645c59758fef1ef28b80c55ff9ecc2837e7970f74552998140da` |
 | `Winamp/wa_ipc.h` | `38fef5b50b4e028b5f77c0645a0e2a956607d8468c2ecbba3988d700286e60f8` |
+| `gen_tray/WINAMPCMD.H` | `a6c932f30f418a1bb890eb6e6b1f13b538f2f6aad3632eb24d272e6c175697c6` |
 
 Es werden weder Konstanten noch ABI-Strukturen lokal rekonstruiert. Das CMake-Projekt verweigert x64 und andere Windows-Compiler als MSVC.
 
@@ -32,7 +33,9 @@ Native Dialoge werden mit `WS_CHILD`, `DS_CONTROL` und `WS_EX_CONTROLPARENT` ers
 
 SDK 5.55 beschreibt für `IPC_ENQUEUEFILEW` die Struktur `enqueueFileWithMetaStructW`: URL, Unicode-Titel und Länge in **Sekunden**, unbekannte Länge `-1`. Diese Strukturübergabe verursacht in der konkreten Zielversion einen im Debugger reproduzierten Absturz innerhalb von Winamp. Im [offiziellen Fehlerbericht, Beitrag 141](https://forums.winamp.com/forum/winamp/winamp-bug-reports/316139-post-all-winamp-5-9-2-bug-reports-in-this-thread/page10) ist die Regression ebenfalls gemeldet. Der alte Header ist damit kein ausreichender Kompatibilitätsnachweis für diesen Aufruf.
 
-Der aktuelle Untersuchungsstand übergibt die Unicode-URL mit `WM_COPYDATA` und `IPC_ENQUEUEFILEW` als `dwData`. Dieser im SDK beschriebene Dateipfad hängt den Titel an, ohne den Strukturabsturz auszulösen. Plex-Metadaten werden dabei noch nicht übertragen. Für den Prototyp werden danach `IPC_SETPLAYLISTPOS` und `IPC_STARTPLAY` verwendet. Die bestehende Liste wird dabei nicht gelöscht. Der echte Streaming-Test bleibt wegen einer noch ungeklärten lokalen Request-Ablehnung offen.
+Das Plugin übergibt eine temporäre Unicode-M3U8-Datei mit `WM_COPYDATA` und `IPC_ENQUEUEFILEW` als `dwData`. Dieser SDK-Pfad übernimmt die Einträge einschließlich Länge; nach dem synchronen Import wird nur diese selbst erzeugte temporäre Datei entfernt. `ML_IPC_HOOKTITLEW` verwendet die SDK-Struktur `waHookTitleStructW` und beantwortet ausschließlich eigene lokale URLs mit dem zugehörigen Plex-Titel. Fremde URLs bleiben unverändert.
+
+Nach `IPC_SETPLAYLISTPOS` wird wie im zugehörigen SDK-Kommentar `WM_COMMAND` mit `WINAMP_BUTTON2` gesendet. Die Konstante stammt aus dem unveränderten SDK-Header `gen_tray/WINAMPCMD.H`. `IPC_STARTPLAY` ist für diesen Ablauf ungeeignet: In der Zielversion setzt es die Position auf 0 zurück. MP3-Wiedergabe, Seeking, Länge und Plex-Titel wurden mit dieser Kombination in der Zielversion geprüft. Die bestehende Liste wird nicht gelöscht.
 
 `IPC_GETLISTLENGTH` prüft den tatsächlichen Zuwachs. `IPC_GETOUTPUTTIME` dient zur Laufzeit- und Seek-Prüfung. `IPC_JUMPTOTIME` wird für die manuelle Gegenprüfung verwendet. Diese Aufrufe werden nur gegen das konkret geprüfte Testfenster ausgeführt.
 

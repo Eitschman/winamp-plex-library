@@ -20,6 +20,8 @@ Die [offizielle PMS-API](https://developer.plex.tv/pms/) beschreibt JSON und XML
 
 Plexas [Adapter](https://github.com/rupisaini123/plexa/blob/main/src/plex/adapter.ts) und Mediengateway dienen als Vergleich für Pagination, Albumtitelauflösung, Playlistinhalte und Direct Play. Alexa, öffentliche Gateway-Endpunkte, Node-Dienst, Weboberfläche und dessen Verschlüsselungsschlüsselverwaltung werden nicht übernommen. Das Plugin läuft im Winamp-Prozess und verwendet Windows DPAPI. Medien werden lokal an Winamp weitergereicht.
 
+Die gezielte URL-Prüfung am 04.11.2026 bestätigt: `getMediaParts` liest `Media`/`Part` aus den Metadaten, `buildDirectStreamUrl` kombiniert Server-Origin, Part-Schlüssel und Query-Token. Der [Gateway-Code](https://github.com/rupisaini123/plexa/blob/main/src/media/gateway.ts) erzeugt davon getrennte signierte, befristete Medienpfade und streamt intern vom PMS einschließlich Byte-Ranges. Die [Alexa-Übergabe](https://github.com/rupisaini123/plexa/blob/main/src/alexa/playback.ts) setzt diese Gateway-URL in `AudioPlayer.Play`, zusammen mit separaten Titelmetadaten und einem Queue-Token. Dieser Queue-Token ist kein Plex-Zugriffstoken. Plexa arbeitet damit ebenfalls mit einem Proxy. Für Winamp ist der prozessinterne Loopback-Proxy ausdrücklich gewählt; interne Plex-Zugriffe verwenden Header statt Query-Tokens. Plexas Redirect- und Transcoding-Verhalten wird nicht übernommen.
+
 Die offizielle API unterscheidet Konto- und Serverzugriff. Der Account-Token wird für die Serverressourcen verwendet; der Ressourcen-Token wird ausschließlich an die ausgewählte Server-Origin gesendet. Die Serveridentität wird vor dem Speichern mit `machineIdentifier` verglichen. Sichere Verbindungen werden von Plex als Ressourcen-URIs angeboten. [Plex dokumentiert](https://support.plex.tv/articles/206225077-how-to-use-secure-server-connections/), weshalb ein bloßer Wechsel von HTTP auf HTTPS bei einer privaten Domain zu einem Zertifikats-Namensfehler führen kann.
 
 ## Wiedergabevergleich
@@ -28,7 +30,7 @@ Die offizielle API unterscheidet Konto- und Serverzugriff. Der Account-Token wir
 | --- | --- | --- |
 | Plex-URL mit Token im Query direkt an Winamp | SDK dokumentiert das Speichern von Playlist-URLs. Token könnten exportiert werden. | Kein Produktpfad. |
 | Direkte HTTPS-URL ohne Token | `IPC_ENQUEUEFILEW` enthält URL, Titel und Länge, aber kein Feld für beliebige Authentifizierungsheader. Decoderabhängige Speziallösungen sind nicht belegt. | Keine verlässliche Authentifizierungsarchitektur. |
-| Prozessinterner Loopback-Proxy | Authentifizierung im WinHTTP-Header; Winamp erhält nur einen zufälligen lokalen Grant. Range-Anfragen lassen sich durchreichen. | Implementierter Prototyp, echte Codec-Prüfung erforderlich. |
+| Prozessinterner Loopback-Proxy | Authentifizierung im WinHTTP-Header; Winamp erhält nur einen zufälligen lokalen Grant. Echter MP3-Titel mit Seeking und Plex-Metadaten geprüft. | Gewählte Architektur; weitere Formate getrennt prüfen. |
 | Audio-Transcoding | Plexa verwendet unter anderem `/music/:/transcode/universal/start.mp3`. Das ist ein Referenzbefund, kein eigener Laufzeitnachweis. | Nicht automatisch aktivieren; Direct Play zuerst nachweisen. |
 
 MP3, FLAC, AAC, M4A und OGG benötigen jeweils einen separaten tatsächlichen Winamp-Test. Das Vorhandensein eines Decoders beweist weder HTTP- noch HTTPS-, Range- oder Containerkompatibilität. M4A kann insbesondere Zugriffe auf verschiedene Dateibereiche benötigen. Ein Proxy allein ergänzt keine fehlende URL-Unterstützung eines Input-Plugins.

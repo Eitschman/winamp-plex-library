@@ -16,7 +16,7 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 - Implementiert und getestet: MSVC-x86-Release-Build, SDK-basierter Plugin-Export, Plex-Knoten und native Ansicht, reguläres Beenden und Neustarten der Testkopie.
 - Implementiert und getestet: Plex-Browseranmeldung mit bestätigter Freigabe, HTTPS-Serverprüfung, Musikbibliotheksabfrage und DPAPI-Speicherung.
 - Implementiert und mit synthetischen Daten getestet: HTTP-Transport, Loopback-Proxy, Bereiche für Seeking, Abbruch, URL-Sicherheitsprüfungen und Fehlerstatus.
-- Technisch in Prüfung: echte Titelwiedergabe. Die SDK-Strukturübergabe über `IPC_ENQUEUEFILEW` verursacht in der Zielversion einen im Debugger nachgewiesenen Winamp-Absturz. Die dokumentierte `WM_COPYDATA`-Übergabe hängt den Titel ohne diesen Absturz an; der Wiedergabetest scheitert an der Ablehnung der lokalen Streaming-Anfrage. Metadatenübergabe und Seeking sind noch nicht nachgewiesen. Unbekannte ABI-Felder werden nicht ergänzt.
+- Implementiert und in Winamp 5.9.2 Build 10042 getestet: echte Plex-MP3-Wiedergabe über den lokalen Proxy, Seeking auf zehn Sekunden, Länge und Plex-Titel in der tokenfreien Winamp-Playlist. Verwendet werden die dokumentierte `WM_COPYDATA`-Playlistübergabe, der Titel-Hook und der Play-Befehl des SDK. Unbekannte ABI-Felder werden nicht ergänzt.
 - Geplant: allgemeine Bibliotheksansichten, Suche, Mehrfach- und Albumwiedergabe, Cache und die nachfolgend beschriebenen Erweiterungen. Diese gelten erst nach Umsetzung und den jeweiligen Nachweisen als getestet.
 
 ## 1. Projektziel

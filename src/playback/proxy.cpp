@@ -12,10 +12,11 @@
 
 namespace plex {
 namespace {
+struct LocalDisconnect : std::runtime_error { LocalDisconnect() : std::runtime_error("local_disconnect") {} };
 void send_all(SOCKET client, const char* buffer, std::size_t size) {
     while (size) {
         const auto sent = send(client, buffer, static_cast<int>(size), 0);
-        if (sent <= 0) throw std::runtime_error("local_socket");
+        if (sent <= 0) throw LocalDisconnect();
         buffer += sent; size -= static_cast<std::size_t>(sent);
     }
 }
@@ -53,6 +54,7 @@ struct PlaybackProxy::State {
     std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::now() + std::chrono::hours(2);
     std::atomic<DWORD> upstream{0};
     std::atomic<DWORD> error{0};
+    std::atomic<const char*> rejection{nullptr};
     std::atomic<unsigned long long> bytes{0};
 
     explicit State(PlaybackSource value) : source(std::move(value)) {}
@@ -72,11 +74,12 @@ struct PlaybackProxy::State {
                     throw std::runtime_error("local_timeout");
                 const auto count = recv(client, chunk.data(), static_cast<int>(chunk.size()), 0);
                 if (count == SOCKET_ERROR && WSAGetLastError() == WSAETIMEDOUT) continue;
-                if (count <= 0) throw std::runtime_error("local_socket");
+                if (count <= 0) throw LocalDisconnect();
                 request.append(chunk.data(), static_cast<std::size_t>(count));
                 if (request.size() > 16384) throw std::invalid_argument("headers_limit");
             }
             const auto parsed = parse_local_request(request, authority, capability);
+            rejection.store(nullptr);
             HttpStream stream(source.server, source.token, source.media_path, parsed.head, parsed.range, stop);
             const auto status = stream.status();
             upstream.store(status); error.store(0);
@@ -101,14 +104,30 @@ struct PlaybackProxy::State {
             response_started = true;
             send_all(client, headers.data(), headers.size());
             if (parsed.head) return;
+            const auto length = stream.header(L"Content-Length");
+            unsigned long long expected = 0, transferred = 0;
+            if (!length.empty()) {
+                if (length.size() > 19 || length.find_first_not_of("0123456789") != length.npos) throw HttpError(ERROR_INVALID_DATA);
+                expected = std::stoull(length);
+            }
             std::array<char, 65536> buffer{};
             while (WaitForSingleObject(stop, 0) != WAIT_OBJECT_0) {
                 const auto count = stream.read(buffer.data(), static_cast<DWORD>(buffer.size()));
                 if (!count) break;
                 send_all(client, buffer.data(), count);
                 bytes.fetch_add(count);
+                transferred += count;
             }
-        } catch (const std::invalid_argument&) {
+            if (!length.empty() && transferred != expected && WaitForSingleObject(stop, 0) != WAIT_OBJECT_0)
+                throw HttpError(ERROR_HANDLE_EOF);
+        } catch (const std::invalid_argument& failure) {
+            // Nur feste Diagnosecodes veröffentlichen; fremde Texte bleiben intern.
+            const char* code = "local_request";
+            for (const auto* candidate : {"request_headers", "request_line", "request_target", "header_line",
+                 "header_name", "header_value", "request_host", "duplicate_range", "request_body_or_origin",
+                 "request_cross_site", "missing_host", "range_unit", "range_interval", "range_value", "range_order", "range_suffix"})
+                if (std::string_view(failure.what()) == candidate) { code = candidate; break; }
+            rejection.store(code);
             if (!response_started) send_status(client, 403);
         } catch (const HttpError& failure) {
             error.store(failure.code);
@@ -126,7 +145,8 @@ struct PlaybackProxy::State {
             if (client == INVALID_SOCKET) continue;
             u_long blocking = 0;
             ioctlsocket(client, FIONBIO, &blocking);
-            try { serve(client); } catch (...) { error.store(ERROR_CONNECTION_ABORTED); }
+            // Decoder schließen beim Seeking alte Requests. Das ist kein PMS-Fehler.
+            try { serve(client); } catch (const LocalDisconnect&) {} catch (...) { error.store(ERROR_CONNECTION_ABORTED); }
             shutdown(client, SD_BOTH); closesocket(client);
         }
     }
@@ -176,5 +196,5 @@ PlaybackProxy::PlaybackProxy(PlaybackSource source) : state_(std::make_unique<St
 
 PlaybackProxy::~PlaybackProxy() = default;
 const std::string& PlaybackProxy::url() const { return state_->local_url; }
-ProxyStatus PlaybackProxy::status() const { return {state_->upstream.load(), state_->error.load(), state_->bytes.load()}; }
+ProxyStatus PlaybackProxy::status() const { return {state_->upstream.load(), state_->error.load(), state_->bytes.load(), state_->rejection.load()}; }
 }

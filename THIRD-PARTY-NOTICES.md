@@ -11,6 +11,8 @@ Verwendet werden die unveränderten Dateien `gen_ml/ml.h` und `Winamp/wa_ipc.h`.
 
 Das gesamte SDK enthält weitere Beispiele und Komponenten mit eigenen Bedingungen. Aus der Header-Lizenz wird keine pauschale Freigabe aller SDK-Dateien abgeleitet. Insbesondere wird kein Material aus dem 2024 veröffentlichten Winamp-Quellbaum verwendet.
 
+`gen_tray/WINAMPCMD.H` liefert die ursprünglichen numerischen Befehlsdefinitionen, insbesondere `WINAMP_BUTTON2`. Dieser reine Definitionsheader enthält keinen eigenen Lizenztext und wird ebenfalls ausschließlich lokal aus dem originalen SDK beschafft. Der Header und die SDK-Beispiele werden nicht mit dem Projekt weitergegeben; es wird kein Beispielprogramm übernommen.
+
 ## nlohmann/json 3.12.0
 
 Quelle: https://github.com/nlohmann/json/releases/tag/v3.12.0

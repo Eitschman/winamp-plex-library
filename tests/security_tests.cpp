@@ -1,4 +1,5 @@
 #include "plex/security.h"
+#include "plex/playlist.h"
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -50,6 +51,10 @@ int main() {
         };
         check(!request("GET", "Host: " + authority + "\r\nRange: bytes=1-2\r\n").head, "get_request");
         check(request("HEAD", "Host: " + authority + "\r\n").head, "head_request");
+        check(!request("GET", "Host: 127.0.0.1\r\nUser-Agent: Winamp/5.9\r\n").head, "winamp_host_without_port");
+        rejects([&] { request("GET", "Host: 127.0.0.1:9999\r\n"); }, "wrong_explicit_port");
+        rejects([&] { request("GET", "Host: localhost\r\n"); }, "different_host_without_port");
+        rejects([&] { request("GET", "Host: 127.0.0.1\r\nHost: " + authority + "\r\n"); }, "duplicate_legacy_host");
         for (const auto* headers : {"Host: attacker.example\r\n", "Host: 127.0.0.1:12345\r\nHost: 127.0.0.1:12345\r\n",
              "Host: 127.0.0.1:12345\r\nOrigin: https://evil.example\r\n",
              "Host: 127.0.0.1:12345\r\nContent-Length: 5\r\n",
@@ -60,6 +65,12 @@ int main() {
         rejects([&] { request("POST", "Host: " + authority + "\r\n"); }, "unsupported_method");
         rejects([&] { plex::parse_local_request("GET /wrong HTTP/1.1\r\nHost: " + authority + "\r\n\r\n", authority, target); }, "wrong_capability");
         rejects([&] { plex::parse_local_request(std::string(17000, 'a'), authority, target); }, "oversized_headers");
+        const auto local = "http://127.0.0.1:12345/stream/" + std::string(48, 'a') + "/audio.mp3";
+        const auto playlist = plex::make_playlist({{local, "Björk\r\n#EXTINF:0,Injected", 306}});
+        check(playlist.find("#EXTINF:306,Björk  #EXTINF:0,Injected\r\n") != playlist.npos, "playlist_unicode_and_line_safety");
+        rejects([&] { plex::make_playlist({{"https://other.example/media?X-Plex-Token=fake", "Title", 5}}); }, "playlist_external_url_rejected");
+        rejects([&] { plex::make_playlist({{local + "?X-Plex-Token=fake", "Title", 5}}); }, "playlist_query_rejected");
+        rejects([&] { plex::make_playlist({}); }, "empty_playlist_rejected");
         std::cout << checks << " security checks passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }

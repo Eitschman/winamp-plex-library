@@ -178,11 +178,14 @@ int main() {
         check(fetch(url, L"GET", L"Range: bytes=999999-\r\n").status == 416, "unsatisfiable_range");
         const auto before = fixture.hits.load();
         check(fetch(url + "?X-Plex-Token=should-not-forward").status == 403, "query_rejected");
+        check(proxy->status().local_rejection && std::string(proxy->status().local_rejection) == "request_target", "fixed_rejection_diagnostic");
         check(fetch(url, L"POST").status == 403, "post_rejected");
         check(fetch(url, L"GET", L"Origin: https://evil.example\r\n").status == 403, "browser_origin_rejected");
         check(fetch(url, L"GET", L"Range: bytes=0-1,4-5\r\n").status == 403, "multipart_range_rejected");
         check(fetch(url, L"GET", L"Host: evil.example\r\n").status == 403, "dns_rebinding_rejected");
         check(fixture.hits.load() == before, "rejections_never_contact_upstream");
+        check(fetch(url, L"GET", L"Host: 127.0.0.1\r\n").body == fixture.media, "winamp_host_transfers_media");
+        check(!proxy->status().local_rejection, "valid_request_clears_rejection_diagnostic");
         const auto origin_end = url.find('/', 7);
         check(fetch(url.substr(0, origin_end) + "/stream/invalid/audio.mp3").status == 403, "invalid_capability");
         proxy.reset();
@@ -195,6 +198,11 @@ int main() {
             check(response.status == static_cast<DWORD>(status == 302 || status == 500 ? 502 : status), "classified_upstream_status");
             check(response.body.empty() && response.raw_headers.find(L"Set-Cookie") == response.raw_headers.npos &&
                   response.raw_headers.find(L"Location:") == response.raw_headers.npos, "private_headers_not_forwarded");
+        }
+        {
+            plex::PlaybackProxy truncated({server, "synthetic-test-token", "/library/parts/999/file.mp3"});
+            check(fetch(truncated.url()).body == "truncated", "truncated_fixture_received");
+            check(truncated.status().transport_error != 0, "truncated_response_reported");
         }
         const auto handles_before = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
         for (int iteration = 0; iteration < 10; ++iteration) {
