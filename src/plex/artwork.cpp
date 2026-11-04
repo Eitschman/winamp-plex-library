@@ -4,7 +4,6 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <array>
-#include <cstring>
 #include <stdexcept>
 #include <string_view>
 
@@ -58,31 +57,40 @@ ArtworkPixels decode_artwork(const std::vector<std::uint8_t>& bytes, unsigned ed
     return result;
 }
 
-std::vector<std::uint8_t> encode_artwork_bmp(const ArtworkPixels& pixels) {
+std::vector<std::uint8_t> encode_artwork_png(const ArtworkPixels& pixels) {
+    using Microsoft::WRL::ComPtr;
     if (!pixels.width || !pixels.height || pixels.width > 256 || pixels.height > 256 ||
         pixels.bgra.size() != static_cast<std::size_t>(pixels.width) * pixels.height * 4)
         throw std::invalid_argument("artwork_pixels");
-    BITMAPFILEHEADER file{};
-    BITMAPV5HEADER header{};
-    file.bfType = 0x4d42;
-    file.bfOffBits = sizeof(file) + sizeof(header);
-    file.bfSize = file.bfOffBits + static_cast<DWORD>(pixels.bgra.size());
-    header.bV5Size = sizeof(header); header.bV5Width = pixels.width;
-    header.bV5Height = -static_cast<LONG>(pixels.height);
-    header.bV5Planes = 1; header.bV5BitCount = 32; header.bV5Compression = BI_BITFIELDS;
-    header.bV5RedMask = 0x00ff0000; header.bV5GreenMask = 0x0000ff00;
-    header.bV5BlueMask = 0x000000ff; header.bV5AlphaMask = 0xff000000;
-    header.bV5CSType = LCS_sRGB;
-    std::vector<std::uint8_t> result(file.bfSize);
-    std::memcpy(result.data(), &file, sizeof(file));
-    std::memcpy(result.data() + sizeof(file), &header, sizeof(header));
-    std::memcpy(result.data() + file.bfOffBits, pixels.bgra.data(), pixels.bgra.size());
-    // WIC liefert vormultiplizierte Pixel; das BMP speichert unabhängige Farbkanäle.
-    for (std::size_t index = file.bfOffBits; index < result.size(); index += 4) {
-        const auto alpha = result[index + 3];
-        for (std::size_t channel = 0; channel < 3; ++channel)
-            result[index + channel] = alpha ? static_cast<std::uint8_t>((std::min)(255U, (result[index + channel] * 255U + alpha / 2) / alpha)) : 0;
-    }
+    ComPtr<IWICImagingFactory> factory;
+    require(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)));
+    ComPtr<IStream> stream;
+    require(CreateStreamOnHGlobal(nullptr, TRUE, &stream));
+    ComPtr<IWICBitmapEncoder> encoder;
+    require(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder));
+    require(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache));
+    ComPtr<IWICBitmapFrameEncode> frame;
+    require(encoder->CreateNewFrame(&frame, nullptr));
+    require(frame->Initialize(nullptr));
+    require(frame->SetSize(pixels.width, pixels.height));
+    auto format = GUID_WICPixelFormat32bppBGRA;
+    require(frame->SetPixelFormat(&format));
+    ComPtr<IWICBitmap> bitmap;
+    require(factory->CreateBitmapFromMemory(pixels.width, pixels.height, GUID_WICPixelFormat32bppPBGRA,
+        pixels.width * 4, static_cast<UINT>(pixels.bgra.size()), const_cast<BYTE*>(pixels.bgra.data()), &bitmap));
+    ComPtr<IWICFormatConverter> converter;
+    require(factory->CreateFormatConverter(&converter));
+    require(converter->Initialize(bitmap.Get(), format, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom));
+    require(frame->WriteSource(converter.Get(), nullptr));
+    require(frame->Commit()); require(encoder->Commit());
+    STATSTG information{};
+    require(stream->Stat(&information, STATFLAG_NONAME));
+    if (!information.cbSize.QuadPart || information.cbSize.QuadPart > 300000) throw std::invalid_argument("artwork_encoded_limit");
+    std::vector<std::uint8_t> result(static_cast<std::size_t>(information.cbSize.QuadPart));
+    LARGE_INTEGER begin{}; require(stream->Seek(begin, STREAM_SEEK_SET, nullptr));
+    ULONG read = 0;
+    require(stream->Read(result.data(), static_cast<ULONG>(result.size()), &read));
+    if (read != result.size()) throw std::invalid_argument("artwork_encoded_read");
     return result;
 }
 

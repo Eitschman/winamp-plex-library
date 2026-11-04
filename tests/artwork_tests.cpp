@@ -31,11 +31,11 @@ int main() {
         const auto decoded = plex::decode_artwork(bitmap);
         check(decoded.width == 48 && decoded.height == 24 && decoded.bgra.size() == 48 * 24 * 4, "aspect_ratio_and_bounded_output");
         check(decoded.bgra[2] == 255 && decoded.bgra[3] == 255, "decoded_red_pixel_and_alpha");
-        const auto encoded = plex::encode_artwork_bmp(decoded);
+        const auto encoded = plex::encode_artwork_png(decoded);
         const auto roundtrip = plex::decode_artwork(encoded);
-        check(roundtrip.width == decoded.width && roundtrip.bgra == decoded.bgra, "provider_bitmap_roundtrip");
+        check(roundtrip.width == decoded.width && roundtrip.bgra == decoded.bgra, "provider_png_roundtrip");
         auto invalid_pixels = decoded; invalid_pixels.bgra.pop_back();
-        rejects([&] { plex::encode_artwork_bmp(invalid_pixels); }, "provider_bitmap_invalid_pixels_rejected");
+        rejects([&] { plex::encode_artwork_png(invalid_pixels); }, "provider_png_invalid_pixels_rejected");
         rejects([] { plex::decode_artwork({}); }, "empty_image_rejected");
         rejects([] { plex::decode_artwork({1, 2, 3}); }, "malformed_image_rejected");
         rejects([&] { plex::decode_artwork(bitmap, 1024); }, "oversized_output_rejected");

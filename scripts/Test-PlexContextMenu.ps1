@@ -71,6 +71,9 @@ if ($Action -eq 'Play') {
 } finally {
     if ($null -ne $volume) {
         [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)
+        if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) {
+            throw 'Die Testwiedergabe wurde nicht gestoppt. Die Testinstanz bleibt stumm.'
+        }
         [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]$volume, [IntPtr]122)
     }
 }

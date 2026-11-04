@@ -25,7 +25,9 @@ public:
         std::lock_guard<std::mutex> lock(artwork_mutex);
         return filename && artwork.find(filename) != artwork.end();
     }
-    int kind() { return ALBUMARTPROVIDER_TYPE_DATABASE; }
+    // Winamp 5.9.2 berücksichtigt für HTTP-Titel nur die dateibezogene EMBEDDED-Kategorie.
+    // Das Bild bleibt separat zugeordnet; weder Medienbytes noch Plex-Tags werden verändert.
+    int kind() { return ALBUMARTPROVIDER_TYPE_EMBEDDED; }
     int get(const wchar_t* filename, const wchar_t* type, void** bits, size_t* length, wchar_t** mime) {
         ++data_queries;
         if (!bits || !length || !mime) return ALBUMARTPROVIDER_FAILURE;
@@ -36,14 +38,15 @@ public:
             const auto found = artwork.find(filename);
             if (found == artwork.end() || !memory_api) return ALBUMARTPROVIDER_FAILURE;
             auto* data = memory_api->sysMalloc(found->second->size());
-            auto* format = static_cast<wchar_t*>(memory_api->sysMalloc(sizeof(L"image/bmp")));
+            auto* format = static_cast<wchar_t*>(memory_api->sysMalloc(sizeof(L"png")));
             if (!data || !format) {
                 if (data) memory_api->sysFree(data);
                 if (format) memory_api->sysFree(format);
                 return ALBUMARTPROVIDER_FAILURE;
             }
             std::memcpy(data, found->second->data(), found->second->size());
-            std::memcpy(format, L"image/bmp", sizeof(L"image/bmp"));
+            // Der SDK-Providervertrag verwendet die Dateitypkennung, keinen HTTP-MIME-Typ.
+            std::memcpy(format, L"png", sizeof(L"png"));
             *bits = data; *length = found->second->size(); *mime = format;
             ++successful_queries;
             return ALBUMARTPROVIDER_SUCCESS;

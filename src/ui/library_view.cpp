@@ -281,7 +281,7 @@ struct View {
                         const auto pixels = fetch_artwork(job.settings, thumb, stop, 256);
                         ArtworkBytes bytes;
                         if (pixels) {
-                            bytes = std::make_shared<const std::vector<std::uint8_t>>(encode_artwork_bmp(*pixels));
+                            bytes = std::make_shared<const std::vector<std::uint8_t>>(encode_artwork_png(*pixels));
                             artwork_size += bytes->size();
                             if (artwork_size > 64 * 1024 * 1024) throw std::invalid_argument("playback_artwork_limit");
                         }

@@ -17,6 +17,9 @@ template<class Action> void rejects(Action action, const char* name) {
 int main() {
     using namespace plex::plugin;
     MockServices services;
+    const auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(initialized)) return 2;
+    struct Apartment { ~Apartment() { CoUninitialize(); } } apartment;
     try {
         rejects([] { initialize_artwork_provider(nullptr); }, "missing_service_rejected");
         services.memory_available = false;
@@ -30,11 +33,11 @@ int main() {
         shutdown_artwork_provider(); services.reject_registration = false;
         initialize_artwork_provider(&services);
         auto* provider = static_cast<svc_albumArtProvider*>(services.registered->getInterface());
-        check(provider->ProviderType() == ALBUMARTPROVIDER_TYPE_DATABASE, "database_provider_type");
+        check(provider->ProviderType() == ALBUMARTPROVIDER_TYPE_EMBEDDED, "stream_provider_type");
         check(!provider->IsMine(L"https://foreign.example/file.mp3"), "foreign_url_ignored");
         const std::wstring url = L"http://127.0.0.1:12345/stream/012345678901234567890123456789012345678901234567/audio.mp3";
         auto pixels = plex::ArtworkPixels{1, 1, {10, 20, 30, 255}};
-        const auto bytes = std::make_shared<const std::vector<std::uint8_t>>(plex::encode_artwork_bmp(pixels));
+        const auto bytes = std::make_shared<const std::vector<std::uint8_t>>(plex::encode_artwork_png(pixels));
         bind_playback_artwork(url, bytes);
         check(provider->IsMine(url.c_str()), "owned_url_recognized");
         check(artwork_provider_diagnostic(3) == 1 && artwork_provider_diagnostic(4) == 1, "provider_diagnostics_registered_and_bound");
@@ -43,7 +46,7 @@ int main() {
         void* bits = nullptr; size_t length = 0; wchar_t* mime = nullptr;
         check(provider->GetAlbumArtData(url.c_str(), L"cover", &bits, &length, &mime) == ALBUMARTPROVIDER_SUCCESS,
               "cached_cover_returned");
-        check(length == bytes->size() && !std::memcmp(bits, bytes->data(), length) && !wcscmp(mime, L"image/bmp"), "cover_bytes_and_type");
+        check(length == bytes->size() && !std::memcmp(bits, bytes->data(), length) && !wcscmp(mime, L"png"), "cover_bytes_and_sdk_type_identifier");
         services.memory.memory.sysFree(bits); services.memory.memory.sysFree(mime);
         check(services.memory.memory.allocations == 0, "host_allocator_balanced");
         services.memory.memory.fail_after = 1;
