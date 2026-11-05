@@ -12,6 +12,8 @@ Der Wiedergabe-Prototyp übergibt befristete Loopback-URLs für MP3 und M4A an W
 
 Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Plex-Playlists. Native Tabellen laden Seiten im Hintergrund, unterstützen Suche, Sortierung, Mehrfachauswahl und Kontextmenüs. Künstler → Alben → Titel → Winamp-Playlist wurde mit realen Daten geprüft. Ein begrenzter Metadaten-Cache hält bereits geladene Seiten vor.
 
+Die Kontextaktion „Nach aktuellem Titel einfügen“ fügt ausgewählte Titel hinter dem aktuellen Playlist-Eintrag ein und erhält Wiedergabe beziehungsweise Pause. Die tatsächliche nächste Wiedergabe richtet sich weiterhin nach Winamps Zufallswiedergabe und gegebenenfalls dessen Warteschlangen-Plugins. Abgelaufene lokale Wiedergabelinks werden mit einer eigenen Meldung angezeigt; der Titel kann erneut aus Plex hinzugefügt werden.
+
 Die Titelansicht zeigt persönliche Plex-Bewertungen auf einer Fünf-Sterne-Skala. Das Kontextmenü eines einzelnen Titels setzt ein bis fünf Sterne oder entfernt die Bewertung. Schreiben und Rücklesen laufen im Hintergrund; erst der bestätigte Serverwert aktualisiert die Tabelle. Vorhandene Bruchteile bleiben beim Lesen erhalten. Die Änderung und Wiederherstellung eines Testtitels sind am echten Server nachgewiesen.
 
 Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_ml`. Classic, Winamp Modern, Bento und Big Bento wurden in der getrennten Testkopie visuell geprüft. Das ist kein Nachweis für jeden fremden Skin oder jede DPI-Einstellung. Es gibt keine zusätzliche Player-Steuerleiste: Doppelklick und Kontextmenü übergeben Medien an Winamp; der Player steuert die Wiedergabe.

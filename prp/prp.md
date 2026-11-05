@@ -12,6 +12,7 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 - Plex-Tokens bleiben technisch für API-Zugriffe erforderlich. Sie werden nach der Browserfreigabe vom Plugin bezogen, mit Windows DPAPI gespeichert und ausschließlich als HTTP-Header an den ausgewählten, geprüften Server übertragen.
 - Winamp erhält zeitlich begrenzte Loopback-URLs für MP3 und vorhandene M4A-Dateien. FLAC, OGG und separate ADTS-AAC-Dateien benötigen privaten lokalen Dateizugriff und werden vor der Playlistübergabe im Hintergrund vorbereitet. AAC erhält ohne Neucodierung einen M4A-Container. Beide Wege verwenden TLS-Prüfung und enthalten keine Plex-Tokens in Playlistpfaden.
 - Laufzeittests erfolgen in einer ausdrücklich freigegebenen, getrennten Winamp-Testkopie. Die vorhandene Installation und ihre Konfiguration werden nicht verändert. Die Installation der VS-2022-Build-Tools ist freigegeben.
+- Die Testkopie startet und bleibt minimiert. Nur erforderliche Sicht- und Maustests blenden sie kurz ein und minimieren danach wieder. Abspieltests erfolgen möglichst stumm und werden anschließend gestoppt.
 - Persönliche Serveradressen, Zugangsdaten und API-Antworten mit privaten Inhalten gehören nicht in dieses Dokument oder das Repository.
 
 ## Nachgewiesener Arbeitsstand
