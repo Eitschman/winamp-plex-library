@@ -1,10 +1,11 @@
-﻿param([int]$Cycles = 20, [int]$SettleSeconds = 60, [ValidateRange(0, 60)][int]$CycleDelaySeconds = 0, [switch]$MeasureSockets, [switch]$HandleSummaries, [switch]$WindowSummaries)
+﻿param([int]$Cycles = 20, [int]$SettleSeconds = 60, [ValidateRange(0, 60)][int]$CycleDelaySeconds = 0, [switch]$MeasureSockets, [switch]$HandleSummaries, [switch]$WindowSummaries, [switch]$IdleControl)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 if ($Cycles -lt 3 -or $Cycles -gt 100 -or $SettleSeconds -lt 0 -or $SettleSeconds -gt 120) {
     throw 'Ungültiger Umfang der Ressourcenprüfung.'
 }
 $process = Get-PlexTestProcess
+if ($IdleControl -and $CycleDelaySeconds -eq 0) { throw 'Der Ruhe-Kontrolllauf benötigt ein ausdrückliches Messintervall.' }
 $outer = @([PlexNative]::Windows($process.Id) | Where-Object {
     @([PlexNative]::Children($_.Handle) | Where-Object Class -eq SysTreeView32).Count -gt 0
 })
@@ -77,13 +78,18 @@ function Switch-Views {
     }
 }
 for ($warmup = 0; $warmup -lt 3; ++$warmup) { Switch-Views }
+Set-PlexTestMinimized
+$mode = if ($IdleControl) { 'Ruhe-Kontrolllauf ohne Ansichtswechsel' } else { 'Wechsel durch vier Plex-Ansichten' }
+Write-Output ("Messmodus: $mode")
 $duration = [Diagnostics.Stopwatch]::StartNew()
 Wait-Idle
 $before = Measure-Resources
 Write-Output ('Vorher: ' + ($before | ConvertTo-Json -Compress))
 Save-HandleSummary 'before'
 for ($cycle = 0; $cycle -lt $Cycles; ++$cycle) {
-    Switch-Views
+    # Der Kontrolllauf behält dieselbe geladene Ansicht und dieselben Grenzwerte.
+    # Aufwärmen und Ruhephasen entsprechen der aktiven Wechselprüfung.
+    if (-not $IdleControl) { Switch-Views }
     for ($second = 0; $second -lt $CycleDelaySeconds; ++$second) { Start-Sleep -Seconds 1 }
     Write-Output ("Zyklus ${cycle}: " + ((Measure-Resources) | ConvertTo-Json -Compress))
 }
@@ -92,7 +98,7 @@ $after = Measure-Resources
 Write-Output ('Nachher: ' + ($after | ConvertTo-Json -Compress))
 Save-HandleSummary 'after'
 Write-Output ("Gemessene Laufzeit einschließlich gleicher Ruhephasen: " + [Math]::Round($duration.Elapsed.TotalSeconds, 1) + ' Sekunden.')
-if ($after.gdi -gt $before.gdi + 2) { throw 'GDI-Ressourcen wachsen beim Wechsel der Plex-Ansichten.' }
-if ($after.user -gt $before.user + 2) { throw 'USER-Ressourcen wachsen beim Wechsel der Plex-Ansichten.' }
+if ($after.gdi -gt $before.gdi + 2) { throw "GDI-Ressourcen wachsen: $mode." }
+if ($after.user -gt $before.user + 2) { throw "USER-Ressourcen wachsen: $mode." }
 if ($SettleSeconds -ge 60 -and $after.handles -gt $before.handles + 4) { throw 'Prozesshandles wachsen auch nach der Ruhephase.' }
-Write-Output "$Cycles Zyklen durch vier Plex-Ansichten geprüft. Kein allgemeiner Speicherlecknachweis."
+Write-Output "$Cycles Messintervalle geprüft: $mode. Kein allgemeiner Speicherlecknachweis."
