@@ -2,6 +2,8 @@
 
 ## Aktuelle Komponenten
 
+Die Liste der Musikbibliotheken liegt bei aktiviertem Cache für fünf Minuten gemeinsam im Prozess vor. `LibraryCache` hält höchstens eine Liste; Schlüssel aus Serverkennung, Verbindungsrevision und Cache-Gültigkeitsbereich verhindern die Übernahme in eine andere Sitzung. Ein neuer Ansichts-Worker muss diese unveränderte Liste nicht erneut abfragen. Die erste Verbindungsprüfung einschließlich TLS und Serveridentität bleibt erforderlich. Ausschalten umgeht den Cache, Verbindungsänderung und Cache-Leeren verwerfen ihn. „Aktualisieren“ fragt auch die Bibliotheksliste neu ab. Ein abgelaufener Eintrag verdeckt keinen Netzwerkfehler; Netzwerkzugriffe laufen außerhalb der Cache-Sperre.
+
 Der begrenzte Cover-Worker aktualisiert auch Titelanzahl und Laufzeit sichtbarer Plex-Playlists. Dafür verwendet er deren Detailendpunkt, da Übersichtswerte dynamischer Playlists veraltet sein können. Die Antworten sind an die angefragte Audio-Playlist gebunden, fünf Minuten gecacht und durch Navigationsgenerationen gegen verspätete Übernahme geschützt. Playlistzeilen erhalten dabei keine Cover-Bildliste.
 
 | Bereich | Verantwortung |

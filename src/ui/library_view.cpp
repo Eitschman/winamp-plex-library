@@ -22,8 +22,9 @@ namespace {
 static_assert(sizeof(MLSKINNEDPOPUP) == 48, "Die Zielversion benötigt die dokumentierte Popup-Struktur mit Anpassungsfeldern.");
 constexpr UINT result_ready = WM_APP + 42;
 PageCache cache;
+LibraryCache library_cache;
 std::atomic<unsigned long long> cache_scope{0};
-void clear_cache() { ++cache_scope; cache.clear(); }
+void clear_cache() { ++cache_scope; cache.clear(); library_cache.clear(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
 void layout(HWND dialog);
 
@@ -300,6 +301,7 @@ struct View {
             }
             Result result; result.action = job.action; result.connection_revision = job.connection_revision;
             try {
+                const auto library_key = job.settings.server_identifier + "|" + std::to_string(job.connection_revision) + "|" + std::to_string(job.cache_scope);
                 if (job.verify_connection) {
                     const PlexAuth auth(job.settings.client_identifier, stop);
                     auto connection = auth.connect_server(
@@ -309,9 +311,12 @@ struct View {
                     result.verified_origin = std::move(connection.origin);
                     result.libraries = std::move(connection.libraries);
                     result.libraries_loaded = true;
+                    if (job.settings.cache_enabled) library_cache.put(library_key, result.libraries);
                 } else if (job.load_libraries) {
                     const PlexAuth auth(job.settings.client_identifier, stop);
-                    result.libraries = parse_libraries(auth.get_server(job.settings.server_origin, job.settings.server_token, "/library/sections"));
+                    result.libraries = library_cache.load(library_key, job.settings.cache_enabled, [&] {
+                        return parse_libraries(auth.get_server(job.settings.server_origin, job.settings.server_token, "/library/sections"));
+                    });
                     result.libraries_loaded = true;
                 }
                 const PlexCatalog client(job.settings, stop);
@@ -667,7 +672,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             Job job; job.action = Action::rate; job.selected = std::move(selected); job.rating = 2.0 * (control - IDC_RATE_NONE);
             view->submit(std::move(job)); return TRUE;
         }
-        if (control == IDC_REFRESH || control == IDC_CLEAR_CACHE) { clear_cache(); view->load(); return TRUE; }
+        if (control == IDC_REFRESH || control == IDC_CLEAR_CACHE) { clear_cache(); view->libraries.clear(); view->load(); return TRUE; }
         if (control == IDC_NEXT && !view->busy && view->page.more) {
             view->current.query.offset += view->page.items.size(); view->current.offsets.push_back(view->current.query.offset); view->load(); return TRUE;
         }

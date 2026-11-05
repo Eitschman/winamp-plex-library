@@ -109,6 +109,41 @@ int main() {
         check(!cache.get("two", now) && cache.get("one", now), "least_recently_used_eviction");
         check(!cache.get("one", now + std::chrono::seconds(10)), "cache_expiry");
         cache.clear(); check(!cache.get("three", now), "cache_clear");
+        plex::LibraryCache libraries(std::chrono::seconds(10));
+        unsigned fetches = 0;
+        const auto fetch_libraries = [&] {
+            ++fetches; return std::vector<plex::PlexLibrary>{{"1", "Musik Grüße 東京"}};
+        };
+        auto first_libraries = libraries.load("server|revision1|scope1", true, fetch_libraries, now);
+        first_libraries.front().title = "Verändert";
+        check(libraries.load("server|revision1|scope1", true, fetch_libraries, now).front().title == "Musik Grüße 東京" && fetches == 1,
+              "library_cache_avoids_repeated_request_and_returns_copy");
+        libraries.load("server|revision2|scope1", true, fetch_libraries, now);
+        check(fetches == 2, "library_cache_connection_revision_isolated");
+        libraries.load("server|revision2|scope2", true, fetch_libraries, now);
+        check(fetches == 3, "library_cache_scope_isolated");
+        libraries.load("server|revision2|scope2", true, fetch_libraries, now + std::chrono::seconds(10));
+        check(fetches == 4, "library_cache_expires_at_boundary");
+        libraries.clear(); libraries.load("server|revision2|scope2", true, fetch_libraries, now);
+        check(fetches == 5, "library_cache_clear_fetches_again");
+        libraries.load("server|revision2|scope2", false, fetch_libraries, now);
+        libraries.load("server|revision2|scope2", false, fetch_libraries, now);
+        check(fetches == 7, "disabled_library_cache_always_fetches");
+        libraries.put("empty", {}, now);
+        check(libraries.load("empty", true, fetch_libraries, now).empty() && fetches == 7, "empty_library_list_is_cached");
+        rejects([&] { libraries.load("empty", true, []() -> std::vector<plex::PlexLibrary> { throw std::runtime_error("synthetic_network_failure"); }, now + std::chrono::seconds(10)); },
+                "expired_library_cache_does_not_hide_network_error");
+        check(!libraries.load("empty", true, fetch_libraries, now + std::chrono::seconds(10)).empty() && fetches == 8,
+              "library_cache_recovers_after_fetch_error");
+        plex::LibraryCache disabled;
+        disabled.load("disabled", false, fetch_libraries, now);
+        disabled.load("disabled", true, fetch_libraries, now);
+        check(fetches == 10, "disabled_library_cache_does_not_populate");
+        plex::LibraryCache immediate(std::chrono::seconds(0));
+        immediate.load("immediate", true, fetch_libraries, now);
+        immediate.load("immediate", true, fetch_libraries, now);
+        check(fetches == 12, "zero_lifetime_library_cache_never_reuses_entry");
+        rejects([] { plex::LibraryCache invalid(std::chrono::seconds(-1)); }, "library_cache_invalid_lifetime");
         std::cout << checks << " catalog and cache checks passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }

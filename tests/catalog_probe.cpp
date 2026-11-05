@@ -1,6 +1,7 @@
 #include "plex/catalog.h"
 #include "plex/http_stream.h"
 #include "plex/artwork.h"
+#include "plex/page_cache.h"
 #include <objbase.h>
 #include <iostream>
 #include <stdexcept>
@@ -17,7 +18,8 @@ int main(int count, char** arguments) {
     const bool inventory = (count == 2 || count == 3) && std::string(arguments[1]) == "--formats";
     const bool sorts = count == 2 && std::string(arguments[1]) == "--sorts";
     const bool resources = count == 3 && std::string(arguments[1]) == "--resources";
-    if (count != 1 && count != 3 && !inventory && !sorts && !resources) return 2;
+    const bool library_cache = count == 2 && std::string(arguments[1]) == "--library-cache";
+    if (count != 1 && !inventory && !sorts && !resources && !library_cache) return 2;
     unsigned cycles = 0;
     if (resources) {
         const std::string value(arguments[2]);
@@ -74,6 +76,33 @@ int main(int count, char** arguments) {
             std::this_thread::sleep_for(std::chrono::seconds(60));
             const auto after = measure("after");
             if (after > before + 4) throw std::runtime_error("resource_handle_growth");
+            CloseHandle(stop); return 0;
+        }
+        if (library_cache) {
+            stage = 70;
+            const plex::PlexAuth auth(settings.client_identifier, stop);
+            const auto connection = auth.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
+            if (connection.libraries.empty()) throw std::runtime_error("library_cache_live");
+            plex::LibraryCache cache;
+            cache.put("revision1", connection.libraries);
+            unsigned requests = 0;
+            const auto fetch = [&] {
+                ++requests;
+                return plex::parse_libraries(auth.get_server(connection.origin, settings.server_token, "/library/sections"));
+            };
+            const auto same = [&](const std::vector<plex::PlexLibrary>& libraries) {
+                return libraries.size() == connection.libraries.size() && std::equal(libraries.begin(), libraries.end(), connection.libraries.begin(),
+                    [](const auto& first, const auto& second) { return first.identifier == second.identifier && first.title == second.title; });
+            };
+            for (unsigned view = 0; view < 4; ++view)
+                if (!same(cache.load("revision1", true, fetch))) throw std::runtime_error("library_cache_live");
+            if (requests) throw std::runtime_error("library_cache_live");
+            cache.clear();
+            if (!same(cache.load("revision1", true, fetch)) || requests != 1) throw std::runtime_error("library_cache_live");
+            for (unsigned view = 0; view < 2; ++view)
+                if (!same(cache.load("revision1", false, fetch))) throw std::runtime_error("library_cache_live");
+            if (requests != 3 || !same(cache.load("revision2", true, fetch)) || requests != 4) throw std::runtime_error("library_cache_live");
+            std::cout << "library_cache_live seeded_hits=4 refresh_requests=1 disabled_requests=2 revision_requests=1\n";
             CloseHandle(stop); return 0;
         }
         if (sorts) {
@@ -259,7 +288,7 @@ int main(int count, char** arguments) {
         if (stop) CloseHandle(stop);
         const char* code = "unclassified";
         for (const auto* known : {"pagination_size", "pagination_offset", "catalog_type", "catalog_identifier", "catalog_number", "live_search", "live_pagination", "api_response_error", "media_path", "media_id", "media_version", "media_filename", "catalog_media", "catalog_parts", "catalog_text", "catalog_title",
-                                  "resource_com", "resource_artwork_required", "resource_handle_count", "resource_handle_growth", "sort_capabilities_required", "sort_capability_key"})
+                                  "resource_com", "resource_artwork_required", "resource_handle_count", "resource_handle_growth", "sort_capabilities_required", "sort_capability_key", "library_cache_live"})
             if (std::string(error.what()) == known) code = known;
         std::cerr << "Live catalog failure; stage=" << stage << "; code=" << code << '\n'; return 1;
     }
