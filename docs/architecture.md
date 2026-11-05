@@ -2,6 +2,8 @@
 
 ## Aktuelle Komponenten
 
+Der begrenzte Cover-Worker aktualisiert auch Titelanzahl und Laufzeit sichtbarer Plex-Playlists. Dafür verwendet er deren Detailendpunkt, da Übersichtswerte dynamischer Playlists veraltet sein können. Die Antworten sind an die angefragte Audio-Playlist gebunden, fünf Minuten gecacht und durch Navigationsgenerationen gegen verspätete Übernahme geschützt. Playlistzeilen erhalten dabei keine Cover-Bildliste.
+
 | Bereich | Verantwortung |
 | --- | --- |
 | `src/plugin` | SDK-Descriptor, Export, Knotenregistrierung, Lifecycle, Winamp-Playlist-IPC und Besitz des Wiedergabe-Proxys |

@@ -50,6 +50,20 @@ int main() {
             if (std::string(type) == "playlist") check(std::get<plex::PlexPlaylist>(plex::parse_catalog_page(document, 0).items.front()).duration_ms == 4000000000LL, "long_playlist_duration");
         }
         auto invalid = fixture; invalid["MediaContainer"]["offset"] = 5;
+        auto playlist = fixture;
+        auto& playlist_item = playlist["MediaContainer"]["Metadata"][0];
+        playlist["MediaContainer"]["totalSize"] = 1;
+        playlist_item["type"] = "playlist"; playlist_item["playlistType"] = "audio";
+        playlist_item["leafCount"] = 22; playlist_item["duration"] = 4000000000LL;
+        const auto details = plex::parse_playlist_details(playlist, "42");
+        check(details.track_count == 22 && details.duration_ms == 4000000000LL, "playlist_detail_count_and_long_duration");
+        playlist_item["leafCount"] = 0; playlist_item["duration"] = 0;
+        check(plex::parse_playlist_details(playlist, "42").track_count == 0, "empty_playlist_details");
+        rejects([&] { plex::parse_playlist_details(playlist, "43"); }, "wrong_playlist_details_identity");
+        rejects([&] { plex::parse_playlist_details(fixture, "42"); }, "track_not_playlist_details");
+        rejects([&] { plex::parse_playlist_details(json::parse(R"({"MediaContainer":{"size":0}})"), "42"); }, "missing_playlist_details_rejected");
+        playlist_item["playlistType"] = "video";
+        rejects([&] { plex::parse_playlist_details(playlist, "42"); }, "video_playlist_details_rejected");
         rejects([&] { plex::parse_catalog_page(invalid, 0); }, "wrong_offset_detected");
         invalid = fixture; invalid["MediaContainer"]["size"] = 0;
         rejects([&] { plex::parse_catalog_page(invalid, 0); }, "wrong_size_detected");

@@ -42,6 +42,7 @@ struct BrowseQuery {
 };
 std::string catalog_path(const BrowseQuery& query);
 CatalogPage parse_catalog_page(const nlohmann::json& document, std::size_t requested_offset);
+PlexPlaylist parse_playlist_details(const nlohmann::json& document, const std::string& expected_identifier);
 const std::string& item_identifier(const PlexItem& item);
 const std::string& item_title(const PlexItem& item);
 std::vector<PlexMediaPart> direct_parts(const PlexTrack& track);
@@ -51,6 +52,7 @@ class PlexCatalog {
 public:
     PlexCatalog(PlexConnectionSettings settings, HANDLE stop);
     CatalogPage page(const BrowseQuery& query) const;
+    PlexPlaylist playlist(const std::string& identifier) const;
     std::vector<PlexTrack> tracks(const BrowseQuery& query) const;
 private:
     PlexConnectionSettings settings_;

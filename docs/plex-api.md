@@ -27,7 +27,7 @@ Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und 
 | Titel | `/library/sections/{id}/all?type=10` | Native paginierte Ansicht und Playlistübergabe. |
 | Metadaten | `/library/metadata/{ratingKey}`, `MediaContainer.Metadata[]` | Grundlage für die gezielte Medienauflösung. |
 | Kinder | `/library/metadata/{ratingKey}/children` | Künstler → Alben, Album → Titel. |
-| Audio-Playlists | `/playlists?playlistType=audio` und `/playlists/{id}/items` | Native Liste und Auflösung der Titel; reale Metadatenabfrage geprüft. |
+| Audio-Playlists | `/playlists?playlistType=audio`, `/playlists/{id}` und `/playlists/{id}/items` | Übersicht, aktuelle Detailwerte und Titel in Plex-Reihenfolge; leere sowie gefüllte Playlist nativ geprüft. |
 | Bilder | Relativer `thumb`-Schlüssel unter `/library/metadata/{id}/thumb`, optional numerischer Versionspfad. | Authentifizierter Originalbildtransport und WIC-Miniatur. Titel verweisen über `parentThumb` auf das Albumcover. Kein Foto-Transcoding erforderlich. |
 | Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | WinHTTP für Proxy oder private FLAC-/OGG-/ADTS-AAC-Vorbereitung; nie das lokale Serverdateifeld `file` verwenden. |
 | Suche und Sortierung | Typisierte `all`-Abfrage mit dokumentierten Bibliotheksfiltern und `sort` | Serverfähigkeiten prüfen; keine SQL-ähnliche Syntax erfinden. |

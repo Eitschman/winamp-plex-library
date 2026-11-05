@@ -14,6 +14,7 @@ struct ArtworkResult {
     unsigned generation = 0;
     std::optional<ArtworkPixels> pixels;
     std::optional<unsigned> track_count;
+    std::optional<long long> duration_ms;
     DWORD error = 0;
 };
 
@@ -24,13 +25,15 @@ public:
     ~ArtworkLoader();
     void reset(unsigned generation);
     void submit(std::size_t row, PlexAlbum album, PlexConnectionSettings settings, std::string cache_scope);
+    void submit_playlist(std::size_t row, PlexPlaylist playlist, PlexConnectionSettings settings, std::string cache_scope);
     std::deque<ArtworkResult> take();
 private:
-    struct Job { std::size_t row; unsigned generation; PlexAlbum album; std::string key; PlexConnectionSettings settings; };
+    struct Job { std::size_t row; unsigned generation; PlexAlbum album; std::string key; PlexConnectionSettings settings; bool playlist = false; };
     struct Cached {
         std::string key;
         std::optional<ArtworkPixels> pixels;
         std::optional<unsigned> track_count;
+        std::optional<long long> duration_ms;
         std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::now() + std::chrono::minutes(5);
     };
     void run() noexcept;

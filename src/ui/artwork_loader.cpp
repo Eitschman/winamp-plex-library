@@ -29,6 +29,15 @@ std::deque<ArtworkResult> ArtworkLoader::take() {
     std::lock_guard<std::mutex> lock(mutex_);
     auto result = std::move(completed_); completed_.clear(); return result;
 }
+// Derselbe begrenzte Worker aktualisiert sichtbare Playlist-Zähler ohne Cover-Zeilenhöhe.
+void ArtworkLoader::submit_playlist(std::size_t row, PlexPlaylist playlist, PlexConnectionSettings settings, std::string cache_scope) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (pending_.size() >= 500) throw std::invalid_argument("artwork_queue_limit");
+    auto key = std::move(cache_scope) + "|playlist|" + settings.server_identifier + "|" + playlist.identifier;
+    PlexAlbum reference; reference.identifier = std::move(playlist.identifier);
+    pending_.push_back({row, generation_, std::move(reference), std::move(key), std::move(settings), true});
+    wake_.notify_one();
+}
 void ArtworkLoader::run() noexcept {
     const auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     try {
@@ -48,21 +57,27 @@ void ArtworkLoader::run() noexcept {
                 });
                 if (job.settings.cache_enabled && cached != cache_.end()) {
                     auto value = std::move(*cached); cache_.erase(cached);
-                    result.pixels = value.pixels; result.track_count = value.track_count; cache_.push_front(std::move(value));
+                    result.pixels = value.pixels; result.track_count = value.track_count; result.duration_ms = value.duration_ms;
+                    cache_.push_front(std::move(value));
                 } else {
-                    if (job.album.track_count) result.track_count = job.album.track_count;
-                    else {
-                        // Manche PMS-Antworten lassen leafCount weg. Eine einzige Titelzeile
-                        // reicht aus, um die tatsächliche Gesamtzahl des Albums abzufragen.
-                        BrowseQuery query; query.kind = BrowseKind::tracks; query.parent_identifier = job.album.identifier;
-                        query.sort = "albumOrder"; query.limit = 1;
-                        const auto page = PlexCatalog(job.settings, stop_).page(query);
-                        if (page.total) result.track_count = static_cast<unsigned>(*page.total);
-                        else if (!page.more) result.track_count = static_cast<unsigned>(page.items.size());
+                    if (job.playlist) {
+                        const auto details = PlexCatalog(job.settings, stop_).playlist(job.album.identifier);
+                        result.track_count = details.track_count; result.duration_ms = details.duration_ms;
+                    } else {
+                        if (job.album.track_count) result.track_count = job.album.track_count;
+                        else {
+                            // Manche PMS-Antworten lassen leafCount weg. Eine einzige Titelzeile
+                            // reicht aus, um die tatsächliche Gesamtzahl des Albums abzufragen.
+                            BrowseQuery query; query.kind = BrowseKind::tracks; query.parent_identifier = job.album.identifier;
+                            query.sort = "albumOrder"; query.limit = 1;
+                            const auto page = PlexCatalog(job.settings, stop_).page(query);
+                            if (page.total) result.track_count = static_cast<unsigned>(*page.total);
+                            else if (!page.more) result.track_count = static_cast<unsigned>(page.items.size());
+                        }
+                        result.pixels = fetch_artwork(job.settings, job.album.thumb, stop_);
                     }
-                    result.pixels = fetch_artwork(job.settings, job.album.thumb, stop_);
                     if (job.settings.cache_enabled) {
-                        cache_.push_front({job.key, result.pixels, result.track_count});
+                        cache_.push_front({job.key, result.pixels, result.track_count, result.duration_ms});
                         if (cache_.size() > 64) cache_.pop_back();
                     }
                 }

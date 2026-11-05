@@ -213,8 +213,9 @@ struct View {
         requested_artwork.assign(rows.size(), false);
         ++artwork_generation;
         if (artwork) artwork->reset(artwork_generation);
-        if ((current.query.kind != BrowseKind::albums && current.query.kind != BrowseKind::tracks) || rows.empty()) return;
+        if ((current.query.kind != BrowseKind::albums && current.query.kind != BrowseKind::tracks && current.query.kind != BrowseKind::playlists) || rows.empty()) return;
         if (!artwork) { artwork = std::make_unique<ArtworkLoader>(dialog); artwork->reset(artwork_generation); }
+        if (current.query.kind == BrowseKind::playlists) return;
         images = ImageList_Create(48, 48, ILC_COLOR32, static_cast<int>(rows.size()) + 1, 1);
         if (!images) throw std::runtime_error("artwork_images");
         const auto blank = artwork_bitmap(std::nullopt);
@@ -223,10 +224,15 @@ struct View {
         ListView_SetImageList(list, images, LVSIL_SMALL);
     }
     void request_artwork(int first, int last) {
-        if (!images || !artwork || rows.empty() || requested_artwork.size() != rows.size()) return;
+        if (!artwork || rows.empty() || requested_artwork.size() != rows.size()) return;
         first = (std::max)(0, first); last = (std::min)(last, static_cast<int>(rows.size()) - 1);
         for (int index = first; index <= last; ++index) {
             if (requested_artwork[static_cast<std::size_t>(index)]) continue;
+            if (const auto* playlist = std::get_if<PlexPlaylist>(&rows[static_cast<std::size_t>(index)].item)) {
+                artwork->submit_playlist(static_cast<std::size_t>(index), *playlist, request_connection_settings(), std::to_string(cache_scope.load()));
+                requested_artwork[static_cast<std::size_t>(index)] = true;
+                continue;
+            }
             const auto* album = std::get_if<PlexAlbum>(&rows[static_cast<std::size_t>(index)].item);
             const auto* track = std::get_if<PlexTrack>(&rows[static_cast<std::size_t>(index)].item);
             if (!album && !track) continue;
@@ -245,7 +251,18 @@ struct View {
     void apply_artwork() {
         if (!artwork) return;
         for (auto& result : artwork->take()) {
-            if (result.generation != artwork_generation || result.row >= rows.size() || !images) continue;
+            if (result.generation != artwork_generation || result.row >= rows.size()) continue;
+            if (auto* playlist = std::get_if<PlexPlaylist>(&rows[result.row].item)) {
+                if (result.error) {
+                    SetDlgItemTextW(dialog, IDC_STATUS, text(L"Playlistangaben konnten nicht aktualisiert werden.", L"Could not update playlist details."));
+                } else if (result.track_count && result.duration_ms) {
+                    playlist->track_count = *result.track_count; playlist->duration_ms = *result.duration_ms;
+                    rows[result.row].cells = make_row(rows[result.row].item).cells;
+                    ListView_RedrawItems(GetDlgItem(dialog, IDC_CATALOG), static_cast<int>(result.row), static_cast<int>(result.row));
+                }
+                continue;
+            }
+            if (!images) continue;
             if (result.track_count && std::holds_alternative<PlexAlbum>(rows[result.row].item)) {
                 rows[result.row].cells[3] = std::to_wstring(*result.track_count);
                 std::get<PlexAlbum>(rows[result.row].item).track_count = *result.track_count;
@@ -505,7 +522,10 @@ struct View {
             InvalidateRect(GetDlgItem(dialog, IDC_CATALOG), nullptr, FALSE);
             count_status();
         } else {
-            try { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared); count_status(); }
+            try {
+                if (result->tracks.empty()) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl enthält keine Titel.", L"The selection contains no tracks."));
+                else { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared); count_status(); }
+            }
             catch (...) { SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl konnte nicht an Winamp übergeben werden.", L"Could not send the selection to Winamp.")); }
         }
         controls();

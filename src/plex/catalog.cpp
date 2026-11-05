@@ -150,6 +150,21 @@ CatalogPage parse_catalog_page(const nlohmann::json& document, std::size_t reque
 PlexCatalog::PlexCatalog(PlexConnectionSettings settings, HANDLE stop) : settings_(std::move(settings)), stop_(stop) {
     parse_server_address(settings_.server_origin); validate_token(settings_.server_token);
 }
+// Dynamische Playlists besitzen in der Übersicht mitunter veraltete Zähler.
+// Die Detailantwort muss weiterhin genau zur angefragten Audio-Playlist gehören.
+PlexPlaylist parse_playlist_details(const nlohmann::json& document, const std::string& expected_identifier) {
+    const auto page = parse_catalog_page(document, 0);
+    if (page.items.size() != 1 || page.more || !std::holds_alternative<PlexPlaylist>(page.items.front()))
+        throw std::invalid_argument("playlist_details_type");
+    const auto result = std::get<PlexPlaylist>(page.items.front());
+    if (result.identifier != identifier(expected_identifier)) throw std::invalid_argument("playlist_details_identity");
+    return result;
+}
+PlexPlaylist PlexCatalog::playlist(const std::string& playlist_identifier) const {
+    const PlexAuth client(settings_.client_identifier, stop_);
+    return parse_playlist_details(client.get_server(settings_.server_origin, settings_.server_token,
+        "/playlists/" + identifier(playlist_identifier)), playlist_identifier);
+}
 CatalogPage PlexCatalog::page(const BrowseQuery& query) const {
     const PlexAuth client(settings_.client_identifier, stop_);
     return parse_catalog_page(client.get_server(settings_.server_origin, settings_.server_token, catalog_path(query)), query.offset);

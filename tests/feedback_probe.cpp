@@ -31,9 +31,10 @@ void write_restore(const std::filesystem::path& path, const nlohmann::json& docu
 int wmain(int count, wchar_t** arguments) {
     if (count < 2 || count > 3) return 2;
     const std::wstring operation = arguments[1];
+    const bool playlist_sample = operation == L"--prepare-playlist";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !native_check) return 2;
-    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || native_check) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !native_check) return 2;
+    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || native_check) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -99,6 +100,46 @@ int wmain(int count, wchar_t** arguments) {
             check(metadata(identifier).value("userRating", 0.0) == rating, "rating_restore_readback");
             check(DeleteFileW(arguments[2]) != FALSE, "restore_marker_cleanup");
             std::cout << "rating_restored=1\n"; return 0;
+        }
+        if (playlist_sample) {
+            plex::BrowseQuery query; query.kind = plex::BrowseKind::playlists; query.library_identifier = settings.library_identifier; query.limit = 250;
+            const plex::PlexCatalog catalog(settings, stop.value);
+            const auto page = catalog.page(query);
+            nlohmann::json empty, selected;
+            std::size_t largest = 0, nonempty = 0;
+            for (std::size_t index = 0; index < page.items.size(); ++index) {
+                const auto& item = std::get<plex::PlexPlaylist>(page.items[index]);
+                std::cout << "playlist_fixture_track_count=" << item.track_count << '\n';
+                nlohmann::json sample{{"row_index", index}, {"title", item.title}, {"count", item.track_count}};
+                if (item.track_count == 0) { if (empty.is_null()) empty = sample; continue; }
+                ++nonempty;
+                if (item.track_count > 250 || item.track_count <= largest) continue;
+                auto children = query; children.kind = plex::BrowseKind::tracks;
+                children.parent_identifier = item.identifier; children.playlist_items = true;
+                const auto tracks = catalog.tracks(children);
+                auto single = children; single.limit = 1;
+                const auto first = catalog.page(single);
+                const auto detail = client.get_server(settings.server_origin, settings.server_token, "/playlists/" + item.identifier);
+                const auto& description = detail.at("MediaContainer").at("Metadata").at(0);
+                std::cout << "playlist_fixture_single_total=" << first.total.value_or(0)
+                          << " metadata_count=" << description.value("leafCount", 0)
+                          << " smart=" << description.value("smart", false) << '\n';
+                std::size_t supported = 0;
+                for (const auto& track : tracks) {
+                    try { supported += !plex::direct_parts(track).empty(); }
+                    catch (const std::invalid_argument&) { }
+                }
+                std::cout << "playlist_fixture_actual_tracks=" << tracks.size() << " supported=" << supported << '\n';
+                if (tracks.empty() || tracks.size() <= largest || supported != tracks.size()) continue;
+                check(first.total == tracks.size() && description.at("leafCount") == tracks.size(), "playlist_detail_count_readback");
+                sample["listed_count"] = item.track_count; sample["count"] = tracks.size();
+                nlohmann::json titles = nlohmann::json::array();
+                for (const auto& track : tracks) titles.push_back(track.title);
+                sample["titles"] = std::move(titles); selected = std::move(sample); largest = tracks.size();
+            }
+            write_restore(arguments[2], {{"empty", empty}, {"selected", selected}, {"playlist_count", page.items.size()}});
+            std::cout << "native_playlist_samples_read=1 playlists=" << page.items.size() << " nonempty=" << nonempty << " selected_tracks=" << largest << '\n';
+            return 0;
         }
         plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks; query.library_identifier = settings.library_identifier; query.limit = 250;
         const auto page = plex::PlexCatalog(settings, stop.value).page(query);
