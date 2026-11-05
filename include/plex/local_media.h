@@ -31,7 +31,7 @@ private:
 using PreparedMedia = std::unordered_map<std::string, std::shared_ptr<const LocalMediaFile>>;
 bool requires_local_media(const std::string& media_path);
 
-// FLAC und OGG benötigen in der Zielversion lokalen Decoderzugriff. Die Auswahl
+// FLAC, OGG und ADTS-AAC benötigen in der Zielversion lokalen Decoderzugriff. Die Auswahl
 // erfolgt vor dem Download; Netzwerkfehler erzeugen keinen anderen Wiedergabepfad.
 class LocalMediaStore {
 public:
@@ -40,6 +40,7 @@ public:
     std::filesystem::path directory() const;
     unsigned long long bytes_used() const;
 private:
+    std::shared_ptr<const LocalMediaFile> download(const PlaybackSource& source, HANDLE stop);
     std::shared_ptr<LocalMediaState> state_;
 };
 }

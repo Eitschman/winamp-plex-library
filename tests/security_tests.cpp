@@ -74,6 +74,8 @@ int main() {
         const std::string directory = "C:\\private\\playback\\session-test";
         const auto file = directory + "\\" + std::string(48, 'a') + ".flac";
         check(plex::make_playlist({{file, "Lokaler Titel", 120, true}}, directory).find(file) != std::string::npos, "owned_local_media_accepted");
+        const auto aac = directory + "\\" + std::string(48, 'b') + ".m4a";
+        check(plex::make_playlist({{aac, "AAC-Test", 45, true}}, directory).find(aac) != std::string::npos, "owned_aac_file_accepted");
         for (const auto& path : {std::string("C:\\foreign\\file.flac"), directory + "\\..\\foreign.flac", file + "\r\nInjected", directory + "\\short.ogg", directory + "\\" + std::string(48, 'a') + ".exe"})
             rejects([&] { plex::make_playlist({{path, "Title", 5, true}}, directory); }, "foreign_local_media_rejected");
         rejects([&] { plex::make_playlist({{file, "Title", 5, true}}); }, "local_directory_required");

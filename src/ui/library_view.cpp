@@ -414,11 +414,13 @@ struct View {
         busy = false;
         if (result->error) {
             const auto error = result->error;
-            const auto http = error >= 0x20000000UL ? error - 0x20000000UL : 0;
+            const auto http = error >= 0x20000000UL && error < 0x20000400UL ? error - 0x20000000UL : 0;
             if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
             else if (error == ERROR_NOT_SUPPORTED) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Auswahl ist kein unterstütztes Direct-Play-Medium verfügbar.", L"No supported direct-play media is available for this selection."));
             else if (error == ERROR_FILE_TOO_LARGE) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Eine Mediendatei überschreitet das Vorbereitungslimit von 512 MiB.", L"A media file exceeds the preparation limit of 512 MiB."));
             else if (error == ERROR_DISK_FULL) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Dateivorbereitung ist kein Speicherplatz verfügbar oder das Limit von 2 GiB ist erreicht.", L"Media preparation has no free disk space or has reached the 2 GiB limit."));
+            else if (error == ERROR_MOD_NOT_FOUND || error == ERROR_PROC_NOT_FOUND) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Windows Media Foundation ist für die AAC-Vorbereitung nicht verfügbar.", L"Windows Media Foundation is unavailable for AAC preparation."));
+            else if (error == ERROR_BAD_FORMAT) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Mediendatei hat ein ungültiges oder nicht unterstütztes Format.", L"The media file has an invalid or unsupported format."));
             else if (error == ERROR_INVALID_DATA) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Plex-Antwort konnte nicht verarbeitet werden.", L"The Plex response could not be processed."));
             else {
                 const auto message = std::wstring(text(L"Plex-Verbindungsfehler, Code ", L"Plex connection error, code ")) + std::to_wstring(http ? http : error);

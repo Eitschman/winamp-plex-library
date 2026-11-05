@@ -220,6 +220,7 @@ int main() {
             check(stop != nullptr, "media_stop_event");
             plex::LocalMediaStore store(root, {1000000, 1000000});
             auto file = store.stage({server, "synthetic-test-token", "/library/parts/1/file.flac"}, stop);
+            check(plex::requires_local_media("/library/parts/1/file.aac"), "adts_aac_requires_local_decoder_access");
             const auto path = file->path();
             check(std::filesystem::exists(path) && file->size() == fixture.media.size(), "local_media_prepared");
             PSECURITY_DESCRIPTOR descriptor = nullptr; PACL acl = nullptr;
@@ -250,6 +251,10 @@ int main() {
             auto reclaimed = store.stage({server, "synthetic-test-token", "/library/parts/2/file.ogg"}, stop);
             check(!std::filesystem::exists(locked_path) && store.bytes_used() == fixture.media.size(), "closed_decoder_file_reclaimed");
             reclaimed.reset();
+            bool invalid_aac = false;
+            try { store.stage({server, "synthetic-test-token", "/library/parts/3/file.aac"}, stop); }
+            catch (const plex::HttpError&) { invalid_aac = true; }
+            check(invalid_aac && store.bytes_used() == 0, "invalid_aac_releases_input_and_output_reservation");
             for (const auto status : {401, 403, 404, 302, 500, 999}) {
                 bool rejected = false;
                 try { store.stage({server, "synthetic-test-token", "/library/parts/" + std::to_string(status) + "/file.ogg"}, stop); }

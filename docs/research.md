@@ -1,5 +1,9 @@
 # Technische Recherche
 
+## Separate ADTS-AAC-Dateien
+
+Die [Media-Foundation-Formatübersicht](https://learn.microsoft.com/en-us/windows/win32/medfound/supported-media-formats-in-media-foundation) führt ADTS als AAC-Quelle und MPEG-4 als Ausgabemedium. Der [MPEG-4-Dateisink](https://learn.microsoft.com/en-us/windows/win32/medfound/mpeg-4-file-sink) unterstützt `MEDIASUBTYPE_RAW_AAC1`; seine Nutzdaten enthalten die AudioSpecificConfig. Die [AAC-Medientypen](https://learn.microsoft.com/en-us/windows/win32/medfound/aac-media-types) und `MF_READWRITE_DISABLE_CONVERTERS` bilden den SDK-Vertrag. Das Plugin reicht komprimierte AAC-Pakete ohne Encoder oder Decoder durch. Die ADTS-Feldbelegung ist mit den primären FFmpeg-Referenzen `libavcodec/adts_header.c` und `libavcodec/bsf/aac_adtstoasc.c` abgeglichen; daraus wird kein Quellcode übernommen. Der [ID3v2.4-Vertrag](https://id3.org/id3v2.4.0-structure) beschreibt die separat berücksichtigten Metadatenlängen. Native Messwerte und Grenzen stehen in [testing.md](testing.md).
+
 Recherche am 03.11.2026. Dokumentationsnachweise, Quellcodebefunde und tatsächliche Laufzeitprüfungen werden getrennt behandelt. Laufzeitbefunde stehen in [testing.md](testing.md).
 
 ## Winamp-SDK

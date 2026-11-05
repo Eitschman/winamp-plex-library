@@ -18,7 +18,7 @@ std::string make_playlist(const std::vector<PlaylistEntry>& entries, std::string
             const auto name = entry.url.substr(local_directory.size() + 1);
             if (name.size() < 52) throw std::invalid_argument("playlist_local_file");
             const auto suffix = name.substr(48);
-            if (suffix != ".flac" && suffix != ".ogg") throw std::invalid_argument("playlist_local_file");
+            if (suffix != ".flac" && suffix != ".ogg" && suffix != ".m4a") throw std::invalid_argument("playlist_local_file");
             for (std::size_t index = 0; index < 48; ++index)
                 if (!((name[index] >= 'a' && name[index] <= 'f') || (name[index] >= '0' && name[index] <= '9')))
                     throw std::invalid_argument("playlist_local_file");

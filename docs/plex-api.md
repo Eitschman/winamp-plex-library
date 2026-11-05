@@ -29,7 +29,7 @@ Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und 
 | Kinder | `/library/metadata/{ratingKey}/children` | Künstler → Alben, Album → Titel. |
 | Audio-Playlists | `/playlists?playlistType=audio` und `/playlists/{id}/items` | Native Liste und Auflösung der Titel; reale Metadatenabfrage geprüft. |
 | Bilder | Relativer `thumb`-Schlüssel unter `/library/metadata/{id}/thumb`, optional numerischer Versionspfad. | Authentifizierter Originalbildtransport und WIC-Miniatur. Titel verweisen über `parentThumb` auf das Albumcover. Kein Foto-Transcoding erforderlich. |
-| Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | WinHTTP für Proxy oder private FLAC-/OGG-Vorbereitung; nie das lokale Serverdateifeld `file` verwenden. |
+| Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | WinHTTP für Proxy oder private FLAC-/OGG-/ADTS-AAC-Vorbereitung; nie das lokale Serverdateifeld `file` verwenden. |
 | Suche und Sortierung | Typisierte `all`-Abfrage mit dokumentierten Bibliotheksfiltern und `sort` | Serverfähigkeiten prüfen; keine SQL-ähnliche Syntax erfinden. |
 
 Ein Titel kann mehrere `Media`-Varianten und mehrere `Part`-Einträge besitzen. Eine allgemeine Implementierung muss diese Auswahl sichtbar und reproduzierbar behandeln. Der Prototyp darf nicht beliebige zusätzliche Parts durch Zusammenhängen von URLs simulieren. Laufzeiten sind API-seitig Millisekunden; Winamp erwartet im Playlist-IPC Sekunden.

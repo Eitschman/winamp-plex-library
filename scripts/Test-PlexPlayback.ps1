@@ -1,4 +1,4 @@
-﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000)
+﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -34,6 +34,9 @@ try {
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($position -lt 500) { throw 'Winamp verarbeitet den aktuellen Titel nicht fortlaufend.' }
     $length = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]1, [IntPtr]105)
+    if ($ExpectedLengthSeconds -and [Math]::Abs($length - $ExpectedLengthSeconds) -gt 1) {
+        throw ('Decoderlänge stimmt nicht mit der Testdatei überein. Erwartet=' + $ExpectedLengthSeconds + '; Gemeldet=' + $length)
+    }
     if ($length * 1000 -le $SeekMs) {
         if ($length -le 0) {
             $index = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]125)

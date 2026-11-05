@@ -13,6 +13,21 @@ public class PlexNativeWindow {
   public string Text;
 }
 public static class PlexNative {
+  [StructLayout(LayoutKind.Sequential)] struct CopyData {
+    public IntPtr Tag;
+    public int Size;
+    public IntPtr Data;
+  }
+  public static void EnqueuePlaylist(IntPtr window, string path) {
+    if (!System.IO.Path.IsPathRooted(path) || !path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+      throw new ArgumentException("Absolute M3U8 path required");
+    IntPtr name = Marshal.StringToHGlobalUni(path);
+    IntPtr payload = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(CopyData)));
+    try {
+      Marshal.StructureToPtr(new CopyData { Tag = (IntPtr)1100, Size = (path.Length + 1) * 2, Data = name }, payload, false);
+      Query(window, 74, IntPtr.Zero, payload);
+    } finally { Marshal.FreeHGlobal(payload); Marshal.FreeHGlobal(name); }
+  }
   public delegate bool EnumProc(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
@@ -124,7 +139,7 @@ function Get-PlexTestProcess {
 function Test-PlexPlaybackLocation([string]$Location) {
     if ($Location -match '^http://127\.0\.0\.1:[0-9]+/stream/[0-9a-f]{48}/audio\.(mp3|aac|m4a)$') { return $true }
     $directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WinampPlexLibrary\playback'
-    return $Location -cmatch ('^' + [regex]::Escape($directory) + '\\session-[0-9a-f]{48}\\[0-9a-f]{48}\.(flac|ogg)$')
+    return $Location -cmatch ('^' + [regex]::Escape($directory) + '\\session-[0-9a-f]{48}\\[0-9a-f]{48}\.(flac|ogg|m4a)$')
 }
 
 function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {

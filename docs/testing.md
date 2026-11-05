@@ -26,7 +26,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest enthält `plugin_lifecycle`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider` und `security`. Sieben von sieben Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Konfigurationsprüfungen umfassen DPAPI, Größenlimits, beschädigte Profile, Cache-Optionen und die priorisierte Verbindungsauswahl mit synthetischer Erreichbarkeit. Der SDK-Host prüft beide Hostsprachen, Einstellungen, Diagnose, Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
+CTest enthält `plugin_lifecycle`, `aac_remux`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider` und `security`. Acht von acht Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Konfigurationsprüfungen umfassen DPAPI, Größenlimits, beschädigte Profile, Cache-Optionen und die priorisierte Verbindungsauswahl mit synthetischer Erreichbarkeit. Der SDK-Host prüft beide Hostsprachen, Einstellungen, Diagnose, Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
 
 ## Phase-1-Schranke
 
@@ -70,7 +70,7 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 | --- | --- | --- | --- | --- |
 | MP3 | getestet | getestet | getestet | weitere Fehlerfälle offen |
 | FLAC | getestet, private lokale Datei | 564 Sekunden, Plex-Titel geprüft | getestet, 10.404 ms nach Sprung auf 10 Sekunden | Sitzungsdatei nach regulärem Beenden entfernt |
-| AAC | offen | offen | offen | offen |
+| AAC | synthetische AAC-LC-Stille, lokal als M4A-Container | 45 Sekunden, 1939 Frames bei 44,1 kHz | getestet, 10.580 ms nach Sprung auf 10 Sekunden | echte Plex-ADTS-Datei und weitere AAC-Profile offen |
 | M4A | getestet, MP4-Container | 251 Sekunden, Titel über reguläre Bibliotheksübergabe | getestet, 10.550 ms nach Sprung auf 10 Sekunden | weitere Fehlerfälle offen |
 | OGG | getestet, private lokale Datei | 263 Sekunden, Plex-Titel geprüft | getestet, 10.541 ms nach Sprung auf 10 Sekunden | Sitzungsdatei nach regulärem Beenden entfernt |
 
@@ -89,6 +89,10 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 Die Formatprüfung besitzt positive Gegenproben mit M4A und MP3 und eine synthetische negative Gegenprobe mit einer unzulässigen Dateiendung. Der Pfadprüfer akzeptiert eigene FLAC-Sitzungsdateien und weist fremde Pfade, Pfadwechsel und angehängte Query-Parameter ab. Die Transporttests prüfen vollständige lokale Bytes, Dateifreigabe, Schreibschutz, private DACL, Größen- und Platzlimits, HTTP-Fehler, abgebrochene Downloads, Bereinigung verwaister markierter Sitzungen und Erhalt aktiver beziehungsweise fremder Sitzungen. Für AAC als eigene Dateiendung fehlt eine reale Probe.
 
 Die gezielte AAC-Suche hat alle 20.782 Titel und sämtliche 20.782 gelieferten Medienparts der ausgewählten Bibliothek geprüft. Keine Part-Datei besitzt die Endung `.aac`; 77 Parts melden AAC als Audiocodec. Der Bericht `.local/logs/catalog-aac-search.log` enthält ausschließlich Zähler. Zusätzliche Varianten werden unabhängig vom automatisch ausgewählten Direct-Play-Medium erfasst. Der Bestand liefert damit keinen separaten AAC-Dateinachweis.
+
+`scripts/Test-PlexAac.ps1` verwendet selbst erzeugte AAC-LC-Stille mit 44,1 kHz und zwei Kanälen. Ein authentifizierter synthetischer Loopback-Server liefert die ADTS-Datei an denselben Vorbereitungsweg wie Plex-Medien. Die Probe `.local/logs/aac-current-native.log` bestätigt in Winamp 45 Sekunden Länge und Seeking auf 10.580 ms. Wiedergabe und Playlist werden im `finally`-Pfad gestoppt beziehungsweise geleert. Ein echter Plex-ADTS-Titel wird dadurch nicht nachgewiesen. Die Referenzlänge ergibt sich aus 1939 Frames mit je 1024 Samples, nicht aus einer Bitratenschätzung. Direkte HTTP-Wiedergabe verweigert Seeking; die rohe lokale ADTS-Datei meldet 50 statt 45 Sekunden, auch mit TLEN-Tag. Die verschärfte Laufzeitprüfung erkennt diesen Fehler.
+
+Die AAC-Vorbereitung ändert nur den Container. Der normalisierte AAC-Bitstream der 45-Sekunden-Probe besitzt vor und nach dem Containerwechsel denselben SHA-256-Wert. `aac_remux` vergleicht zusätzlich alle AAC-Nutzdaten über die MP4-Sampletabellen und prüft bestehende Ausgabedateien, Größenlimits, Abbruch, ungültige Daten, abgeschnittene Frames und unerwartete Restbytes. Zusammen mit den sieben übrigen CTest-Suiten sind acht von acht Tests durchgelaufen (`.local/logs/ctest-aac-checked.log`). Das ersetzt keine Prüfung von HE-AAC oder Windows-N-Systemen ohne Medienkomponenten.
 
 ### Bibliotheken und Erweiterungen
 

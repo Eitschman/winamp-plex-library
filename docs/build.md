@@ -39,6 +39,8 @@ Die DLL liegt im Release-Build unter `build/Release/ml_plex.dll`, im Debug-Build
 
 Unter Linux lässt sich der plattformunabhängige Sicherheitscode mit CMake und CTest prüfen. Die Windows-DLL wird dort nicht mit MSVC gebaut. Ein Linux-Test ersetzt weder den x86-Build noch einen Winamp-Lauf.
 
+Für separate ADTS-AAC-Dateien benötigt die Laufzeit Windows Media Foundation (`mfplat.dll` und `mfreadwrite.dll`). Bei Windows-N-Ausgaben können diese Medienkomponenten fehlen; die AAC-Vorbereitung meldet dann einen Fehler. Die DLLs werden erst bei diesem Vorgang aus System32 geladen. AAC wird ohne Neucodierung in M4A verpackt. FFmpeg ist keine Plugin-Abhängigkeit; es dient lokal ausschließlich zum Erzeugen und unabhängigen Prüfen synthetischer Testdateien. Bei `BUILD_TESTING=ON` entstehen zusätzlich `aac_remux_tests.exe` und `aac_remux_probe.exe`.
+
 ## Isolierte Laufzeitprüfung
 
 Das Skript `scripts/Prepare-WinampTest.ps1` erstellt ausschließlich nach ausdrücklicher Freigabe eine getrennte Testkopie. Die Quellinstallation muss explizit angegeben werden; Version und Dateien werden geprüft. Ein bereits vorhandenes Ziel wird abgewiesen.

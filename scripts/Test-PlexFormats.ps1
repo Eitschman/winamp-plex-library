@@ -91,7 +91,8 @@ try {
             [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]120)
             $playlist = Join-Path (Split-Path $process.Path -Parent) 'settings\Winamp.m3u8'
             $urls = @(Get-Content -LiteralPath $playlist -Encoding UTF8 | Where-Object { $_ -and -not $_.StartsWith('#') })
-            if ($urls.Count -eq 1 -and (Test-PlexPlaybackLocation $urls[0]) -and $urls[0].EndsWith('.' + $sample.format)) { $found = $true; break }
+            $extensionMatches = $urls.Count -eq 1 -and ($urls[0].EndsWith('.' + $sample.format) -or ($sample.format -eq 'aac' -and $urls[0] -notmatch '^http:' -and $urls[0].EndsWith('.m4a')))
+            if ($extensionMatches -and (Test-PlexPlaybackLocation $urls[0])) { $found = $true; break }
             [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]40, [IntPtr]::Zero)
             Start-Sleep -Milliseconds 100
         }

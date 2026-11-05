@@ -1,5 +1,6 @@
 #include "plex/local_media.h"
 #include "plex/http_stream.h"
+#include "plex/aac_remux.h"
 #include <bcrypt.h>
 #include <sddl.h>
 #include <array>
@@ -39,7 +40,7 @@ bool hex_name(std::wstring_view name) {
     return true;
 }
 bool owned_file(std::wstring_view name) {
-    return name.size() > 48 && hex_name(name.substr(0, 48)) && (name.substr(48) == L".flac" || name.substr(48) == L".ogg");
+    return name.size() > 48 && hex_name(name.substr(0, 48)) && (name.substr(48) == L".flac" || name.substr(48) == L".ogg" || name.substr(48) == L".aac" || name.substr(48) == L".m4a");
 }
 
 // Nur der aktuelle Windows-Benutzer und SYSTEM erhalten Zugriff, auch wenn der
@@ -158,7 +159,7 @@ LocalMediaFile::~LocalMediaFile() {
 }
 bool requires_local_media(const std::string& path) {
     const auto extension = media_extension(path);
-    return extension == ".flac" || extension == ".ogg";
+    return extension == ".flac" || extension == ".ogg" || extension == ".aac";
 }
 LocalMediaStore::LocalMediaStore(std::filesystem::path root, LocalMediaLimits limits) {
     if (!root.is_absolute() || !limits.file_bytes || limits.total_bytes < limits.file_bytes) throw std::invalid_argument("local_media_settings");
@@ -167,7 +168,7 @@ LocalMediaStore::LocalMediaStore(std::filesystem::path root, LocalMediaLimits li
 std::filesystem::path LocalMediaStore::directory() const { std::lock_guard<std::mutex> lock(state_->mutex); return state_->session; }
 unsigned long long LocalMediaStore::bytes_used() const { std::lock_guard<std::mutex> lock(state_->mutex); return state_->used; }
 
-std::shared_ptr<const LocalMediaFile> LocalMediaStore::stage(const PlaybackSource& source, HANDLE stop) {
+std::shared_ptr<const LocalMediaFile> LocalMediaStore::download(const PlaybackSource& source, HANDLE stop) {
     cancelled(stop);
     if (!requires_local_media(source.media_path)) throw std::invalid_argument("local_media_format");
     HttpStream stream(source.server, source.token, source.media_path, false, {}, stop);
@@ -221,6 +222,45 @@ std::shared_ptr<const LocalMediaFile> LocalMediaStore::stage(const PlaybackSourc
         if (removed) state_->used -= size;
         else {
             try { state_->deferred.emplace_back(std::move(path), size); }
+            catch (...) { state_->cleanup_pending = true; }
+        }
+        throw;
+    }
+}
+
+std::shared_ptr<const LocalMediaFile> LocalMediaStore::stage(const PlaybackSource& source, HANDLE stop) {
+    auto input = download(source, stop);
+    if (media_extension(source.media_path) != ".aac") return input;
+    // Der reservierte Platz umfasst während der Umverpackung Quelle und Ziel.
+    const auto budget = (std::min)(state_->limits.file_bytes, input->size() * 4 + 65536);
+    std::filesystem::path output;
+    {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        if (budget > state_->limits.total_bytes - state_->used) throw HttpError(ERROR_DISK_FULL);
+        output = state_->session / (random_name() + L".m4a");
+        state_->used += budget;
+    }
+    bool created = false, owned = false;
+    unsigned long long reserved = budget;
+    try {
+        const auto result = remux_aac(input->path(), output, stop, budget, &created);
+        {
+            std::lock_guard<std::mutex> lock(state_->mutex);
+            state_->used -= budget - result.bytes; reserved = result.bytes;
+        }
+        input.reset();
+        Handle guard{CreateFileW(output.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr)};
+        if (guard.value == INVALID_HANDLE_VALUE) throw HttpError(GetLastError());
+        auto* prepared = new LocalMediaFile(state_, output, reserved, guard.value);
+        guard.release(); owned = true;
+        return std::shared_ptr<const LocalMediaFile>(prepared);
+    } catch (...) {
+        if (owned) throw;
+        const bool removed = !created || DeleteFileW(output.c_str()) || GetLastError() == ERROR_FILE_NOT_FOUND;
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        if (removed) state_->used -= reserved;
+        else {
+            try { state_->deferred.emplace_back(std::move(output), reserved); }
             catch (...) { state_->cleanup_pending = true; }
         }
         throw;
