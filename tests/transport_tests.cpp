@@ -44,10 +44,10 @@ struct Fixture {
     std::string media;
     std::thread worker;
 
-    Fixture() {
+    explicit Fixture(std::size_t media_size = 100000) {
         WSADATA data{};
         if (WSAStartup(MAKEWORD(2, 2), &data) != 0) throw std::runtime_error("fixture_winsock");
-        media.resize(100000);
+        media.resize(media_size);
         for (std::size_t offset = 0; offset < media.size(); ++offset) media[offset] = static_cast<char>(offset % 251);
         listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         sockaddr_in address{};
@@ -163,6 +163,84 @@ struct InternetHandle {
     HINTERNET value;
     ~InternetHandle() { if (value) WinHttpCloseHandle(value); }
 };
+struct LocalSocket {
+    SOCKET value = INVALID_SOCKET;
+    ~LocalSocket() { if (value != INVALID_SOCKET) closesocket(value); }
+};
+
+// Ein Decoder darf den TCP-Empfang bei gefülltem Audiopuffer pausieren.
+// Ein kleiner Empfangspuffer erzwingt Rückstau ohne langen Audiotest.
+void slow_decoder_checks() {
+    Fixture origin(4 * 1024 * 1024);
+    const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(origin.port));
+    auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+    const auto url = proxy->url();
+    const auto path = url.find('/', 7);
+    const auto port = std::stoi(url.substr(url.find(':', 7) + 1, path - url.find(':', 7) - 1));
+    const auto connect_decoder = [&](bool complete_headers = true) {
+        const auto client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (client == INVALID_SOCKET) throw std::runtime_error("slow_client_socket");
+        const int buffer = 4096;
+        setsockopt(client, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&buffer), sizeof(buffer));
+        DWORD timeout = 3000;
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(static_cast<u_short>(port));
+        if (connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address))) {
+            closesocket(client); throw std::runtime_error("slow_client_connect");
+        }
+        send_text(client, complete_headers ? "GET " + url.substr(path) + " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(port) + "\r\n\r\n" : "GET ");
+        return client;
+    };
+    {
+        LocalSocket client{connect_decoder()};
+        std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+        const int buffer = 256 * 1024;
+        setsockopt(client.value, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&buffer), sizeof(buffer));
+        std::string response;
+        std::array<char, 65536> chunk{};
+        for (;;) {
+            const auto received = recv(client.value, chunk.data(), static_cast<int>(chunk.size()), 0);
+            if (received <= 0) break;
+            response.append(chunk.data(), static_cast<std::size_t>(received));
+        }
+        const auto header = response.find("\r\n\r\n");
+        check(header != response.npos && response.substr(header + 4) == origin.media, "decoder_backpressure_does_not_truncate_media");
+    }
+    {
+        const auto hits = origin.hits.load();
+        LocalSocket client{connect_decoder(false)};
+        DWORD timeout = 5000;
+        setsockopt(client.value, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        const auto started = std::chrono::steady_clock::now();
+        char marker = 0;
+        const auto received = recv(client.value, &marker, 1, 0);
+        const auto elapsed = std::chrono::steady_clock::now() - started;
+        check(received == 0 && elapsed >= std::chrono::milliseconds(2500) && elapsed < std::chrono::milliseconds(4500) &&
+              origin.hits.load() == hits, "incomplete_headers_still_expire_without_upstream");
+    }
+    {
+        const auto transferred = proxy->status().bytes_sent;
+        LocalSocket client{connect_decoder()};
+        char marker = 0;
+        check(recv(client.value, &marker, 1, 0) == 1 && marker == 'H', "backpressured_decoder_response_started");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        check(proxy->status().bytes_sent < transferred + origin.media.size(), "decoder_is_backpressured_before_shutdown");
+        // Eine fehlende Abbruchbehandlung muss als Fehler enden, nicht den
+        // Testprozess dauerhaft festhalten. Der Wächter löst nur den Testclient.
+        std::promise<void> finished;
+        auto completion = finished.get_future();
+        std::thread watchdog([&] {
+            if (completion.wait_for(std::chrono::milliseconds(1500)) == std::future_status::timeout)
+                shutdown(client.value, SD_BOTH);
+        });
+        const auto started = std::chrono::steady_clock::now();
+        proxy.reset();
+        const auto elapsed = std::chrono::steady_clock::now() - started;
+        finished.set_value(); watchdog.join();
+        check(elapsed < std::chrono::milliseconds(1500), "backpressured_decoder_does_not_block_shutdown");
+    }
+}
 struct Response { DWORD status = 0; std::string body; std::wstring raw_headers; };
 
 Response fetch(const std::string& url, const wchar_t* method = L"GET", const std::wstring& headers = {}) {
@@ -227,6 +305,7 @@ int main(int count, char** arguments) {
             Apartment() { check(SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)), "artwork_com"); }
             ~Apartment() { CoUninitialize(); }
         } apartment;
+        slow_decoder_checks();
         Fixture fixture;
         const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
         plex::PlexConnectionSettings image_settings;

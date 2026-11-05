@@ -1,4 +1,4 @@
-﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0, [switch]$CheckPlexSession)
+﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0, [switch]$CheckPlexSession, [ValidateRange(15, 60)][int]$ObserveSeconds = 30, [switch]$ToEnd)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -15,8 +15,11 @@ if ($urls.Count -ne $count -or @($urls | Where-Object { -not (Test-PlexPlaybackL
     throw 'Die Testplaylist muss ausschließlich eigene Loopback-URLs oder vorbereitete lokale Mediendateien enthalten.'
 }
 $volume = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr](-666), [IntPtr]122)
+$repeat = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]251)
 if ($volume -lt 0 -or $volume -gt 255) { throw 'Winamp-Lautstärke konnte nicht gelesen werden.' }
+if ($ToEnd -and $count -ne 1) { throw 'Der Endetest benötigt genau einen Titel in der Testplaylist.' }
 try {
+    if ($ToEnd) { [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]253) }
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]122)
     [void][PlexNative]::PostMessage($main.Handle, 273, [IntPtr]40045, [IntPtr]::Zero)
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -34,9 +37,48 @@ try {
         if ($position -ge 500) { break }
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($position -lt 500) { throw 'Winamp verarbeitet den aktuellen Titel nicht fortlaufend.' }
+    Set-PlexTestMinimized
     $length = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]1, [IntPtr]105)
+    $initialIndex = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]125)
+    if ($length * 1000 -lt $position + $ObserveSeconds * 1000 + 1000) { throw 'Testtitel ist für die fortlaufende Wiedergabeprüfung zu kurz.' }
+    $continuous = [Diagnostics.Stopwatch]::StartNew()
+    $lastPosition = $position
+    while ($continuous.Elapsed.TotalSeconds -lt $ObserveSeconds) {
+        Start-Sleep -Milliseconds 500
+        $state = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104)
+        $index = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]125)
+        $currentPosition = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]105)
+        if ($state -ne 1 -or $index -ne $initialIndex -or $currentPosition -lt $lastPosition) {
+            throw "Fortlaufende Wiedergabe bricht ab: Messzeit=$([Math]::Round($continuous.Elapsed.TotalSeconds,1)) s; Position=$currentPosition ms; Zustand=$state; Titelindex=$index."
+        }
+        $lastPosition = $currentPosition
+    }
+    if ($lastPosition -lt $position + ($ObserveSeconds - 2) * 1000) { throw 'Fortlaufende Wiedergabe bleibt trotz aktivem Player stehen.' }
+    Write-Output "Fortlaufende Wiedergabe ohne Seeking geprüft: $ObserveSeconds Sekunden."
     if ($ExpectedLengthSeconds -and [Math]::Abs($length - $ExpectedLengthSeconds) -gt 1) {
         throw ('Decoderlänge stimmt nicht mit der Testdatei überein. Erwartet=' + $ExpectedLengthSeconds + '; Gemeldet=' + $length)
+    }
+    if ($ToEnd) {
+        if ($CheckPlexSession) {
+            & (Join-Path $PSScriptRoot '..\build\Release\feedback_probe.exe') --check-no-transcode
+            if ($LASTEXITCODE -ne 0) { throw 'Plex bestätigt keine laufende eigene Sitzung ohne Transcoding.' }
+        }
+        # Ohne Sprung bis zum natürlichen Ende laufen lassen. Ein vorzeitiger
+        # Stop oder Neustart desselben Titels darf den Nachweis nicht bestehen.
+        while ($continuous.Elapsed.TotalSeconds -lt $length + 10) {
+            Start-Sleep -Milliseconds 250
+            $state = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104)
+            $currentPosition = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]105)
+            $index = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]125)
+            if ($state -eq 0) { break }
+            if ($state -ne 1 -or $index -ne $initialIndex -or $currentPosition -lt $lastPosition) { throw 'Titel wird vor seinem regulären Ende unterbrochen oder neu gestartet.' }
+            $lastPosition = $currentPosition
+        }
+        if ($state -ne 0 -or $lastPosition -lt ($length - 2) * 1000 -or $continuous.Elapsed.TotalSeconds -lt $length - 3) {
+            throw "Reguläres Titelende nicht nachgewiesen: Länge=$length s; LetztePosition=$lastPosition ms; Messzeit=$($continuous.Elapsed.TotalSeconds) s; Zustand=$state."
+        }
+        Write-Output "Reguläres Titelende ohne Seeking geprüft: Länge=$length s; LetztePosition=$lastPosition ms; Messzeit=$([Math]::Round($continuous.Elapsed.TotalSeconds,1)) s."
+        return
     }
     if ($length * 1000 -le $SeekMs) {
         if ($length -le 0) {
@@ -73,4 +115,5 @@ try {
         throw 'Testwiedergabe nicht gestoppt. Die Testinstanz bleibt stumm.'
     }
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]$volume, [IntPtr]122)
+    if ($ToEnd) { [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]$repeat, [IntPtr]253) }
 }

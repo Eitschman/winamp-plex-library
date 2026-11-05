@@ -14,6 +14,8 @@ Prüfstand: 05.11.2026. Der ursprüngliche Plugin-Auftrag bleibt maßgeblich; da
 
 ## Lebensdauer, lange Playlists und Ressourcen
 
+Volle Decoderpuffer dürfen keinen Medienabbruch verursachen. Der Proxy wartet mit nicht blockierenden Sockets auf Empfangsbereitschaft und prüft dabei das Stop-Event. Bytegenaue Rückstauübertragung, abbrechbarer Stillstand und die separate Drei-Sekunden-Headerfrist besitzen Regressionstests samt erkannten Gegenproben. MP3 und M4A bestehen jeweils 30 Sekunden ohne Seeking und danach die Seeking-Prüfung (`stream-continuous-fixed.log`). Der Titelendetest `Test-PlexFormats.ps1 -ToEnd` besteht ohne Seeking für einen echten M4A-Titel mit 251 Sekunden und einen MP3-Titel mit 209 Sekunden bis zum natürlichen Stop (`stream-natural-end-fixed.log`). Jeweils 13 Testsuiten bestehen im aktuellen Debug- und Release-Build; die Transportsuite enthält 115 Einzelprüfungen. Eine Prüfung aller Bibliothekstitel ist damit nicht behauptet.
+
 Streaming-Capabilities sind für fremde Prozesse zwei Stunden gültig. Wartende Titel bleiben innerhalb derselben Winamp-Sitzung über kernelbestätigte TCP-Client-PID nutzbar; die Frist fremder Links wird nicht verlängert. Der native Test mit zehn Sekunden Laufzeit bestätigt Fortschritt und Seeking nach Ablauf bei gleichzeitigem HTTP 410 für einen fremden Prozess (`host-session-native-short.log`). Die normale zweistündige Laufzeit ist wiederhergestellt. Keinen zweistündigen Echtzeitlauf starten.
 
 Der HTTP-Transport wartet auf die tatsächliche Rückkehr aller WinHTTP-Sitzungs-Callbacks. Ein deterministisch angehaltener Callback samt negativer Gegenprobe bestätigt die Freigabereihenfolge. Kein Callback darf nach Freigabe des Plugin-Codes weiterlaufen.

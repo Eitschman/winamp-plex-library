@@ -4,6 +4,7 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 
 ## Verbindliche Projektentscheidungen
 
+- Jeder Titel muss ohne künstliche Zeitbegrenzung bis zu seinem regulären Ende laufen. Ein voller Decoderpuffer und Pause dürfen die Verbindung nicht abbrechen. Native Nachweise beobachten echte MP3-/M4A-Titel ohne Seeking bis zum natürlichen Stop; getrennte Tests prüfen Rückstau, Abbruch beim Beenden und die Frist unvollständiger HTTP-Anfragen.
 - Die Plex-Anmeldung erfolgt wie bei Plexa im Browser über den Plex-PIN-Anmeldevorgang. Der Benutzer gibt sein Passwort ausschließlich bei Plex ein. Eine manuelle Token-Eingabe gehört nicht zum regulären Ablauf.
 - Einstellungen öffnen zunächst ohne Browseranmeldung. Die normale Ansicht enthält Anmeldung, Server und Musikbibliothek; feste Verbindungswege und eine manuelle HTTPS-Adresse stehen unter „Erweitert“. Erreichbare lokale HTTPS-Verbindungen werden vor Fernzugriff und Relay gewählt. Der tatsächliche Zugangsweg wird angezeigt.
 - Die Sprache folgt ausschließlich dem aktiven Winamp-Sprachpaket. Es gibt weder in der Bibliotheksansicht noch in den Einstellungen eine eigene Sprachauswahl. Deutsch und Englisch sind enthalten.
