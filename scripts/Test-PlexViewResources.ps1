@@ -1,4 +1,4 @@
-﻿param([int]$Cycles = 20, [int]$SettleSeconds = 60)
+﻿param([int]$Cycles = 20, [int]$SettleSeconds = 60, [ValidateRange(0, 60)][int]$CycleDelaySeconds = 0, [switch]$MeasureSockets, [switch]$HandleSummaries, [switch]$WindowSummaries)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 if ($Cycles -lt 3 -or $Cycles -gt 100 -or $SettleSeconds -lt 0 -or $SettleSeconds -gt 120) {
@@ -24,18 +24,43 @@ function Measure-Resources {
     $process.Refresh()
     [uint32]$handles = 0
     if (-not [PlexNative]::GetProcessHandleCount($process.Handle, [ref]$handles)) { throw 'Handlezähler nicht verfügbar.' }
-    return [pscustomobject]@{
+    $measurement = [pscustomobject]@{
         handles = $handles
         gdi = [PlexNative]::GetGuiResources($process.Handle, 0)
         user = [PlexNative]::GetGuiResources($process.Handle, 1)
         private_bytes = $process.PrivateMemorySize64
         threads = $process.Threads.Count
     }
+    if ($MeasureSockets) {
+        # Nur Zähler des Testprozesses ausgeben, keine Endpunkte oder fremden Prozesse.
+        $tcp = @(Get-NetTCPConnection -ErrorAction Stop | Where-Object OwningProcess -eq $process.Id)
+        $udp = @(Get-NetUDPEndpoint -ErrorAction Stop | Where-Object OwningProcess -eq $process.Id)
+        $measurement | Add-Member -NotePropertyName tcp_connections -NotePropertyValue $tcp.Count
+        $measurement | Add-Member -NotePropertyName tcp_listeners -NotePropertyValue @($tcp | Where-Object State -eq Listen).Count
+        $measurement | Add-Member -NotePropertyName tcp_close_wait -NotePropertyValue @($tcp | Where-Object State -eq CloseWait).Count
+        $measurement | Add-Member -NotePropertyName udp_endpoints -NotePropertyValue $udp.Count
+    }
+    return $measurement
 }
 function Wait-Idle {
     # WinHTTP gibt sitzungsübergreifende Threadpool-Ressourcen zeitversetzt frei.
     # Derselbe Ruhezeitraum gilt vor und nach der gemessenen Wechselreihe.
     for ($second = 0; $second -lt $SettleSeconds; ++$second) { Start-Sleep -Seconds 1 }
+}
+function Save-HandleSummary([string]$Stage) {
+    if ($WindowSummaries) {
+        $windowPath = Join-Path $PSScriptRoot ("..\.local\logs\resource-windows-$Stage.json")
+        [PlexNative]::WindowClassCounts($process.Id) | ConvertTo-Json | Set-Content -LiteralPath $windowPath -Encoding UTF8
+    }
+    if (-not $HandleSummaries) { return }
+    $debugger = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers\x86\cdb.exe'
+    if (-not (Test-Path -LiteralPath $debugger -PathType Leaf)) { throw 'x86-CDB für angeforderte Handletypenprüfung fehlt.' }
+    $path = Join-Path $PSScriptRoot ("..\.local\logs\resource-handles-$Stage.log")
+    # Nicht invasiv und ohne Handle-Namen: nur Typzähler, keine Datei- oder Netzwerkinhalte.
+    & $debugger -pvr -p $process.Id -c '!handle 0 0;q' *> $path
+    if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $path -Raw) -notmatch '(?m)^\d+ Handles\r?$') {
+        throw 'Handletypenprüfung enthält keine gültige Typzusammenfassung.'
+    }
 }
 function Switch-Views {
     foreach ($node in $children) {
@@ -52,16 +77,21 @@ function Switch-Views {
     }
 }
 for ($warmup = 0; $warmup -lt 3; ++$warmup) { Switch-Views }
+$duration = [Diagnostics.Stopwatch]::StartNew()
 Wait-Idle
 $before = Measure-Resources
 Write-Output ('Vorher: ' + ($before | ConvertTo-Json -Compress))
+Save-HandleSummary 'before'
 for ($cycle = 0; $cycle -lt $Cycles; ++$cycle) {
     Switch-Views
+    for ($second = 0; $second -lt $CycleDelaySeconds; ++$second) { Start-Sleep -Seconds 1 }
     Write-Output ("Zyklus ${cycle}: " + ((Measure-Resources) | ConvertTo-Json -Compress))
 }
 Wait-Idle
 $after = Measure-Resources
 Write-Output ('Nachher: ' + ($after | ConvertTo-Json -Compress))
+Save-HandleSummary 'after'
+Write-Output ("Gemessene Laufzeit einschließlich gleicher Ruhephasen: " + [Math]::Round($duration.Elapsed.TotalSeconds, 1) + ' Sekunden.')
 if ($after.gdi -gt $before.gdi + 2) { throw 'GDI-Ressourcen wachsen beim Wechsel der Plex-Ansichten.' }
 if ($after.user -gt $before.user + 2) { throw 'USER-Ressourcen wachsen beim Wechsel der Plex-Ansichten.' }
 if ($SettleSeconds -ge 60 -and $after.handles -gt $before.handles + 4) { throw 'Prozesshandles wachsen auch nach der Ruhephase.' }

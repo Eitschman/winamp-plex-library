@@ -31,6 +31,7 @@ public static class PlexNative {
   public delegate bool EnumProc(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string type, string title);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
@@ -257,6 +258,36 @@ public static class PlexNative {
     var result = new List<PlexNativeWindow>();
     EnumChildWindows(parent, (window, parameter) => { result.Add(Read(window)); return true; }, IntPtr.Zero);
     return result.ToArray();
+  }
+  // Klassen zählen, ohne Fenstertitel zu lesen; Nachrichtenfenster gehören dazu.
+  public static Dictionary<string,int> WindowClassCounts(int processId) {
+    if(processId <= 0) throw new ArgumentOutOfRangeException("processId");
+    var counts = new Dictionary<string,int>(StringComparer.Ordinal);
+    var seen = new HashSet<IntPtr>();
+    bool unavailable = false;
+    Action<IntPtr> count = window => {
+      uint owner; GetWindowThreadProcessId(window,out owner);
+      if(owner != processId || !seen.Add(window)) return;
+      var type = new StringBuilder(256);
+      if(GetClassName(window,type,type.Capacity)==0) { unavailable = true; return; }
+      string key = type.ToString();
+      counts[key] = counts.ContainsKey(key) ? counts[key]+1 : 1;
+    };
+    EnumProc enumerate = (window, parameter) => {
+      uint owner; GetWindowThreadProcessId(window,out owner);
+      if(owner == processId) {
+        count(window);
+        EnumChildWindows(window,(child, ignored) => { count(child); return true; },IntPtr.Zero);
+      }
+      return true;
+    };
+    EnumWindows(enumerate,IntPtr.Zero);
+    IntPtr message = IntPtr.Zero;
+    while((message=FindWindowEx(new IntPtr(-3),message,null,null))!=IntPtr.Zero)
+      enumerate(message,IntPtr.Zero);
+    if(unavailable) throw new InvalidOperationException("Window class unavailable");
+    if(counts.Count==0) throw new InvalidOperationException("No windows for test process");
+    return counts;
   }
 }
 '@
