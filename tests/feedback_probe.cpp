@@ -29,20 +29,60 @@ void write_restore(const std::filesystem::path& path, const nlohmann::json& docu
 }
 // Bewusster, freigegebener Integrationstest. Keine Titel, Adressen oder Tokens ausgeben.
 int wmain(int count, wchar_t** arguments) {
-    if (count < 2 || count > 3) return 2;
+    if (count < 2 || count > 4) return 2;
     const std::wstring operation = arguments[1];
+    const bool invalid_auth = operation == L"--prepare-invalid-auth";
+    const bool stalled_connection = operation == L"--prepare-stalled-connection";
+    if (stalled_connection ? count != 4 : count > 3) return 2;
     const bool playlist_sample = operation == L"--prepare-playlist";
     const bool sort_samples = operation == L"--prepare-sorts";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check) return 2;
-    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection) return 2;
+    if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
+        const auto write_connection_fixture = [&](const plex::PlexConnectionSettings& fixture) {
+            const std::filesystem::path path(arguments[2]);
+            check(path.is_absolute() && path.filename() == L"connection.dpapi" && !std::filesystem::exists(path), "new_isolated_configuration_file");
+            plex::save_settings(path, fixture);
+            const auto saved = plex::load_settings(path);
+            check(saved.client_identifier == fixture.client_identifier && saved.server_token == fixture.server_token, "isolated_configuration_readback");
+            std::cout << "isolated_connection_fixture_created=1\n";
+        };
+        if (stalled_connection) {
+            const std::wstring port_text(arguments[3]); std::size_t consumed = 0;
+            const auto port = std::stoul(port_text, &consumed);
+            check(consumed == port_text.size() && port >= 1024 && port <= 65535, "fixture_loopback_port");
+            plex::PlexConnectionSettings fixture;
+            fixture.client_identifier = plex::create_client_identifier();
+            fixture.server_identifier = "integration-stalled-server";
+            fixture.server_origin = "https://127.0.0.1:" + std::to_string(port);
+            fixture.preferred_origin = fixture.server_origin;
+            fixture.server_token = "synthetic-integration-invalid-token";
+            fixture.server_name = "Integration fixture";
+            fixture.library_identifier = "1"; fixture.library_title = "Integration fixture";
+            fixture.server_connections = {{fixture.server_origin, true, false}};
+            fixture.cache_enabled = false;
+            write_connection_fixture(fixture);
+            return 0;
+        }
         auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexAuth client(settings.client_identifier, stop.value);
         const auto connection = client.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
         settings.server_origin = connection.origin;
+        if (invalid_auth) {
+            // Nur die isolierte DPAPI-Datei erhält ungültigen Testzugriff. Der echte
+            // Zugang und die Serverkonfiguration werden weder geschrieben noch geändert.
+            settings.client_identifier = plex::create_client_identifier();
+            settings.server_token = "synthetic-integration-invalid-token";
+            settings.known_servers.clear();
+            settings.preferred_origin = settings.server_origin;
+            settings.server_connections = {{settings.server_origin, false, false}};
+            settings.cache_enabled = false;
+            write_connection_fixture(settings);
+            return 0;
+        }
         const auto metadata = [&](const std::string& identifier) {
             const auto response = client.get_server(settings.server_origin, settings.server_token, "/library/metadata/" + identifier);
             const auto& items = response.at("MediaContainer").at("Metadata");
