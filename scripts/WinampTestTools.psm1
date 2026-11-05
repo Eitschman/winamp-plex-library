@@ -90,28 +90,56 @@ public static class PlexNative {
   }
   sealed class CatalogMemory : IDisposable {
     public IntPtr Process, Address;
-    public CatalogMemory(IntPtr window, int processId) {
+    readonly int capacity;
+    public CatalogMemory(IntPtr window, int processId, int size = 256) {
+      if(size < 16 || size > 8192) throw new ArgumentException("Invalid test memory size");
+      capacity = size;
       uint owner; GetWindowThreadProcessId(window,out owner);
       if(owner != processId) throw new InvalidOperationException("Foreign catalog window");
       Process=OpenProcess(0x38,false,processId);
       if(Process==IntPtr.Zero) throw new InvalidOperationException("Catalog process unavailable");
-      Address=VirtualAllocEx(Process,IntPtr.Zero,(UIntPtr)256,0x3000,4);
+      Address=VirtualAllocEx(Process,IntPtr.Zero,(UIntPtr)capacity,0x3000,4);
       if(Address==IntPtr.Zero || (ulong)Address.ToInt64()>uint.MaxValue) { Dispose(); throw new InvalidOperationException("x86 catalog memory unavailable"); }
     }
     public void Write(byte[] bytes) {
       UIntPtr written;
-      if(bytes.Length>256 || !WriteProcessMemory(Process,Address,bytes,(UIntPtr)bytes.Length,out written) || written.ToUInt64()!=(ulong)bytes.Length)
+      if(bytes.Length>capacity || !WriteProcessMemory(Process,Address,bytes,(UIntPtr)bytes.Length,out written) || written.ToUInt64()!=(ulong)bytes.Length)
         throw new InvalidOperationException("Catalog request write failed");
     }
     public byte[] Read(int length) {
       byte[] bytes=new byte[length]; UIntPtr read;
-      if(length>256 || !ReadProcessMemory(Process,Address,bytes,(UIntPtr)length,out read) || read.ToUInt64()!=(ulong)length)
+      if(length>capacity || !ReadProcessMemory(Process,Address,bytes,(UIntPtr)length,out read) || read.ToUInt64()!=(ulong)length)
         throw new InvalidOperationException("Catalog response read failed");
       return bytes;
     }
     public void Dispose() {
       if(Address!=IntPtr.Zero) { VirtualFreeEx(Process,Address,UIntPtr.Zero,0x8000); Address=IntPtr.Zero; }
       if(Process!=IntPtr.Zero) { CloseHandle(Process); Process=IntPtr.Zero; }
+    }
+  }
+  // SDK 5.55: extendedFileInfoStructW enthält unter x86 vier 32-Bit-Felder.
+  public static string ExtendedMetadata(IntPtr window, int processId, string filename, string field) {
+    if(String.IsNullOrEmpty(filename) || filename.Length > 1023 ||
+       (field != "artist" && field != "albumartist" && field != "title" && field != "album"))
+      throw new ArgumentException("Invalid metadata test request");
+    using(var memory = new CatalogMemory(window, processId, 8192)) {
+      byte[] request = new byte[8192];
+      uint address = (uint)memory.Address.ToInt64();
+      Buffer.BlockCopy(BitConverter.GetBytes(address + 32),0,request,0,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(address + 2080),0,request,4,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(address + 2208),0,request,8,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(2048),0,request,12,4);
+      byte[] name = Encoding.Unicode.GetBytes(filename + "\0"), key = Encoding.Unicode.GetBytes(field + "\0");
+      Buffer.BlockCopy(name,0,request,32,name.Length);
+      Buffer.BlockCopy(key,0,request,2080,key.Length);
+      memory.Write(request);
+      // IPC_GET_EXTENDED_FILE_INFOW_HOOKABLE bezieht den Media-Library-Hook ein.
+      if(QueryInt32(window,1024,memory.Address,(IntPtr)3027) != 1)
+        throw new InvalidOperationException("Winamp metadata query rejected");
+      string result = Encoding.Unicode.GetString(memory.Read(8192),2208,4096);
+      int end = result.IndexOf('\0');
+      if(end < 0) throw new InvalidOperationException("Metadata response not terminated");
+      return result.Substring(0,end);
     }
   }
   public static void SelectCatalogRows(IntPtr window, int processId, int[] rows) {

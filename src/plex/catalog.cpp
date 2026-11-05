@@ -42,6 +42,10 @@ PlexItem parse_item(const nlohmann::json& item) {
     PlexTrack track{id, title, field(item, "grandparentTitle"), field(item, "parentTitle"), thumb,
         static_cast<unsigned>(number(item, "year")), static_cast<unsigned>(number(item, "index")),
         static_cast<unsigned>(number(item, "parentIndex")), number(item, "duration"), {}};
+    // Bei Samplern gehört originalTitle zum Titel, grandparentTitle zum Album.
+    track.album_artist = track.artist;
+    const auto track_artist = field(item, "originalTitle");
+    if (!track_artist.empty()) track.artist = track_artist;
     if (item.contains("userRating")) {
         const auto& value = item.at("userRating");
         if (!value.is_number()) throw std::invalid_argument("catalog_rating");

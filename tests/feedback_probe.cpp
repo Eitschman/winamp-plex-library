@@ -37,10 +37,11 @@ int wmain(int count, wchar_t** arguments) {
     if (stalled_connection ? count != 4 : count > 3) return 2;
     const bool playlist_sample = operation == L"--prepare-playlist";
     const bool sort_samples = operation == L"--prepare-sorts";
+    const bool compilation_sample = operation == L"--prepare-compilation";
     const bool current_session = operation == L"--check-no-transcode";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session) return 2;
-    if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session && !compilation_sample) return 2;
+    if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth || compilation_sample) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -237,6 +238,19 @@ int wmain(int count, wchar_t** arguments) {
         }
         plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks; query.library_identifier = settings.library_identifier; query.limit = 250;
         const auto page = plex::PlexCatalog(settings, stop.value).page(query);
+        if (compilation_sample) {
+            for (std::size_t index = 0; index < page.items.size(); ++index) {
+                const auto& candidate = std::get<plex::PlexTrack>(page.items[index]);
+                if (candidate.artist.empty() || candidate.album_artist.empty() || candidate.artist == candidate.album_artist || candidate.title.empty()) continue;
+                const auto raw = metadata(candidate.identifier);
+                check(raw.at("originalTitle") == candidate.artist && raw.at("grandparentTitle") == candidate.album_artist, "compilation_api_artist_fields");
+                write_restore(arguments[2], {{"row_index", index}, {"title", candidate.title}, {"artist", candidate.artist},
+                    {"album", candidate.album}, {"album_artist", candidate.album_artist}});
+                std::cout << "native_compilation_sample_prepared_without_mutation=1\n";
+                return 0;
+            }
+            throw std::runtime_error("compilation_sample_required_on_first_page");
+        }
         if (operation == L"--prepare-library") {
             nlohmann::json samples = nlohmann::json::array();
             nlohmann::json bulk = nlohmann::json::array();

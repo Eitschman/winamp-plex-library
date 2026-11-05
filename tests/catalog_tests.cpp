@@ -21,6 +21,14 @@ int main() {
         check(page.more && page.total == std::size_t{3} && page.items.size() == 1, "server_page_size_respected");
         const auto track = std::get<plex::PlexTrack>(page.items.front());
         check(track.identifier == "42" && track.artist == "Björk" && track.title == "Grüße 東京", "typed_unicode_track");
+        check(track.album_artist == "Björk", "ordinary_track_album_artist");
+        auto compilation = fixture;
+        compilation["MediaContainer"]["Metadata"][0]["grandparentTitle"] = "Various Artists";
+        compilation["MediaContainer"]["Metadata"][0]["originalTitle"] = "Björk";
+        const auto compilation_track = std::get<plex::PlexTrack>(plex::parse_catalog_page(compilation, 0).items.front());
+        check(compilation_track.artist == "Björk" && compilation_track.album_artist == "Various Artists", "compilation_separates_track_and_album_artist");
+        compilation["MediaContainer"]["Metadata"][0]["originalTitle"] = "";
+        check(std::get<plex::PlexTrack>(plex::parse_catalog_page(compilation, 0).items.front()).artist == "Various Artists", "empty_original_artist_uses_album_artist");
         check(track.number == 2 && track.disc == 1 && track.duration_ms == 123456, "typed_track_numbers");
         check(track.parts.size() == 1 && track.parts.front().duration_ms == 123456, "media_part_model");
         check(!track.user_rating, "missing_user_rating_remains_unrated");

@@ -289,7 +289,7 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
         std::wstring title(static_cast<std::size_t>(size), L'\0');
         MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, label.data(), static_cast<int>(label.size()), title.data(), size);
         const auto cover = artwork.find(track_artwork(track));
-        Metadata metadata{{L"title", title}, {L"artist", unicode(track.artist)}, {L"albumartist", unicode(track.artist)},
+        Metadata metadata{{L"title", title}, {L"artist", unicode(track.artist)}, {L"albumartist", unicode(track.album_artist)},
                           {L"album", unicode(track.album)}, {L"year", track.year ? std::to_wstring(track.year) : L""},
                           {L"track", track.number ? std::to_wstring(track.number) : L""},
                           {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)}};

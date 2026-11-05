@@ -23,6 +23,7 @@ struct PlexTrack {
     std::vector<PlexMediaPart> parts;
     std::string album_identifier, album_thumb;
     std::optional<double> user_rating;
+    std::string album_artist;
 };
 // Ein eigener Track-Thumb hat Vorrang vor dem geerbten Albumcover.
 const std::string& track_artwork(const PlexTrack& track);

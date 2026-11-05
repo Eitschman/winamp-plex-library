@@ -34,6 +34,8 @@ Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und 
 
 Ein Titel kann mehrere `Media`-Varianten und mehrere `Part`-Einträge besitzen. Eine allgemeine Implementierung muss diese Auswahl sichtbar und reproduzierbar behandeln. Der Prototyp darf nicht beliebige zusätzliche Parts durch Zusammenhängen von URLs simulieren. Laufzeiten sind API-seitig Millisekunden; Winamp erwartet im Playlist-IPC Sekunden.
 
+Bei Titeln enthält `grandparentTitle` den Albumkünstler; ein abweichender Titelkünstler steht in `originalTitle`. Die [PlexAPI-Track-Implementierung](https://github.com/pkkid/python-plexapi/blob/master/plexapi/audio.py) beschreibt und liest beide Felder getrennt. Das Modell erhält `album_artist` unabhängig vom angezeigten Titelkünstler. Ohne abweichenden, nichtleeren Titelkünstler gehört der Titel zum Albumkünstler. Winamps Metadaten-Hook liefert `artist` und `albumartist` entsprechend getrennt. Die native Sampler-Probe vergleicht beide Werte mit den echten API-Feldern, ohne Servermetadaten zu ändern.
+
 ## Pagination
 
 `X-Plex-Container-Start` und `X-Plex-Container-Size` werden gemeinsam gesendet. Die Antwort kann eine andere Seitengröße als angefordert besitzen. Maßgeblich sind tatsächliches `offset`, `size`, optional `totalSize` sowie gegebenenfalls die entsprechenden Antwortheader. Ein leeres Ergebnis darf keine Endlosschleife erzeugen. Eine nicht paginierte Antwort darf nicht wiederholt als neue Seite angehängt werden. Eine allgemeine Sammlung aller Datensätze ist kein Ersatz für bedarfsgesteuerte Ansichten.

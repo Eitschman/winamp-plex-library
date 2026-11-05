@@ -5,7 +5,8 @@ $process = Get-PlexTestProcess
 $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest
 $count = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124)
 if ($count -lt 1) { throw 'Zuerst Titel über die Plex-Bibliotheksansicht zur Testplaylist hinzufügen.' }
-# Der reguläre Bibliotheksablauf liefert die Titel. Der Test liest keine Zugangsdaten.
+# Der reguläre Bibliotheksablauf liefert die Titel. Der Standardtest liest keine
+# Zugangsdaten; die optionale Sitzungsprüfung verwendet den regulären DPAPI-Zugriff.
 [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]120)
 $root = Split-Path $PSScriptRoot -Parent
 $playlist = Join-Path $root '.local\winamp-test\settings\Winamp.m3u8'
