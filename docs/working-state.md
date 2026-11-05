@@ -8,6 +8,8 @@ Die Testinstanz läuft nach den Status- und Bewertungstests mit gestoppter Wiede
 
 ## Nächster konkreter Schritt
 
+Die tatsächliche englische Winamp-Sprache und das deutsche Sprachpaket sind mit `scripts/Test-PlexHostLanguage.ps1` geprüft. Bibliothek, Einstellungen, Suche, Navigation und Paging bestehen; normale und erweiterte Einstellungen beider Sprachen wurden angesehen. Ausschließlich der Spracheintrag der getrennten Testkopie wurde vorübergehend geändert und wiederhergestellt. Sie läuft wieder deutsch, gestoppt und mit leerer Playlist. Siehe `.local/logs/host-language-native.log`.
+
 Die native Fehlerreihe mit synthetischer MP3-Stille besteht für HTTP 401/403/404, Redirect, abgeschnittene Übertragung und Empfangstimeout. Beim Timeout ist Fortschritt vor dem Fehler nachgewiesen; anschließende gültige Wiedergabe besteht. Stop benötigt im Lauf höchstens 41 Millisekunden. Siehe `.local/logs/playback-faults-progress-native.log`. Dieser Test verwendet denselben Proxy-Code in einem eigenen Probeprozess und prüft deshalb nicht die Fehleranzeige der Plugin-Ansicht. Die eigene Wiedergabe ist danach gestoppt, die gespeicherte Playlist leer.
 
 Die lokalen Medien verwenden private ACL-geschützte Sitzungsordner, zufällige Dateinamen, 512 MiB Dateilimit und 2 GiB Gesamtlimit. Der Download erfolgt vor der Playlistübergabe im Katalog-Worker und lässt sich abbrechen. Reguläres Beenden der Testkopie hat beide echten FLAC-/OGG-Dateien und ihren Ordner entfernt. Die Nachweise stehen in `.local/logs/formats-local-media.log` und `.local/logs/local-media-shutdown.log`. `scripts/Test-PlexFormats.ps1` erhält private Titel ausschließlich aus dem lokalen Inventurbericht und benutzt die reguläre Bibliotheksoberfläche.
