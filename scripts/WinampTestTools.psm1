@@ -337,8 +337,19 @@ function Set-PlexTestMinimized {
         Start-Sleep -Milliseconds 50
     } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $main) { throw 'Hauptfenster der Testinstanz fehlt.' }
-    [void][PlexNative]::Query($main.Handle,274,[IntPtr]61472,[IntPtr]::Zero)
-    if (([PlexNative]::WindowStyle($main.Handle,-16) -band 536870912) -eq 0) { throw 'Testinstanz wurde nicht minimiert.' }
+    # Während des Skin-Starts kann Winamp einen frühen Minimierungsauftrag
+    # übergehen oder sein Hauptfenster erneut einblenden. Den Zustand prüfen.
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    $stableSince = $null
+    do {
+        if (([PlexNative]::WindowStyle($main.Handle,-16) -band 536870912) -eq 0) {
+            $stableSince = $null
+            [void][PlexNative]::Query($main.Handle,274,[IntPtr]61472,[IntPtr]::Zero)
+        } elseif ($null -eq $stableSince) { $stableSince = [DateTime]::UtcNow }
+        elseif (([DateTime]::UtcNow - $stableSince).TotalMilliseconds -ge 300) { return }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw 'Testinstanz wurde nicht stabil minimiert.'
 }
 
 function Test-PlexPlaybackLocation([string]$Location) {

@@ -22,7 +22,6 @@ function Write-Playlist([string]$Path, [string]$Group, [int]$Count) {
     [IO.File]::WriteAllLines($Path, $lines, [Text.UTF8Encoding]::new($true))
 }
 try {
-    if ($CaptureMenu) { [void][PlexNative]::ShowWindow($main.Handle,9) }
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]122)
     [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]101)
@@ -69,6 +68,7 @@ try {
     }
     if ($UsePlugin) {
         if ($CaptureMenu) {
+            [void][PlexNative]::ShowWindow($main.Handle,9)
             [void][PlexNative]::SetForegroundWindow($selected.Outer)
             [void][PlexNative]::PostMessage($selected.View,123,$selected.List,[IntPtr](-1))
             $deadline = [DateTime]::UtcNow.AddSeconds(5)

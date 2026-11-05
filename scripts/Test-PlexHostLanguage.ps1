@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([switch]$CheckPlaylistMenu)
+$ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
 $testRoot = Split-Path $process.Path -Parent
@@ -58,6 +59,16 @@ function Check-Labels([IntPtr]$Library, [bool]$German) {
     $expectedSearch = if ($German) { 'Suche' } else { 'Search' }
     if ($settings.Text -cne $expectedSettings -or $search.Text -cne $expectedSearch -or @($controls | Where-Object ControlId -eq 1005).Count) { throw 'Plugin übernimmt die Winamp-Sprache nicht eindeutig.' }
 }
+function Check-Views([string]$Name) {
+    # Sichtbarkeit und Tastaturfokus lassen sich nur im eingeblendeten Host prüfen.
+    $running = Get-PlexTestProcess
+    $main = [PlexNative]::Windows($running.Id) | Where-Object Class -eq WinampPlexTest
+    try {
+        [void][PlexNative]::ShowWindow($main.Handle,9)
+        & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName $Name
+        & (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName $Name
+    } finally { Set-PlexTestMinimized }
+}
 $changed = $false
 try {
     Stop-TestCopy
@@ -65,8 +76,11 @@ try {
     [PlexLanguageProfile]::Write($profile, '')
     $library = Start-TestCopy
     Check-Labels $library $false
-    & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName 'host-language-en'
-    & (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName 'host-language-en'
+    if ($CheckPlaylistMenu) {
+        & (Join-Path $PSScriptRoot 'Test-PlexPlaylistInsert.ps1') -UsePlugin -State Stopped -CaptureMenu
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\.local\insert-after-menu.png') -Destination (Join-Path $PSScriptRoot '..\.local\insert-after-menu-en.png')
+    }
+    Check-Views 'host-language-en'
     Write-Output 'Englische Hostsprache in nativer Bibliothek und Einstellungen geprüft, ohne eigene Sprachauswahl.'
 } finally {
     if ($changed) {
@@ -77,6 +91,9 @@ try {
         Check-Labels $library $true
     }
 }
-& (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName 'host-language-de'
-& (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName 'host-language-de'
+Check-Views 'host-language-de'
+if ($CheckPlaylistMenu) {
+    & (Join-Path $PSScriptRoot 'Test-PlexPlaylistInsert.ps1') -UsePlugin -State Stopped -CaptureMenu
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\.local\insert-after-menu.png') -Destination (Join-Path $PSScriptRoot '..\.local\insert-after-menu-de.png')
+}
 Write-Output 'Deutsches Winamp-Sprachpaket wiederhergestellt und dieselben Ansichten geprüft. Keine Plex-Konfigurationsänderung.'
