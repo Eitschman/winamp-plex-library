@@ -8,6 +8,11 @@ $outer = @([PlexNative]::Windows($process.Id) | Where-Object {
 if ($outer.Count -ne 1) { throw 'Plex-Testansicht fehlt.' }
 $list = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1050
 $dialog = [PlexNative]::GetParent($list.Handle)
+$deadline = [DateTime]::UtcNow.AddSeconds(30)
+while (-not [PlexNative]::IsWindowEnabled($list.Handle)) {
+    if ([DateTime]::UtcNow -ge $deadline) { throw 'Die Bibliotheksaktion wird nicht rechtzeitig beendet.' }
+    Start-Sleep -Milliseconds 100
+}
 $header = [PlexNative]::Children($list.Handle) | Where-Object Class -eq 'SysHeader32'
 $headerRect = New-Object PlexNative+Rect
 $listRect = New-Object PlexNative+Rect
@@ -28,6 +33,10 @@ if ($Action -eq 'Play') {
 try {
 [void][PlexNative]::ShowWindow($main.Handle,9)
 [void][PlexNative]::SetForegroundWindow($outer[0].Handle)
+$selectionCount = [PlexNative]::QueryInt32($list.Handle,4146,[IntPtr]::Zero,[IntPtr]::Zero)
+$enabled = [PlexNative]::IsWindowEnabled($list.Handle)
+$visible = [PlexNative]::IsWindowVisible($list.Handle)
+if ($selectionCount -ne 1 -or -not $enabled -or -not $visible) { throw 'Kontextmenü benötigt eine sichtbare, aktivierte Tabelle mit genau einer Auswahl.' }
 [void][PlexNative]::PostMessage($dialog, 123, $list.Handle, [IntPtr](-1))
 $deadline = [DateTime]::UtcNow.AddSeconds(3)
 do {
@@ -35,6 +44,8 @@ do {
     $menu = @([PlexNative]::Windows($process.Id) | Where-Object Class -eq '#32768')
 } while ($menu.Count -ne 1 -and [DateTime]::UtcNow -lt $deadline)
 if ($menu.Count -ne 1) { throw 'Das native Kontextmenü wurde nicht geöffnet.' }
+# Die Skin-Engine zeichnet das vorhandene Menüfenster anschließend asynchron.
+Start-Sleep -Milliseconds 300
 $root = Split-Path $PSScriptRoot -Parent
 Save-PlexWindowScreenshot $menu[0].Handle (Join-Path $root '.local\library-context-menu.png')
 # Nachrichten gehen ausschließlich an das Menü der verifizierten Testinstanz.
