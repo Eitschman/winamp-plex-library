@@ -33,6 +33,8 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+Debug und Release wurden mit MSVC x86 gebaut; elf CTest-Suiten bestehen jeweils in Debug und Release. Der Statusdialog-Test verwendet die originale Dialogprozedur mit kontrollierten Transportzuständen. Die Laufzeittests im echten Winamp verwenden die Release-DLL; ein erfolgreicher Debug-Testhostlauf ist kein eigener Nachweis für jeden Winamp-Skin. Prüfprotokolle: `.local/logs/build-debug-human-errors.log`, `.local/logs/ctest-debug-human-errors.log`, `.local/logs/build-release-human-errors.log` und `.local/logs/ctest-release-human-errors.log`.
+
 Der Konfigurationsschritt lädt nlohmann/json 3.12.0 über CMake FetchContent. Die Archiv-Prüfsumme ist im Projekt festgelegt. Der Build benötigt keine Plex-Zugangsdaten und keinen Plex-Server. Alle automatisierten Fixtures verwenden erfundene Tokens und Loopback.
 
 Die DLL liegt im Release-Build unter `build/Release/ml_plex.dll`, im Debug-Build unter `build/Debug/ml_plex.dll`. Keine nachträgliche Umbenennung ist erforderlich. Testprogramme und `.lib`-Dateien werden nicht in Winamp installiert. CMake enthält keinen Installationsschritt in eine bestehende Winamp-Installation.

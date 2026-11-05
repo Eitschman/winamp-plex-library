@@ -26,7 +26,7 @@ BOOL CALLBACK inspect_settings(HWND dialog, LPARAM) {
     dialog = GetDlgItem(dialog, 1081);
     if (const auto diagnostic = GetDlgItem(dialog, 1084)) {
         wchar_t information[2049]{}; GetWindowTextW(diagnostic, information, 2049);
-        diagnostics_valid = wcsstr(information, L"Windows DPAPI") && wcsstr(information, L"HTTP:") &&
+        diagnostics_valid = wcsstr(information, L"Windows DPAPI") && wcsstr(information, L"HTTP:") && wcsstr(information, L"Proxy: none") &&
                             !wcsstr(information, L"https://") && !wcsstr(information, L"X-Plex-Token");
         diagnostics_checked = true;
         PostMessageW(frame, WM_COMMAND, IDCANCEL, 0); return FALSE;

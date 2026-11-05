@@ -17,14 +17,15 @@ try {
         $bounds = New-Object PlexNative+Rect
         [void][PlexNative]::GetWindowRect($view, [ref]$bounds)
         foreach ($child in [PlexNative]::Children($view)) {
-            if (-not [PlexNative]::IsWindowVisible($child.Handle) -or $child.ControlId -notin @(1007, 1001, 1050, 1051, 1052, 1053, 1054, 1055, 1058, 1059, 1063, 1064)) { continue }
+            if (-not [PlexNative]::IsWindowVisible($child.Handle) -or $child.ControlId -notin @(1004, 1007, 1001, 1050, 1051, 1052, 1053, 1054, 1055, 1058, 1059, 1063, 1064)) { continue }
             $rectangle = New-Object PlexNative+Rect
             if (-not [PlexNative]::GetWindowRect($child.Handle, [ref]$rectangle) -or
                 $rectangle.Left -lt $bounds.Left -or $rectangle.Top -lt $bounds.Top -or
                 $rectangle.Right -gt $bounds.Right -or $rectangle.Bottom -gt $bounds.Bottom) { throw "Bedienelement $($child.ControlId) überschreitet die Ansicht." }
         }
         $path = Join-Path (Split-Path $PSScriptRoot -Parent) ('.local\library-layout-' + $size[0] + '.png')
-        Save-PlexWindowScreenshot $view $path
+        # Die Skin-Engine zeichnet den vollständigen Host, nicht das isolierte Kindfenster.
+        Save-PlexWindowScreenshot $outer[0].Handle $path
         Write-Output ("Ansichtsgrenzen geprüft: " + $size[0] + ' × ' + $size[1])
     }
 } finally {

@@ -24,7 +24,7 @@ void update_status(HWND dialog) {
     const auto reporting = playback_reporting_status();
     std::array<wchar_t, 256> message{};
     if (status.local_rejection)
-        swprintf_s(message.data(), message.size(), text(L"Lokale Anfrage abgewiesen (%hs).", L"Local request rejected (%hs)."), status.local_rejection);
+        wcscpy_s(message.data(), message.size(), text(L"Lokale Wiedergabe abgewiesen. Titel erneut aus Plex hinzufügen.", L"Local playback rejected. Add the track from Plex again."));
     else if (status.upstream_status == 401 || status.upstream_status == 403)
         wcscpy_s(message.data(), message.size(), text(L"Zugriff verweigert. Erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
     else if (status.upstream_status == 404)
@@ -61,7 +61,6 @@ INT_PTR CALLBACK view_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM
         SetDlgItemTextW(dialog, IDC_STATUS, text(L"Der Vorgang konnte nicht ausgeführt werden.", L"The operation could not be completed."));
         return TRUE;
     }
-    return FALSE;
 }
 }
 

@@ -401,7 +401,8 @@ INT_PTR CALLBACK login_dialog(HWND dialog, UINT message, WPARAM parameter, LPARA
                 const auto status = playback_status();
                 const auto information = std::wstring(L"Winamp Plex Library\r\nx86\r\n") +
                     localized(L"Zugangsspeicherung: Windows DPAPI\r\n", L"Credential storage: Windows DPAPI\r\n") +
-                    L"HTTP: " + std::to_wstring(status.upstream_status) + L"\r\nWindows: " + std::to_wstring(status.transport_error) +
+                    L"HTTP: " + std::to_wstring(status.upstream_status) + L" / Proxy: " + unicode(status.local_rejection ? status.local_rejection : "none") +
+                    L"\r\nWindows: " + std::to_wstring(status.transport_error) +
                     localized(L"\r\nVerbindungscode: ", L"\r\nConnection code: ") + std::to_wstring(login->error.load()) +
                     localized(L"\r\nCover-Zuordnungen: ", L"\r\nArtwork mappings: ") + std::to_wstring(artwork_provider_diagnostic(3)) +
                     localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2));
