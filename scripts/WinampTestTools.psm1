@@ -88,6 +88,69 @@ public static class PlexNative {
       throw new InvalidOperationException("Winamp IPC timeout or invalid window");
     return result;
   }
+  sealed class CatalogMemory : IDisposable {
+    public IntPtr Process, Address;
+    public CatalogMemory(IntPtr window, int processId) {
+      uint owner; GetWindowThreadProcessId(window,out owner);
+      if(owner != processId) throw new InvalidOperationException("Foreign catalog window");
+      Process=OpenProcess(0x38,false,processId);
+      if(Process==IntPtr.Zero) throw new InvalidOperationException("Catalog process unavailable");
+      Address=VirtualAllocEx(Process,IntPtr.Zero,(UIntPtr)256,0x3000,4);
+      if(Address==IntPtr.Zero || (ulong)Address.ToInt64()>uint.MaxValue) { Dispose(); throw new InvalidOperationException("x86 catalog memory unavailable"); }
+    }
+    public void Write(byte[] bytes) {
+      UIntPtr written;
+      if(bytes.Length>256 || !WriteProcessMemory(Process,Address,bytes,(UIntPtr)bytes.Length,out written) || written.ToUInt64()!=(ulong)bytes.Length)
+        throw new InvalidOperationException("Catalog request write failed");
+    }
+    public byte[] Read(int length) {
+      byte[] bytes=new byte[length]; UIntPtr read;
+      if(length>256 || !ReadProcessMemory(Process,Address,bytes,(UIntPtr)length,out read) || read.ToUInt64()!=(ulong)length)
+        throw new InvalidOperationException("Catalog response read failed");
+      return bytes;
+    }
+    public void Dispose() {
+      if(Address!=IntPtr.Zero) { VirtualFreeEx(Process,Address,UIntPtr.Zero,0x8000); Address=IntPtr.Zero; }
+      if(Process!=IntPtr.Zero) { CloseHandle(Process); Process=IntPtr.Zero; }
+    }
+  }
+  public static void SelectCatalogRows(IntPtr window, int processId, int[] rows) {
+    int count=QueryInt32(window,4100,IntPtr.Zero,IntPtr.Zero);
+    if(rows.Length==0) throw new ArgumentException("Empty test selection");
+    foreach(int row in rows) if(row<0 || row>=count) throw new ArgumentException("Invalid test selection");
+    using(var memory=new CatalogMemory(window,processId)) {
+      byte[] item=new byte[64]; Buffer.BlockCopy(BitConverter.GetBytes(3),0,item,16,4);
+      memory.Write(item);
+      if(QueryInt32(window,4139,(IntPtr)(-1),memory.Address)==0) throw new InvalidOperationException("Catalog selection clear failed");
+      foreach(int row in rows) {
+        Buffer.BlockCopy(BitConverter.GetBytes(row==rows[0]?3:2),0,item,12,4); memory.Write(item);
+        if(QueryInt32(window,4139,(IntPtr)row,memory.Address)==0) throw new InvalidOperationException("Catalog selection failed");
+      }
+    }
+  }
+  public static int CatalogImageIndex(IntPtr window, int processId, int row) {
+    if(row<0 || row>=QueryInt32(window,4100,IntPtr.Zero,IntPtr.Zero)) throw new ArgumentException("Invalid image row");
+    using(var memory=new CatalogMemory(window,processId)) {
+      byte[] item=new byte[64]; Buffer.BlockCopy(BitConverter.GetBytes(2),0,item,0,4); Buffer.BlockCopy(BitConverter.GetBytes(row),0,item,4,4);
+      memory.Write(item);
+      if(QueryInt32(window,4171,IntPtr.Zero,memory.Address)==0) throw new InvalidOperationException("Catalog image query failed");
+      return BitConverter.ToInt32(memory.Read(64),28);
+    }
+  }
+  public static void ClickCatalogHeader(IntPtr window, int processId, int column) {
+    IntPtr header=Query(window,4127,IntPtr.Zero,IntPtr.Zero);
+    if(column<0 || column>=QueryInt32(header,4608,IntPtr.Zero,IntPtr.Zero)) throw new ArgumentException("Invalid sort column");
+    using(var memory=new CatalogMemory(window,processId)) {
+      memory.Write(new byte[16]);
+      if(QueryInt32(header,4615,(IntPtr)column,memory.Address)==0) throw new InvalidOperationException("Header rectangle unavailable");
+      byte[] rectangle=memory.Read(16);
+      int x=(BitConverter.ToInt32(rectangle,0)+BitConverter.ToInt32(rectangle,8))/2;
+      int y=(BitConverter.ToInt32(rectangle,4)+BitConverter.ToInt32(rectangle,12))/2;
+      if(x<0 || x>32767 || y<0 || y>32767) throw new InvalidOperationException("Header outside test viewport");
+      IntPtr point=(IntPtr)(x | (y<<16));
+      Query(header,513,(IntPtr)1,point); Query(header,514,IntPtr.Zero,point);
+    }
+  }
   public static int QueryInt32(IntPtr window, uint message, IntPtr first, IntPtr second) {
     // Winamp x86 kann negative IPC-Werte als 0xFFFFFFFF an den 64-Bit-Testprozess liefern.
     return unchecked((int)Query(window,message,first,second).ToInt64());

@@ -1,5 +1,6 @@
 #include "plex/auth.h"
 #include "plex/catalog.h"
+#include "plex/artwork.h"
 #include "plex/feedback.h"
 #include "plex/http_stream.h"
 #include <chrono>
@@ -31,8 +32,8 @@ int wmain(int count, wchar_t** arguments) {
     if (count < 2 || count > 3) return 2;
     const std::wstring operation = arguments[1];
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && !native_check) return 2;
-    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || native_check) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !native_check) return 2;
+    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || native_check) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -101,6 +102,23 @@ int wmain(int count, wchar_t** arguments) {
         }
         plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks; query.library_identifier = settings.library_identifier; query.limit = 250;
         const auto page = plex::PlexCatalog(settings, stop.value).page(query);
+        if (operation == L"--prepare-library") {
+            nlohmann::json samples = nlohmann::json::array();
+            nlohmann::json missing, covered;
+            for (std::size_t index = 0; index < page.items.size(); ++index) {
+                if (!std::holds_alternative<plex::PlexTrack>(page.items[index])) continue;
+                const auto& item = std::get<plex::PlexTrack>(page.items[index]);
+                if (item.title.empty() || item.duration_ms <= 0) continue;
+                nlohmann::json sample{{"row_index", index}, {"title", item.title}, {"artist", item.artist}, {"album", item.album}};
+                if (plex::track_artwork(item).empty() && missing.is_null()) missing = sample;
+                if (!plex::track_artwork(item).empty() && covered.is_null()) covered = sample;
+                if (samples.size() < 3 && item.parts.size() == 1 &&
+                    item.parts.front().key.size() > 4 && item.parts.front().key.substr(item.parts.front().key.size() - 4) == ".mp3") samples.push_back(sample);
+            }
+            check(samples.size() == 3 && !missing.is_null() && !covered.is_null(), "native_library_samples_available");
+            write_restore(arguments[2], {{"tracks", samples}, {"without_artwork", missing}, {"with_artwork", covered}});
+            std::cout << "native_library_samples_prepared_without_mutation=1\n"; return 0;
+        }
         const auto selected = std::find_if(page.items.begin(), page.items.end(), [](const auto& item) {
             if (!std::holds_alternative<plex::PlexTrack>(item)) return false;
             const auto& track = std::get<plex::PlexTrack>(item);
