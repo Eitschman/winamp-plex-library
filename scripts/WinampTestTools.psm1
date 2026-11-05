@@ -183,4 +183,43 @@ function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     try { $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
 }
 
-Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation
+function Select-PlexFeedbackTrack($Sample) {
+    $process = Get-PlexTestProcess
+    $outer = @([PlexNative]::Windows($process.Id) | Where-Object {
+        @([PlexNative]::Children($_.Handle) | Where-Object Class -eq 'SysTreeView32').Count -gt 0
+    })
+    if ($outer.Count -ne 1) { throw 'Bibliotheksfenster fehlt.' }
+    $tree = [PlexNative]::Children($outer[0].Handle) | Where-Object Class -eq 'SysTreeView32'
+    $root = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]::Zero, [IntPtr]::Zero)
+    $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]4, $root)
+    for ($step = 0; $step -lt 2; ++$step) { $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]1, $node) }
+    [void][PlexNative]::Query($tree.Handle, 4363, [IntPtr]9, $node)
+    Start-Sleep -Milliseconds 200
+    $list = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1050
+    $view = [PlexNative]::GetParent($list.Handle)
+    # Bei bereits aktiver Titelansicht kann noch eine Meldung des vorigen Tests stehen.
+    [void][PlexNative]::Query($view, 273, [IntPtr]1054, [IntPtr]::Zero)
+    $deadline = [DateTime]::UtcNow.AddSeconds(180)
+    do {
+        $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
+        if ($status.Text -match '^\d+ \.\.\. \d+') { break }
+        if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Titelansicht meldet einen Fehler.' }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($status.Text -notmatch '^1 \.\.\. \d+') { throw 'Erste Titelseite wurde nicht geladen.' }
+    # Vor jeder Änderung den konkreten Titel anhand aller drei sichtbaren Metadaten prüfen.
+    foreach ($column in 0..2) {
+        $expected = @($Sample.title, $Sample.artist, $Sample.album)[$column]
+        if ([PlexNative]::CatalogCellText($list.Handle, $process.Id, $Sample.row_index, $column) -cne $expected) {
+            throw 'API-Testtitel und sichtbare Tabellenzeile stimmen nicht überein.'
+        }
+    }
+    [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]36, [IntPtr]::Zero)
+    for ($row = 0; $row -lt $Sample.row_index; ++$row) { [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]40, [IntPtr]::Zero) }
+    Start-Sleep -Milliseconds 150
+    if ([PlexNative]::QueryInt32($list.Handle, 4108, [IntPtr](-1), [IntPtr]2) -ne $Sample.row_index -or
+        [PlexNative]::QueryInt32($list.Handle, 4146, [IntPtr]::Zero, [IntPtr]::Zero) -ne 1) { throw 'Testtitel ist nicht einzeln ausgewählt.' }
+    return [pscustomobject]@{ List = $list.Handle; View = $view; Outer = $outer[0].Handle }
+}
+
+Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Select-PlexFeedbackTrack

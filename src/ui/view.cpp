@@ -7,15 +7,21 @@
 
 namespace plex::plugin {
 namespace {
-std::vector<HWND> views;
+struct ViewStatus {
+    HWND window;
+    std::wstring underlying, overlay;
+};
+std::vector<ViewStatus> views;
 
 const wchar_t* text(const wchar_t* german_text, const wchar_t* english_text) noexcept {
     return german() ? german_text : english_text;
 }
 
-void update_status(HWND dialog) noexcept {
-    if (!playback_active()) return;
-    const auto status = playback_status();
+void update_status(HWND dialog) {
+    const auto found = std::find_if(views.begin(), views.end(), [=](const auto& view) { return view.window == dialog; });
+    if (found == views.end()) return;
+    const auto status = playback_active() ? playback_status() : ProxyStatus{};
+    const auto reporting = playback_reporting_status();
     std::array<wchar_t, 256> message{};
     if (status.local_rejection)
         swprintf_s(message.data(), message.size(), text(L"Lokale Anfrage abgewiesen (%hs).", L"Local request rejected (%hs)."), status.local_rejection);
@@ -27,20 +33,28 @@ void update_status(HWND dialog) noexcept {
         swprintf_s(message.data(), message.size(), text(L"Verbindungsfehler (Windows-Code %lu).", L"Connection error (Windows code %lu)."), status.transport_error);
     else if (status.upstream_status >= 300)
         swprintf_s(message.data(), message.size(), text(L"Plex-Anfrage abgelehnt (HTTP %lu).", L"Plex request rejected (HTTP %lu)."), status.upstream_status);
-    else return;
-    SetDlgItemTextW(dialog, IDC_STATUS, message.data());
+    else if (reporting.error)
+        swprintf_s(message.data(), message.size(), text(L"Plex-Wiedergabestatus konnte nicht gemeldet werden (Code %lu).", L"Plex playback status could not be reported (code %lu)."), reporting.error);
+    // Wiedergabefehler überlagern den Katalogstatus nur vorübergehend.
+    // Neuere Lade- oder Katalogmeldungen dürfen beim Erholen nicht verloren gehen.
+    std::array<wchar_t, 2048> current{};
+    GetDlgItemTextW(dialog, IDC_STATUS, current.data(), static_cast<int>(current.size()));
+    if (found->overlay.empty() || found->overlay != current.data()) found->underlying = current.data();
+    if (*message.data()) SetDlgItemTextW(dialog, IDC_STATUS, message.data());
+    else if (!found->overlay.empty() && found->overlay == current.data()) SetDlgItemTextW(dialog, IDC_STATUS, found->underlying.c_str());
+    found->overlay = message.data();
 }
 
 INT_PTR CALLBACK view_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) noexcept {
     try {
         if (message == WM_INITDIALOG) {
-            views.push_back(dialog);
+            views.push_back({dialog, {}, {}});
             SetTimer(dialog, 1, 500, nullptr);
         }
         if (message == WM_TIMER && parameter == 1) { update_status(dialog); return TRUE; }
         if (message == WM_DESTROY) {
             KillTimer(dialog, 1);
-            views.erase(std::remove(views.begin(), views.end(), dialog), views.end());
+            views.erase(std::remove_if(views.begin(), views.end(), [=](const auto& view) { return view.window == dialog; }), views.end());
         }
         return library_view_message(dialog, message, parameter, detail);
     } catch (...) {
@@ -58,7 +72,7 @@ HWND create_view(HWND parent, BrowseKind kind) noexcept {
 
 void destroy_views() noexcept {
     while (!views.empty()) {
-        const auto view = views.back();
+        const auto view = views.back().window;
         if (IsWindow(view)) DestroyWindow(view);
         else views.pop_back();
     }

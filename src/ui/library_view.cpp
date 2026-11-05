@@ -589,6 +589,10 @@ void clear_library_cache() { clear_cache(); }
 void skin_library_dialog(HWND dialog) { skin_view(dialog); }
 
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) {
+    if (message == playback_diagnostic_message) {
+        SetWindowLongPtrW(dialog, DWLP_MSGRESULT, static_cast<LONG_PTR>(playback_diagnostic(static_cast<unsigned>(parameter))));
+        return TRUE;
+    }
     if (message == artwork_diagnostic_message) {
         SetWindowLongPtrW(dialog, DWLP_MSGRESULT, artwork_provider_diagnostic(static_cast<unsigned>(parameter)));
         return TRUE;

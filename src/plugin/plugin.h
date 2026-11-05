@@ -6,6 +6,7 @@
 #include "plex/settings.h"
 #include "plex/local_media.h"
 #include "plex/catalog.h"
+#include "plex/playback_reporter.h"
 #include <memory>
 #include "artwork_provider.h"
 
@@ -16,6 +17,9 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
 std::shared_ptr<LocalMediaStore> local_media_store();
 void stop_playback() noexcept;
 ProxyStatus playback_status() noexcept;
+ReporterStatus playback_reporting_status() noexcept;
+constexpr UINT playback_diagnostic_message = WM_APP + 45;
+unsigned long long playback_diagnostic(unsigned counter) noexcept;
 bool playback_active() noexcept;
 HWND create_view(HWND parent, BrowseKind kind = BrowseKind::artists) noexcept;
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail);

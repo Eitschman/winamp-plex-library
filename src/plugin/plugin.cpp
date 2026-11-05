@@ -2,11 +2,14 @@
 #include <Winamp/wa_ipc.h>
 #include <gen_tray/WINAMPCMD.H>
 #include "plex/playlist.h"
+#include "plex/http_stream.h"
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>
 #include <array>
 #include <mutex>
+#include <algorithm>
+#include <limits>
 
 namespace plex::plugin {
 namespace {
@@ -14,7 +17,8 @@ int initialize() noexcept;
 void shutdown() noexcept;
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept;
 using Metadata = std::unordered_map<std::wstring, std::wstring>;
-struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; };
+struct PlaybackBinding { std::string identifier; long long duration_ms = 0, offset_ms = 0; bool reportable = true; };
+struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; PlaybackBinding binding; };
 void enqueue_items(std::vector<QueueItem> items, bool play);
 char description[] = "Winamp Plex Library 0.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
@@ -28,9 +32,55 @@ DWORD ui_thread = 0;
 PlexConnectionSettings settings;
 unsigned long long settings_revision = 0;
 bool verified_connection = false;
+std::unique_ptr<PlaybackReporter> reporter;
+TimelineTracker timeline;
+std::unordered_map<std::wstring, PlaybackBinding> playback_bindings;
+HWND monitor = nullptr;
+DWORD monitor_error = 0;
+unsigned long long monitor_polls = 0, monitor_matches = 0;
+constexpr wchar_t monitor_class[] = L"WinampPlexPlaybackMonitor";
 std::unordered_map<std::wstring, std::wstring> playback_titles;
 std::unordered_map<std::wstring, Metadata> playback_metadata;
 std::mutex metadata_mutex;
+std::string utf8(const std::wstring& value);
+
+// Ausschließlich der UI-Thread fragt Winamp ab. Der Reporter erhält fertige
+// Schnappschüsse und führt sämtliche HTTP-Operationen auf seinem Worker aus.
+void poll_playback() {
+    ++monitor_polls;
+    if (!reporter) return;
+    std::optional<PlaybackSnapshot> snapshot;
+    const auto state = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_ISPLAYING);
+    if (state == 1 || state == 3) {
+        const auto* filename = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_PLAYING_FILENAME));
+        if (reinterpret_cast<UINT_PTR>(filename) > 65535) {
+            const auto found = playback_bindings.find(filename);
+            if (found != playback_bindings.end()) {
+                ++monitor_matches;
+                const auto& binding = found->second;
+                if (!binding.reportable) { monitor_error = ERROR_NOT_SUPPORTED; return; }
+                const auto position = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETOUTPUTTIME);
+                auto duration = binding.duration_ms;
+                if (duration <= 0) duration = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 2, IPC_GETOUTPUTTIME);
+                if (position < 0 || duration <= 0) return;
+                const auto time = (std::min)(duration, static_cast<long long>(position) + binding.offset_ms);
+                snapshot = PlaybackSnapshot{utf8(std::wstring(filename)),
+                    {binding.identifier, state == 3 ? PlaybackState::paused : PlaybackState::playing, time, duration}};
+            }
+        }
+    }
+    for (auto& report : timeline.observe(std::move(snapshot), GetTickCount64())) reporter->submit(std::move(report));
+    monitor_error = 0;
+}
+LRESULT CALLBACK monitor_message(HWND window, UINT message, WPARAM parameter, LPARAM detail) noexcept {
+    if (message == WM_TIMER && parameter == 1) {
+        try { poll_playback(); }
+        catch (const HttpError& error) { monitor_error = error.code; }
+        catch (...) { monitor_error = ERROR_INVALID_DATA; }
+        return 0;
+    }
+    return DefWindowProcW(window, message, parameter, detail);
+}
 
 std::wstring unicode(const std::string& value) {
     if (value.empty()) return {};
@@ -42,6 +92,8 @@ std::wstring unicode(const std::string& value) {
 }
 
 std::string utf8(const std::wstring& value) {
+    // Optionale Pfade bleiben leer, solange kein lokales Medium vorbereitet wurde.
+    if (value.empty()) return {};
     const auto size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
     if (!size) throw std::invalid_argument("title_encoding");
     std::string result(static_cast<std::size_t>(size), '\0');
@@ -103,13 +155,20 @@ int initialize() noexcept {
             child_ids[index] = child.id;
         }
         initialize_artwork_provider(reinterpret_cast<api_service*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_API_SERVICE)));
+        WNDCLASSW window_class{}; window_class.lpfnWndProc = monitor_message;
+        window_class.hInstance = plugin.hDllInstance; window_class.lpszClassName = monitor_class;
+        if (!RegisterClassW(&window_class)) throw std::runtime_error("playback_monitor_class");
+        monitor = CreateWindowExW(0, monitor_class, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, plugin.hDllInstance, nullptr);
+        if (!monitor || !SetTimer(monitor, 1, 500, nullptr)) throw std::runtime_error("playback_monitor_window");
         return 0;
     } catch (...) { shutdown(); return 1; }
 }
 
 void shutdown() noexcept {
+    if (monitor) { KillTimer(monitor, 1); DestroyWindow(monitor); monitor = nullptr; }
     destroy_views();
     stop_playback();
+    UnregisterClassW(monitor_class, plugin.hDllInstance);
     shutdown_artwork_provider();
     if (tree_id && IsWindow(plugin.hwndLibraryParent)) {
         const auto handle = SendMessageW(plugin.hwndLibraryParent, WM_ML_IPC, tree_id, ML_IPC_TREEITEM_GETHANDLE);
@@ -181,6 +240,7 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
               playback_titles[unicode(local)] = item.title;
               playback_metadata[unicode(local)] = std::move(item.metadata); }
             if (item.file) playback_files[unicode(local)] = item.file;
+            playback_bindings[unicode(local)] = std::move(item.binding);
             bind_playback_artwork(unicode(local), std::move(item.artwork));
             entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
         }
@@ -194,6 +254,7 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
     SendMessageW(plugin.hwndWinampParent, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&item));
     const auto length = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
     if (length != position + static_cast<LRESULT>(entries.size())) throw std::runtime_error("playlist_enqueue");
+    if (!reporter) reporter = std::make_unique<PlaybackReporter>(request_connection_settings());
     if (play) {
         SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
         // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
@@ -206,6 +267,7 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
               playback_titles.erase(unicode(url));
               playback_metadata.erase(unicode(url)); }
             playback_files.erase(unicode(url));
+            playback_bindings.erase(unicode(url));
             unbind_playback_artwork(unicode(url));
         }
         throw;
@@ -231,6 +293,13 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
                           {L"album", unicode(track.album)}, {L"year", track.year ? std::to_wstring(track.year) : L""},
                           {L"track", track.number ? std::to_wstring(track.number) : L""},
                           {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)}};
+        long long total = 0, offset = 0;
+        bool offsets_known = true;
+        for (const auto& part : parts) {
+            if (part.duration_ms > 0 && total <= (std::numeric_limits<long long>::max)() - part.duration_ms) total += part.duration_ms;
+            else if (parts.size() > 1) offsets_known = false;
+        }
+        const auto timeline_duration = track.duration_ms > 0 ? track.duration_ms : total;
         for (const auto& part : parts) {
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
@@ -238,7 +307,8 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
             if (requires_local_media(part.key) && file == prepared.end()) throw std::invalid_argument("local_media_missing");
             items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, title,
                 part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
-                file == prepared.end() ? nullptr : file->second});
+                file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known}});
+            if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;
         }
     }
     enqueue_items(std::move(items), play);
@@ -255,12 +325,31 @@ void stop_playback() noexcept {
                 SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON4, 0), 0);
         }
     } catch (...) {}
+    try {
+        if (reporter) for (auto& report : timeline.observe(std::nullopt, GetTickCount64())) reporter->submit(std::move(report));
+    } catch (...) {}
+    reporter.reset(); timeline.reset(); playback_bindings.clear(); monitor_error = 0;
     proxy.reset();
     { std::lock_guard<std::mutex> lock(metadata_mutex); playback_titles.clear(); playback_metadata.clear(); }
     clear_playback_artwork();
     playback_files.clear(); media_store.reset();
 }
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
+ReporterStatus playback_reporting_status() noexcept {
+    auto result = reporter ? reporter->status() : ReporterStatus{};
+    if (monitor_error) result.error = monitor_error;
+    return result;
+}
+unsigned long long playback_diagnostic(unsigned counter) noexcept {
+    const auto status = playback_reporting_status();
+    switch (counter) {
+    case 0: return status.error;
+    case 1: return status.sent;
+    case 2: return monitor_polls;
+    case 3: return monitor_matches;
+    default: return 0;
+    }
+}
 bool playback_active() noexcept { return proxy != nullptr; }
 PlexConnectionSettings connection_settings() { return settings; }
 // Hintergrundanfragen benötigen nur den ausgewählten Zugang, keine weiteren

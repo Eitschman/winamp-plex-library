@@ -30,8 +30,9 @@ void write_restore(const std::filesystem::path& path, const nlohmann::json& docu
 int wmain(int count, wchar_t** arguments) {
     if (count < 2 || count > 3) return 2;
     const std::wstring operation = arguments[1];
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test") return 2;
-    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test") != (count == 3)) return 2;
+    const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && !native_check) return 2;
+    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || native_check) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -45,12 +46,49 @@ int wmain(int count, wchar_t** arguments) {
             check(items.is_array() && items.size() == 1 && items.at(0).at("ratingKey") == identifier, "metadata_identity");
             return items.at(0);
         };
-        if (operation == L"--restore" || operation == L"--check-test") {
+        const auto history_key = [&](const std::string& identifier) {
+            const auto response = client.get_server(settings.server_origin, settings.server_token,
+                "/status/sessions/history/all?metadataItemID=" + identifier + "&sort=viewedAt%3Adesc&X-Plex-Container-Start=0&X-Plex-Container-Size=1");
+            const auto& container = response.at("MediaContainer");
+            if (!container.contains("Metadata") || container.at("Metadata").empty()) return std::string{};
+            return container.at("Metadata").at(0).at("historyKey").get<std::string>();
+        };
+        if (operation == L"--restore" || operation == L"--check-test" || native_check) {
             std::ifstream file(std::filesystem::path(arguments[2]), std::ios::binary);
             const auto saved = nlohmann::json::parse(file);
             file.close();
             check(saved.at("server_identifier") == settings.server_identifier, "restore_server_identity");
             const auto identifier = saved.at("identifier").get<std::string>();
+            plex::rating_path(identifier, 0);
+            if (native_check) {
+                if (operation == L"--check-history") {
+                    const auto current = metadata(identifier);
+                    check(current.value("viewCount", 0LL) > saved.at("view_count").get<long long>() &&
+                          history_key(identifier) != saved.at("history_key").get<std::string>(), "natural_playback_history_and_count_readback");
+                    std::cout << "native_playback_history_and_count_read_back=1\n"; return 0;
+                }
+                const auto* state = operation == L"--check-paused" ? "paused" : "playing";
+                const bool stopped = operation == L"--check-stopped" || operation == L"--finish-timeline";
+                bool matched = false;
+                for (unsigned attempt = 0; attempt < 20 && !matched; ++attempt) {
+                    const auto response = client.get_server(settings.server_origin, settings.server_token, "/status/sessions");
+                    const auto& container = response.at("MediaContainer");
+                    bool found = false;
+                    if (container.contains("Metadata")) for (const auto& item : container.at("Metadata")) {
+                        if (item.value("ratingKey", std::string{}) != identifier || !item.contains("Player")) continue;
+                        const auto& player = item.at("Player");
+                        if (player.value("machineIdentifier", std::string{}) != settings.client_identifier) continue;
+                        found = true;
+                        if (!stopped && player.value("state", std::string{}) == state &&
+                            item.value("viewOffset", 0LL) >= (operation == L"--check-seek" ? 9000 : operation == L"--check-paused" ? 500 : 0)) matched = true;
+                    }
+                    if (stopped && !found) matched = true;
+                    if (!matched) std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                }
+                check(matched, "native_playback_session_readback");
+                if (operation == L"--finish-timeline") check(DeleteFileW(arguments[2]) != FALSE, "timeline_marker_cleanup");
+                std::cout << "native_playback_state_read_back=1\n"; return 0;
+            }
             const auto rating = saved.at(operation == L"--restore" ? "rating" : "test_rating").get<double>();
             if (operation == L"--check-test") {
                 check(metadata(identifier).value("userRating", 0.0) == rating, "native_rating_readback");
@@ -73,11 +111,15 @@ int wmain(int count, wchar_t** arguments) {
         check(selected != page.items.end(), "test_track_available");
         const auto track = std::get<plex::PlexTrack>(*selected);
         const auto before = metadata(track.identifier);
-        if (operation == L"--prepare-ui") {
+        if (operation == L"--prepare-ui" || operation == L"--prepare-timeline") {
             const auto original = before.value("userRating", 0.0);
-            write_restore(arguments[2], {{"server_identifier", settings.server_identifier}, {"identifier", track.identifier},
+            nlohmann::json saved{{"server_identifier", settings.server_identifier}, {"identifier", track.identifier},
                 {"rating", original}, {"test_rating", original == 6.0 ? 8.0 : 6.0},
-                {"row_index", std::distance(page.items.begin(), selected)}, {"title", track.title}, {"artist", track.artist}, {"album", track.album}});
+                {"row_index", std::distance(page.items.begin(), selected)}, {"title", track.title}, {"artist", track.artist}, {"album", track.album}};
+            if (operation == L"--prepare-timeline") {
+                saved["view_count"] = before.value("viewCount", 0LL); saved["history_key"] = history_key(track.identifier);
+            }
+            write_restore(arguments[2], saved);
             std::cout << "native_rating_test_prepared_without_mutation=1\n"; return 0;
         }
         if (operation == L"--inspect") {

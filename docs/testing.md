@@ -1,6 +1,6 @@
 # Prüfstand und Integrationscheckliste
 
-Prüfdatum: 04.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen Produktanforderungen.
+Prüfdatum: 05.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen Produktanforderungen.
 
 ## Ausgeführte Prüfungen
 
@@ -26,7 +26,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest enthält `plugin_lifecycle`, `aac_remux`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider`, `feedback` und `security`. Neun von neun Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, persönliche Bruchteilbewertungen, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf, POST-/PUT-Methoden und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Konfigurationsprüfungen umfassen DPAPI, Größenlimits, beschädigte Profile, Cache-Optionen und die priorisierte Verbindungsauswahl mit synthetischer Erreichbarkeit. Feedback-Tests prüfen Zeitbasis, Zustände, Bewertungsskala, Pfadinjektion, ungültige Zahlen und Ablehnung externen HTTP. Der SDK-Host prüft beide Hostsprachen, Einstellungen, Diagnose, Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
+CTest enthält `plugin_lifecycle`, `aac_remux`, `playback_reporter`, `transport`, `config_auth`, `catalog`, `artwork`, `artwork_provider`, `feedback` und `security`. Zehn von zehn Tests sind durchgelaufen. Der Katalogtest prüft unter anderem Unicode, fehlende Titel, geerbte Albumcover, große Playlistlaufzeiten, persönliche Bruchteilbewertungen, fehlerhafte Pagination, Pfadinjektion, Reihenfolge und Cache-Ablauf/LRU/Leerung. Transporttests prüfen unabhängige Grants, gezielten Widerruf, POST-/PUT-Methoden und Cover-HTTP-Fehler. Bildtests prüfen WIC-Decodierung, Größenlimits, beschädigte Bilder, sichere Pfade, fehlende Bilder und den PNG-Roundtrip. Der Provider-Test prüft Dispatch, Registrierung, fehlende Hostdienste, Allokationsfehler, Schreibschutz und Ressourcenfreigabe. Konfigurationsprüfungen umfassen DPAPI, Größenlimits, beschädigte Profile, Cache-Optionen und die priorisierte Verbindungsauswahl mit synthetischer Erreichbarkeit. Feedback-Tests prüfen Zeitbasis, Zustände, Bewertungsskala, Pfadinjektion, ungültige Zahlen und Ablehnung externen HTTP. Der Reporter prüft Wechsel, Pause, Zehnsekundenintervall, Seeking, Stop bei fremden Dateien, FIFO-Reihenfolge, Warteschlangenlimit, Tokenwiderruf, Erholung nach Timeout und Abbruch blockierter Anfragen. Der SDK-Host prüft beide Hostsprachen, Einstellungen, Diagnose, Skin-Registrierung, Dienstfreigabe und 100 Ladezyklen. Einzelne Prüfbedingungen sind keine Aussage über die Abdeckung aller Produktfunktionen.
 
 ## Phase-1-Schranke
 
@@ -104,7 +104,7 @@ Künstler → Alben → Titel, einzelne Playlistübergabe und die vier Baumansic
 
 Die Player-Coveranzeige ist in Big Bento visuell geprüft: Beide Player-Coverfelder zeigen das Testalbum. Der Dienst besitzt 13 Bildzuordnungen; der aktuelle stumme Lauf meldet 14 erfolgreiche Bildabfragen. Die Wiedergabe ist anschließend gestoppt. Die Gegenproben zeigen: Der Host fragt die Kategorie `DATABASE` für diese HTTP-Titel nicht ab; die Kategorie `EMBEDDED` wird abgefragt. Das angebotene V5-BMP wurde trotz positiver WIC-Decodierung nicht angezeigt. Mit PNG und der SDK-Dateitypkennung `png` erscheinen die Bilder. Eine positive Decodierung in WIC allein reicht damit nicht als Hostnachweis. Artist-/Album-/Titelmetadaten werden über `ML_IPC_HOOKEXTINFOW` übernommen und sind sichtbar. Auch die Titelansicht mit geerbten Miniaturen ist visuell geprüft.
 
-Weitere Mehrfachauswahl, Sortierung, Paging und Sprache brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Automatische Player-Statusmeldungen und Verlauf sind offen. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
+Weitere Mehrfachauswahl, Sortierung, Paging und Sprache brauchen zusätzliche Bedienungstests. Serverseitige Pagination und Suche sind im Katalog-Livetest geprüft; der Cache besitzt synthetische Tests. Automatische Player-Statusmeldungen und Verlauf sind für den unten beschriebenen nativen Ablauf geprüft. „Als Nächstes abspielen“ wird nur bei belegter Winamp-Schnittstelle ergänzt.
 
 ### Persönliche Bewertungen und Timeline-API
 
@@ -112,7 +112,11 @@ Der Benutzer hat einen vorhandenen Testtitel, das anschließende Zurücksetzen s
 
 `scripts/Test-PlexRatings.ps1` prüft vor dem Schreiben die sichtbare Tabellenzeile anhand von Titel, Künstler und Album. Die native Zeilenauswahl, der Bewertungsauftrag, die aktualisierte Spalte und der tatsächliche Plex-Rücklesewert sind geprüft. Die ursprüngliche Bewertung wird im `finally`-Pfad zurückgesetzt und zurückgelesen. Der Test startet keine Wiedergabe. Das Untermenü und die Titelspalte sind in Big Bento angesehen; das Untermenü zusätzlich in Classic und Winamp Modern. Negative Zeilenindizes werden vom Tabellenprüfer abgewiesen. Das ist kein Nachweis für fremde Skins oder Winamps eigene Bewertungsbuttons.
 
-Die API-Probe `.local/logs/feedback-timeline-live.log` sendet ausdrücklich synthetische Zustände für einen vorhandenen Titel. Plex bestätigt `playing` und `paused` einschließlich Position und Client-Identifier über `/status/sessions`; nach `stopped` verschwindet diese Sitzung. Dieser Nachweis bindet die Zustände noch nicht automatisch an Winamp und bestätigt keinen Verlaufseintrag. Der aktuelle Gesamtlauf mit neun CTest-Suiten steht in `.local/logs/ctest-rating-ui.log`.
+Die API-Probe `.local/logs/feedback-timeline-live.log` sendet ausdrücklich synthetische Zustände für einen vorhandenen Titel. Plex bestätigt `playing` und `paused` einschließlich Position und Client-Identifier über `/status/sessions`; nach `stopped` verschwindet diese Sitzung.
+
+`scripts/Test-PlexTimeline.ps1` steuert dagegen den tatsächlichen Player: reguläre Bibliotheksauswahl, fortschreitende MP3-Wiedergabe, Pause, Fortsetzen, Sprung auf zehn Sekunden und Stop. `.local/logs/timeline-native-counters.log` bestätigt alle Zustände durch Rücklesen vom Server. `-CheckHistory` springt anschließend vier Sekunden vor das Titelende und wartet auf dessen reguläres Ende. `.local/logs/timeline-history-native.log` bestätigt sowohl einen neuen `historyKey` als auch den erhöhten `viewCount`. Ein zusätzlicher Scrobble-Request wird nicht benötigt und nicht gesendet. Lautstärke und Wiederholung werden nach geprüftem Stop wiederhergestellt; die gespeicherte Playlist wird geleert. Diese Schreibprüfung setzt die ausdrückliche Freigabe eines Testtitels voraus.
+
+Eine frische Plugin-Sitzung prüft zugleich MP3 ohne vorherige lokale Dateivorbereitung. Die Gegenprobe `.local/logs/timeline-native-ordered.log` erkennt den ungültigen Umgang mit einem noch leeren Vorbereitungspfad; der korrigierte Pfad startet im nativen Wiederholungstest. Die Tabellenhilfe aktualisiert synchron vor ihrer Bereitschaftsprüfung, damit eine alte Statusanzeige nicht als neuer Ladeabschluss gilt. Der Gesamtlauf mit zehn CTest-Suiten steht in `.local/logs/ctest-timeline-native.log`. Der native Bewertungstest besteht mit derselben DLL und setzt die Bewertung zurück, siehe `.local/logs/ratings-reporter-native.log`; die Titelansicht in Big Bento wurde angesehen.
 
 ## Regulärer Wiedergabetest
 
