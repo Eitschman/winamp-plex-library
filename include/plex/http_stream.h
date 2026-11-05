@@ -6,7 +6,7 @@
 #include <string>
 
 namespace plex {
-enum class HttpMethod { get, post };
+enum class HttpMethod { get, post, put };
 enum class HttpRepresentation { json, image };
 struct HttpError : std::exception {
     explicit HttpError(unsigned long value) noexcept : code(value) {}

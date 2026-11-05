@@ -3,6 +3,7 @@
 #include <gen_ml/ml_ipc_0313.h>
 #include "plex/page_cache.h"
 #include "plex/http_stream.h"
+#include "plex/feedback.h"
 #include "resource.h"
 #include <commctrl.h>
 #include <objbase.h>
@@ -13,6 +14,8 @@
 #include <optional>
 #include <thread>
 #include <atomic>
+#include <sstream>
+#include <iomanip>
 
 namespace plex::plugin {
 namespace {
@@ -73,6 +76,15 @@ const wchar_t* kind_title(BrowseKind kind) {
     default: return L"Playlists";
     }
 }
+std::wstring rating_text(const std::optional<double>& rating) {
+    if (!rating || !*rating) return {};
+    std::wostringstream result;
+    result.imbue(std::locale::classic());
+    result << std::setprecision(3) << *rating / 2 << L" / 5";
+    auto value = result.str();
+    if (german()) std::replace(value.begin(), value.end(), L'.', L',');
+    return value;
+}
 
 // Die UI speichert fertig formatierte Zellen getrennt von den API-Modellen.
 struct Row { PlexItem item; std::vector<std::wstring> cells; bool image_ready = false; };
@@ -95,11 +107,12 @@ Row make_row(const PlexItem& item) {
             row.cells.push_back(wide(value.artist)); row.cells.push_back(wide(value.album)); row.cells.push_back(duration(value.duration_ms));
             row.cells.push_back(value.number ? std::to_wstring(value.number) : L""); row.cells.push_back(value.year ? std::to_wstring(value.year) : L"");
             row.cells.push_back(value.parts.empty() ? L"" : wide(value.parts.front().container.empty() ? value.parts.front().audio_codec : value.parts.front().container));
+            row.cells.push_back(rating_text(value.user_rating));
         }
     }, item);
     return row;
 }
-enum class Action { browse, play, enqueue };
+enum class Action { browse, play, enqueue, rate };
 struct Job {
     Action action = Action::browse;
     BrowseQuery query;
@@ -111,6 +124,7 @@ struct Job {
     unsigned long long connection_revision = 0;
     unsigned long long cache_scope = 0;
     std::shared_ptr<LocalMediaStore> media;
+    double rating = 0;
 };
 struct Result {
     Action action = Action::browse;
@@ -288,6 +302,21 @@ struct View {
                     const auto cached = job.settings.cache_enabled ? cache.get(key) : std::nullopt;
                     result.page = cached ? *cached : client.page(job.query);
                     if (!cached && job.settings.cache_enabled) cache.put(key, result.page);
+                } else if (job.action == Action::rate) {
+                    if (job.selected.size() != 1 || !std::holds_alternative<PlexTrack>(job.selected.front()))
+                        throw std::invalid_argument("rating_selection");
+                    const auto& track = std::get<PlexTrack>(job.selected.front());
+                    rate_item(job.settings, track.identifier, job.rating, stop);
+                    clear_cache();
+                    const PlexAuth auth(job.settings.client_identifier, stop);
+                    auto updated = parse_catalog_page(auth.get_server(job.settings.server_origin, job.settings.server_token,
+                        "/library/metadata/" + track.identifier), 0);
+                    if (updated.items.size() != 1 || !std::holds_alternative<PlexTrack>(updated.items.front()))
+                        throw HttpError(ERROR_INVALID_DATA);
+                    auto changed = std::get<PlexTrack>(std::move(updated.items.front()));
+                    if (changed.identifier != track.identifier || changed.user_rating.value_or(0) != job.rating)
+                        throw HttpError(ERROR_INVALID_DATA);
+                    result.tracks.push_back(std::move(changed));
                 } else {
                     for (const auto& item : job.selected) {
                         if (std::holds_alternative<PlexTrack>(item)) result.tracks.push_back(std::get<PlexTrack>(item));
@@ -381,7 +410,7 @@ struct View {
         }
         job.query.library_identifier = job.settings.library_identifier;
         job.load_libraries = libraries.empty();
-        if (job.action != Action::browse) job.media = local_media_store();
+        if (job.action == Action::play || job.action == Action::enqueue) job.media = local_media_store();
         { std::lock_guard<std::mutex> lock(mutex); job.generation = ++generation; pending = std::move(job); completed.reset(); SetEvent(stop); }
         busy = true; controls();
         SetDlgItemTextW(dialog, IDC_STATUS, text(L"Wird geladen...", L"Loading..."));
@@ -395,7 +424,7 @@ struct View {
         const auto kind = current.query.kind;
         if (kind == BrowseKind::artists) labels = {{text(L"Künstler", L"Artist"), 360}, {text(L"Alben", L"Albums"), 80}};
         if (kind == BrowseKind::albums) labels = {{text(L"Album", L"Album"), 300}, {text(L"Künstler", L"Artist"), 230}, {text(L"Jahr", L"Year"), 60}, {text(L"Titel", L"Tracks"), 60}};
-        if (kind == BrowseKind::tracks) labels = {{text(L"Titel", L"Title"), 260}, {text(L"Künstler", L"Artist"), 180}, {L"Album", 200}, {text(L"Laufzeit", L"Duration"), 75}, {L"Nr.", 50}, {text(L"Jahr", L"Year"), 60}, {text(L"Format", L"Format"), 70}};
+        if (kind == BrowseKind::tracks) labels = {{text(L"Titel", L"Title"), 260}, {text(L"Künstler", L"Artist"), 180}, {L"Album", 200}, {text(L"Laufzeit", L"Duration"), 75}, {L"Nr.", 50}, {text(L"Jahr", L"Year"), 60}, {text(L"Format", L"Format"), 70}, {text(L"Bewertung", L"Rating"), 85}};
         if (kind == BrowseKind::playlists) labels = {{L"Playlist", 360}, {text(L"Titel", L"Tracks"), 80}, {text(L"Laufzeit", L"Duration"), 100}};
         for (std::size_t index = 0; index < labels.size(); ++index) {
             LVCOLUMNW column{}; column.mask = LVCF_TEXT | LVCF_WIDTH; column.pszText = const_cast<wchar_t*>(labels[index].first); column.cx = labels[index].second;
@@ -436,6 +465,7 @@ struct View {
             const auto http = error >= 0x20000000UL && error < 0x20000400UL ? error - 0x20000000UL : 0;
             if (error == server_identity_mismatch) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Serveridentität stimmt nicht mit dem ausgewählten Plex-Server überein.", L"The server identity does not match the selected Plex server."));
             else if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
+            else if (result->action == Action::rate) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Bewertung konnte nicht bestätigt werden. Bitte aktualisieren und prüfen.", L"The rating could not be confirmed. Refresh and check it."));
             else if (error == ERROR_NOT_SUPPORTED) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Auswahl ist kein unterstütztes Direct-Play-Medium verfügbar.", L"No supported direct-play media is available for this selection."));
             else if (error == ERROR_FILE_TOO_LARGE) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Eine Mediendatei überschreitet das Vorbereitungslimit von 512 MiB.", L"A media file exceeds the preparation limit of 512 MiB."));
             else if (error == ERROR_DISK_FULL) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Dateivorbereitung ist kein Speicherplatz verfügbar oder das Limit von 2 GiB ist erreicht.", L"Media preparation has no free disk space or has reached the 2 GiB limit."));
@@ -467,6 +497,13 @@ struct View {
             if (!rows.empty()) ListView_EnsureVisible(GetDlgItem(dialog, IDC_CATALOG), 0, FALSE);
             count_status();
             visible_artwork();
+        } else if (result->action == Action::rate) {
+            clear_cache();
+            for (const auto& track : result->tracks) for (auto& row : rows) if (item_identifier(row.item) == track.identifier) {
+                row.item = track; row.cells = make_row(row.item).cells;
+            }
+            InvalidateRect(GetDlgItem(dialog, IDC_CATALOG), nullptr, FALSE);
+            count_status();
         } else {
             try { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared); count_status(); }
             catch (...) { SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl konnte nicht an Winamp übergeben werden.", L"Could not send the selection to Winamp.")); }
@@ -592,6 +629,13 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         if (control == IDC_OPEN) { view->open(); return TRUE; }
         if (control == IDC_PLAY) { view->play(true); return TRUE; }
         if (control == IDC_ENQUEUE) { view->play(false); return TRUE; }
+        if (control >= IDC_RATE_NONE && control <= IDC_RATE_FIVE) {
+            if (view->busy || !connection_verified()) return TRUE;
+            auto selected = view->selection();
+            if (selected.size() != 1 || !std::holds_alternative<PlexTrack>(selected.front())) return TRUE;
+            Job job; job.action = Action::rate; job.selected = std::move(selected); job.rating = 2.0 * (control - IDC_RATE_NONE);
+            view->submit(std::move(job)); return TRUE;
+        }
         if (control == IDC_REFRESH || control == IDC_CLEAR_CACHE) { clear_cache(); view->load(); return TRUE; }
         if (control == IDC_NEXT && !view->busy && view->page.more) {
             view->current.query.offset += view->page.items.size(); view->current.offsets.push_back(view->current.query.offset); view->load(); return TRUE;
@@ -674,6 +718,18 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         if (view->current.query.kind != BrowseKind::artists) {
             AppendMenuW(menu, MF_STRING, IDC_PLAY, text(L"Jetzt abspielen", L"Play now"));
             AppendMenuW(menu, MF_STRING, IDC_ENQUEUE, text(L"Zur Playlist hinzufügen", L"Enqueue"));
+        }
+        if (selected.size() == 1 && std::holds_alternative<PlexTrack>(selected.front()) && connection_verified()) {
+            const auto ratings = CreatePopupMenu();
+            if (!ratings) { DestroyMenu(menu); throw std::runtime_error("rating_menu"); }
+            const auto rating = std::get<PlexTrack>(selected.front()).user_rating.value_or(0);
+            AppendMenuW(ratings, MF_STRING | (rating == 0 ? MF_CHECKED : 0), IDC_RATE_NONE, text(L"Keine Bewertung", L"No rating"));
+            for (unsigned stars = 1; stars <= 5; ++stars) {
+                const auto label = std::to_wstring(stars) + (stars == 1 ? text(L" Stern", L" star") : text(L" Sterne", L" stars"));
+                AppendMenuW(ratings, MF_STRING | (rating == stars * 2 ? MF_CHECKED : 0), IDC_RATE_NONE + stars, label.c_str());
+            }
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(ratings), text(L"Bewertung", L"Rating"));
         }
         POINT point{static_cast<short>(LOWORD(detail)), static_cast<short>(HIWORD(detail))};
         if (point.x == -1 && point.y == -1) { point = {20, 20}; ClientToScreen(GetDlgItem(dialog, IDC_CATALOG), &point); }

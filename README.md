@@ -12,11 +12,13 @@ Der Wiedergabe-Prototyp übergibt befristete Loopback-URLs für MP3 und M4A an W
 
 Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Plex-Playlists. Native Tabellen laden Seiten im Hintergrund, unterstützen Suche, Sortierung, Mehrfachauswahl und Kontextmenüs. Künstler → Alben → Titel → Winamp-Playlist wurde mit realen Daten geprüft. Ein begrenzter Metadaten-Cache hält bereits geladene Seiten vor.
 
+Die Titelansicht zeigt persönliche Plex-Bewertungen auf einer Fünf-Sterne-Skala. Das Kontextmenü eines einzelnen Titels setzt ein bis fünf Sterne oder entfernt die Bewertung. Schreiben und Rücklesen laufen im Hintergrund; erst der bestätigte Serverwert aktualisiert die Tabelle. Vorhandene Bruchteile bleiben beim Lesen erhalten. Die Änderung und Wiederherstellung eines Testtitels sind am echten Server nachgewiesen.
+
 Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_ml`. Classic, Winamp Modern, Bento und Big Bento wurden in der getrennten Testkopie visuell geprüft. Das ist kein Nachweis für jeden fremden Skin oder jede DPI-Einstellung. Es gibt keine zusätzliche Player-Steuerleiste: Doppelklick und Kontextmenü übergeben Medien an Winamp; der Player steuert die Wiedergabe.
 
 Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrund geladen. Titel übernehmen das vorhandene Albumcover, sofern sie kein eigenes Bild besitzen. Ein begrenzter Bildcache hält Miniaturen vor. Das reale Dimmu-Borgir-Album „Grand Serpent Rising“ wurde mit Cover und 13 Titeln geprüft. Fehlende Bilder werden ohne Ersatzbild dargestellt. Winamps Album-Art-Dienst erhält vorbereitete PNG-Bilder für eigene Wiedergabe-URLs. Beide Coverfelder des Big-Bento-Players wurden damit visuell geprüft.
 
-Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der lokale Dateizugriff ermöglicht bei den geprüften FLAC-, OGG- und AAC-Dateien Laufzeit und Seeking mit den vorhandenen Winamp-Decodern. Ein echter Plex-ADTS-Titel, weitere AAC-Profile, weitere Fehlerfälle und Plex-Schreibfunktionen bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
+Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der lokale Dateizugriff ermöglicht bei den geprüften FLAC-, OGG- und AAC-Dateien Laufzeit und Seeking mit den vorhandenen Winamp-Decodern. Ein echter Plex-ADTS-Titel, weitere AAC-Profile, weitere Fehlerfälle sowie automatische Plex-Statusmeldungen und Verlauf bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
 
 ## Build
 

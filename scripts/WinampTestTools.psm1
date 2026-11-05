@@ -54,6 +54,34 @@ public static class PlexNative {
       throw new InvalidOperationException("List text timeout");
     return buffer.ToString();
   }
+  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int process);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr VirtualAllocEx(IntPtr process, IntPtr address, UIntPtr size, uint allocation, uint protection);
+  [DllImport("kernel32.dll")] static extern bool VirtualFreeEx(IntPtr process, IntPtr address, UIntPtr size, uint operation);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool WriteProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr written);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] bytes, UIntPtr size, out UIntPtr read);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  public static string CatalogCellText(IntPtr window, int processId, int row, int column) {
+    uint actual; GetWindowThreadProcessId(window, out actual);
+    if(actual != processId || row < 0 || row >= QueryInt32(window,4100,IntPtr.Zero,IntPtr.Zero) || column < 0 || column > 7)
+      throw new ArgumentException("Invalid test catalog cell");
+    IntPtr process = OpenProcess(0x38,false,processId), remote = IntPtr.Zero;
+    if(process == IntPtr.Zero) throw new InvalidOperationException("Test process memory unavailable");
+    try {
+      remote = VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)8192,0x3000,4);
+      if(remote == IntPtr.Zero || (ulong)remote.ToInt64() > uint.MaxValue) throw new InvalidOperationException("Test requires x86 catalog");
+      byte[] item = new byte[64], text = new byte[4096];
+      Buffer.BlockCopy(BitConverter.GetBytes(column),0,item,8,4);
+      Buffer.BlockCopy(BitConverter.GetBytes((uint)remote.ToInt64()+64),0,item,20,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(2048),0,item,24,4);
+      UIntPtr transferred;
+      if(!WriteProcessMemory(process,remote,item,(UIntPtr)item.Length,out transferred) || transferred.ToUInt64() != (ulong)item.Length)
+        throw new InvalidOperationException("Test catalog request unavailable");
+      int length = QueryInt32(window,4211,(IntPtr)row,remote);
+      if(length < 0 || length >= 2048 || !ReadProcessMemory(process,IntPtr.Add(remote,64),text,(UIntPtr)text.Length,out transferred) || transferred.ToUInt64() != (ulong)text.Length)
+        throw new InvalidOperationException("Test catalog text unavailable");
+      return Encoding.Unicode.GetString(text,0,length*2);
+    } finally { if(remote != IntPtr.Zero) VirtualFreeEx(process,remote,UIntPtr.Zero,0x8000); CloseHandle(process); }
+  }
   public static IntPtr Query(IntPtr window, uint message, IntPtr first, IntPtr second) {
     IntPtr result;
     if(window==IntPtr.Zero || SendMessageTimeout(window,message,first,second,2,3000,out result)==IntPtr.Zero)

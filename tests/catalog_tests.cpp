@@ -23,6 +23,14 @@ int main() {
         check(track.identifier == "42" && track.artist == "Björk" && track.title == "Grüße 東京", "typed_unicode_track");
         check(track.number == 2 && track.disc == 1 && track.duration_ms == 123456, "typed_track_numbers");
         check(track.parts.size() == 1 && track.parts.front().duration_ms == 123456, "media_part_model");
+        check(!track.user_rating, "missing_user_rating_remains_unrated");
+        auto rated = fixture;
+        rated["MediaContainer"]["Metadata"][0]["userRating"] = 7.5;
+        check(std::get<plex::PlexTrack>(plex::parse_catalog_page(rated, 0).items.front()).user_rating == 7.5, "fractional_plex_rating_preserved");
+        for (const auto value : {json(-1), json(11), json("8"), json(nullptr)}) {
+            rated["MediaContainer"]["Metadata"][0]["userRating"] = value;
+            rejects([&] { plex::parse_catalog_page(rated, 0); }, "invalid_user_rating_not_silently_accepted");
+        }
         auto inherited = fixture;
         inherited["MediaContainer"]["Metadata"][0]["parentRatingKey"] = "8";
         inherited["MediaContainer"]["Metadata"][0]["parentThumb"] = "/library/metadata/8/thumb/123";

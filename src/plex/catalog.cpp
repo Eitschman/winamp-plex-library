@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
+#include <cmath>
 #include <stdexcept>
 
 namespace plex {
@@ -41,6 +42,13 @@ PlexItem parse_item(const nlohmann::json& item) {
     PlexTrack track{id, title, field(item, "grandparentTitle"), field(item, "parentTitle"), thumb,
         static_cast<unsigned>(number(item, "year")), static_cast<unsigned>(number(item, "index")),
         static_cast<unsigned>(number(item, "parentIndex")), number(item, "duration"), {}};
+    if (item.contains("userRating")) {
+        const auto& value = item.at("userRating");
+        if (!value.is_number()) throw std::invalid_argument("catalog_rating");
+        const auto rating = value.get<double>();
+        if (!std::isfinite(rating) || rating < 0 || rating > 10) throw std::invalid_argument("catalog_rating");
+        track.user_rating = rating;
+    }
     if (item.contains("Media")) {
         const auto& media = item.at("Media");
         if (!media.is_array() || media.size() > 32) throw std::invalid_argument("catalog_media");

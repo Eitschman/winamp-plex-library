@@ -9,6 +9,7 @@
 | `src/plex/http_stream.cpp` | Asynchrone WinHTTP-Requests, TLS, Timeouts, Abbruch, Header- und Bytezugriff |
 | `src/plex/auth.cpp` | Starker PIN, Browser-Anmelde-URL, Ressourcen, Serveridentität und Musikbibliotheken |
 | `src/plex/catalog.cpp` | Typisierte Modelle, Künstler, Alben, Titel, Playlists, Query-Prüfung und Pagination |
+| `src/plex/feedback.cpp` | Geprüfte Bewertungs- und Timeline-Anfragen, TLS, Millisekunden und begrenzte Antwortverarbeitung |
 | `src/plex/artwork.cpp` | Geprüfte relative Coverpfade, authentifizierter Bildtransport und begrenzte WIC-Decodierung |
 | `src/ui/artwork_loader.cpp` | Bedarfsgesteuerte Cover-/Titelanzahlaufträge, Generationsprüfung und begrenzter Bildcache |
 | `src/plugin/artwork_provider.cpp` | Cache-basierter Album-Art-Dienst für eigene Wiedergabepfade, ohne Netzwerkzugriff im Hostcallback |
@@ -21,6 +22,8 @@
 | `tests` | SDK-Host, synthetischer PMS-Transport und Tests unabhängiger Komponenten |
 
 Die Ansicht verwendet `LVS_OWNERDATA` und lädt bis zu 250 Einträge je Seite. Suche wird verzögert ausgelöst. Ein neuer Auftrag bricht den alten ab; eine Generationsnummer verhindert die Veröffentlichung überholter Ergebnisse. Album- und Playlistwiedergabe lösen Titel im Worker auf, bevor der UI-Thread sie an Winamp übergibt.
+
+Persönliche Titelbewertungen sind optionale Zahlen von 0 bis 10 im API-Modell. Die Ansicht zeigt sie geteilt durch zwei und bietet ein skiniertes Bewertungsuntermenü für einen einzelnen Titel. Ein Worker schreibt den Wert und liest die Metadaten zur Bestätigung zurück. Bereits nach dem erfolgreichen Schreibrequest wird der Seiten-Cache geleert, damit auch ein abgebrochenes Rücklesen keine alten Bewertungen konserviert. Ein Fehler bestätigt keine Änderung; die Oberfläche fordert dann eine erneute Prüfung durch Aktualisieren an. Der Timeline-Transport ist separat am Server geprüft, aber noch nicht an die Player-Zustände gebunden.
 
 Die Kopfzeile benennt die Musikbibliothek. Bei einer einzelnen Bibliothek zeigt sie deren Namen; nur mehrere Bibliotheken erhalten eine Auswahl. Der Navigationsbaum benennt die Hauptansicht. Eine zusätzliche Überschrift und „Zurück“ erscheinen erst bei Künstler- oder Album-Unteransichten. Seitenwechsel verwenden getrennte, eindeutig beschriftete Aktionen. Bei schmalen Ansichten stehen Bibliotheksname, Suchaktionen und Seitenwechsel in eigenen Zeilen.
 

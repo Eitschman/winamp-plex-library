@@ -44,7 +44,9 @@ Der Client fordert JSON explizit an. Fehlende oder falsch typisierte Felder sind
 
 ## Wiedergabestatus und schreibende Funktionen
 
-Die offizielle API führt `/:/timeline` für Playback-Meldungen sowie `PUT /:/rate` mit Provider-Identifier, `ratingKey` und Bewertung von 0 bis 10. Verlauf und Wiedergabemarkierungen sind eigenständige Serverwirkungen. Sie werden erst nach Prüfung der Zeitbasis, Zustandsübergänge, Mehrfachaufrufe und Rücklesewerte implementiert. Der Browser-/Wiedergabe-Prototyp verändert keine Bewertungen, Playlists oder Bibliotheksinhalte.
+`POST /:/timeline` meldet `key=/library/metadata/{id}`, `ratingKey`, Zustand und Position sowie Dauer in Millisekunden. Die offizielle API verlangt Meldungen bei Zustandswechseln und regelmäßig etwa alle zehn Sekunden. `X-Plex-Client-Identifier` identifiziert den Client. Die freigegebene API-Probe hat `playing`, `paused` und `stopped` über `GET /status/sessions` zurückgelesen. Das ist ein Nachweis synthetisch gesendeter API-Zustände, noch keine automatische Anbindung des laufenden Winamp-Players. Verlauf und Wiedergabemarkierungen sind eigenständige Serverwirkungen und bleiben offen.
+
+`PUT /:/rate?identifier=com.plexapp.plugins.library&key={ratingKey}&rating={0..10}` setzt die persönliche Bewertung. Ein anschließendes `GET /library/metadata/{ratingKey}` liefert `userRating`. Der echte Schreib-/Rücklesetest hat eine Testbewertung gesetzt und die ursprüngliche Bewertung wiederhergestellt. Der Wert 0 entspricht in der Plugin-Oberfläche keiner Bewertung. Ganze Winamp-Sterne werden mit Faktor zwei auf die Plex-Skala abgebildet; vorhandene Bruchteile werden ohne Rundung im Modell gehalten. Die native Titelansicht verwendet diesen Ablauf für genau einen ausgewählten Titel. Fehler oder ausbleibende Bestätigung werden sichtbar gemeldet. Playlists und Bibliotheksinhalte werden darüber nicht bearbeitet.
 
 Plexas Audio-Transcoding unter `/music/:/transcode/universal/start.mp3` ist zusätzlich im Referenzadapter belegt. Noch nicht belegt ist die erforderliche Parameterkombination für diesen Winamp-Client. Es gibt deshalb keinen automatischen Transcoding-Versuch.
 

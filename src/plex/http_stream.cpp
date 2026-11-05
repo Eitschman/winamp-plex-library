@@ -76,7 +76,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                        HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation)
-    : HttpStream(server, token, path, method == HttpMethod::post ? L"POST" : L"GET", {}, client_identifier, stop,
+    : HttpStream(server, token, path, method == HttpMethod::post ? L"POST" : method == HttpMethod::put ? L"PUT" : L"GET", {}, client_identifier, stop,
                  representation == HttpRepresentation::image ? L"image/*" : L"application/json") {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,

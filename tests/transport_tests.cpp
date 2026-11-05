@@ -74,6 +74,13 @@ struct Fixture {
         if (request.find("X-Plex-Token: synthetic-test-token\r\n") == request.npos) {
             ++token_errors; send_text(client, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"); return;
         }
+        if (request.find(" /feedback-method-probe ") != request.npos) {
+            const bool valid = (request.rfind("PUT ", 0) == 0 || request.rfind("POST ", 0) == 0) &&
+                request.find("X-Plex-Client-Identifier: synthetic-client\r\n") != request.npos;
+            if (!valid) ++token_errors;
+            send_text(client, valid ? "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" : "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+            return;
+        }
         if (request.find("/library/metadata/") != request.npos) {
             if (request.find("Accept: image/*\r\n") == request.npos) { ++token_errors; return; }
             for (const auto status : {401, 403, 404, 302, 500}) {
@@ -198,6 +205,12 @@ int main() {
         image_settings.server_token = "synthetic-test-token"; image_settings.client_identifier = "synthetic-client";
         const auto image_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         check(image_stop != nullptr, "artwork_stop_event");
+        for (const auto method : {plex::HttpMethod::post, plex::HttpMethod::put}) {
+            plex::HttpStream request(server, "synthetic-test-token", "/feedback-method-probe", method, "synthetic-client", image_stop);
+            check(request.status() == 200, "feedback_http_method_and_identity_headers");
+            char unused = 0;
+            check(request.read(&unused, 1) == 0, "feedback_empty_response_supported");
+        }
         try {
             const auto image = plex::fetch_artwork(image_settings, "/library/metadata/1/thumb/123", image_stop);
             check(image && image->width == 48 && image->height == 24, "artwork_authenticated_image_transport");
