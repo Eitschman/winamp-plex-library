@@ -33,6 +33,11 @@ do {
 if ($dialog.Count -ne 1) { throw 'Einstellungsdialog wurde nicht geöffnet.' }
 $window = $dialog[0].Handle
 try {
+    # Ein minimierter Eigentümer verbirgt auch seine Dialoge. Sichtprüfungen
+    # benötigen deshalb während dieses kurzen UI-Tests ein sichtbares Hauptfenster.
+    $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest
+    [void][PlexNative]::ShowWindow($main.Handle, 9)
+    Start-Sleep -Milliseconds 200
     $deadline = [DateTime]::UtcNow.AddSeconds(25)
     do {
         $status = [PlexNative]::Children($window) | Where-Object ControlId -eq 1004
@@ -158,6 +163,7 @@ try {
     if ($TestKeyboard) { [void][PlexNative]::PostMessage($window, 256, [IntPtr]27, [IntPtr]::Zero) }
     else { [void][PlexNative]::PostMessage($window, 273, [IntPtr]2, [IntPtr]::Zero) }
     Start-Sleep -Milliseconds 300
+    Set-PlexTestMinimized
     $deadline = [DateTime]::UtcNow.AddSeconds(2)
     while (@([PlexNative]::Windows($process.Id) | Where-Object Handle -eq $window).Count -and [DateTime]::UtcNow -lt $deadline) {
         Start-Sleep -Milliseconds 50

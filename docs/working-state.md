@@ -16,6 +16,8 @@ Die heruntergeladene CI-DLL ist zusätzlich in der getrennten Zielversion geprü
 
 ## Aktueller Produktstand
 
+Zusätzlicher Nachweis: „Until Dawn“ besteht den hörbaren Titelendetest mit 369 Sekunden Decoderlänge und natürlichem Stop nach 368,3 Sekunden. Release-Build und Testkopie enthalten dieselbe DLL mit SHA-256 `080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`. Der neue GitHub-Lauf 42070363161 besteht Geheimnisprüfung sowie Debug und Release. Dessen Buildlogs wurden ebenfalls ohne Gitleaks-Fund geprüft. Die Einstellungsprüfung aus minimiertem Zustand besteht nach explizitem Wiederherstellen ihres Eigentümerfensters.
+
 - Natives x86-Media-Library-Plugin für Winamp 5.9.2 Build 10042, vier Bibliotheksknoten, native virtuelle Tabellen, Suche, Sortierung, Paging, Mehrfachauswahl, Künstler-/Album-/Titelnavigation und Plex-Playlists.
 - Plex-Browseranmeldung erst nach Klick auf „Mit Plex anmelden“. Einstellungen, automatische HTTPS-Verbindungswahl, Server und Musikbibliothek, manuelle Adresse unter „Erweitert“. Die Sprache folgt Winamps Sprachpaket. Zugriff ausschließlich benutzergebunden mit DPAPI; keine Klartext-Tokens.
 - Classic, Winamp Modern, Bento und Big Bento sind visuell geprüft. Keine zusätzliche Player-Steuerleiste. Einfügen hinter dem aktuellen Titel ist mit exakter Reihenfolge, Metadaten und erhaltenem Wiedergabe-/Pausenzustand geprüft. Kontextmenüs sind in allen vier Skins sowie auf Deutsch und Englisch geprüft.
