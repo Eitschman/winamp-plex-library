@@ -25,7 +25,12 @@ int main(int count, char** arguments) {
         plex::PlaybackProxy proxy({server, "synthetic-test-token", arguments[2]});
         std::cout << proxy.url() << std::endl;
         std::string command;
-        std::getline(std::cin, command);
+        while (std::getline(std::cin, command)) {
+            if (command == "stop") break;
+            if (command != "status") return 2;
+            const auto current = proxy.status();
+            std::cout << "status=" << current.upstream_status << " error=" << current.transport_error << " bytes=" << current.bytes_sent << std::endl;
+        }
         const auto status = proxy.status();
         std::cout << "status=" << status.upstream_status << " error=" << status.transport_error << " bytes=" << status.bytes_sent << '\n';
         return 0;

@@ -122,6 +122,14 @@ Eine frische Plugin-Sitzung prüft zugleich MP3 ohne vorherige lokale Dateivorbe
 
 `scripts/Test-PlexPlayback.ps1` arbeitet mit der bereits über die Bibliothek gefüllten Testplaylist. Es liest keine DPAPI-Datei und übernimmt keine manuell eingetragenen Tokens. Der reale positive Lauf prüft Fortschritt, bekannte Länge, Seeking auf zehn Sekunden und ausschließlich eigene Loopback-URLs oder private vorbereitete FLAC-/OGG-Dateien. Die Gegenproben mit leerer Playlist sowie mit einer Seek-Zeit hinter dem Titelende scheitern sichtbar. Nach dem stummen Test wird Stop geprüft, bevor die vorherige Lautstärke wiederhergestellt wird.
 
+## Netzwerkfehler am tatsächlichen Player
+
+`scripts/Test-PlexPlaybackFaults.ps1` verwendet 120 Sekunden selbst erzeugte MP3-Stille und eine ausschließlich an Loopback gebundene, authentifizierte Fixture. `proxy_probe` enthält denselben Proxy-Code wie die DLL und liefert nur eine befristete lokale Wiedergabe-URL. Er läuft für diesen Test als eigener Prozess; die Fehleranzeige der Plugin-Ansicht wird dadurch nicht geprüft. Es gibt keine Änderung an Plex-Zugängen, Zertifikatspeichern oder Serverkonfiguration.
+
+Die Reihe `.local/logs/playback-faults-progress-native.log` besteht für gültige Wiedergabe, HTTP 401, 403, 404, 302, abgeschnittene Antwort und ausbleibende restliche Bytes. Der Proxy erkennt die abgeschnittene Antwort mit Windows-Code 38 und den Empfangstimeout mit 12002. Beide Fälle haben tatsächlichen Winamp-Fortschritt; beim Timeout beginnt dieser bereits vor der Fehlermeldung. Player-Abfragen benötigen im Lauf höchstens 10 Millisekunden, Stop höchstens 41 Millisekunden. Eine erneute gültige Wiedergabe nach den Fehlern besteht. Das sind Messwerte dieses Laufs, keine allgemeine Laufzeitgarantie. Die ursprüngliche Lautstärke wird nach geprüftem Stop wiederhergestellt und die gespeicherte Playlist geleert.
+
+Die interaktive Proxy-Diagnose akzeptiert `status` und `stop`. Die gültige Gegenprobe endet mit Exit-Code 0; ein unbekannter Befehl mit Exit-Code 2. Beide verwenden ausschließlich eine synthetische Loopback-Origin. Die MP3-Fixture lässt sich lokal mit `ffmpeg -f lavfi -i anullsrc=r=44100:cl=stereo:d=120 -c:a libmp3lame -b:a 128k .local/audio-fixtures/silence.mp3` erzeugen. FFmpeg ist ausschließlich ein Testwerkzeug, keine Plugin-Abhängigkeit. Die spezifische Plugin-Fehleranzeige und ein tatsächlicher Ausfall des Heimservers bleiben eigene offene Nachweise.
+
 ## Grenzen
 
 Der SDK-Testhost simuliert Winamp-Nachrichten, nicht den gesamten Player. Eine positive HTTP-Antwort beweist keine Audioausgabe. Ein Fortschrittszeiger belegt die Verarbeitung durch Winamp, ersetzt aber kein menschliches Hörurteil. Die zwei Stunden Grant-Lebensdauer wurden noch nicht durch einen entsprechend langen Lauf geprüft. Die aktuellen Prüfungen belegen keinen allgemeinen Ausschluss von Speicherlecks.
