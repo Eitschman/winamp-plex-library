@@ -133,6 +133,7 @@ int initialize() noexcept {
         if (!IsWindow(plugin.hwndLibraryParent) || !IsWindow(plugin.hwndWinampParent) || !plugin.hDllInstance)
             return 1;
         ui_thread = GetCurrentThreadId();
+        initialize_library_workers();
         settings = load_settings(settings_path());
         ++settings_revision; verified_connection = false;
         const auto language = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC,
@@ -167,6 +168,7 @@ int initialize() noexcept {
 void shutdown() noexcept {
     if (monitor) { KillTimer(monitor, 1); DestroyWindow(monitor); monitor = nullptr; }
     destroy_views();
+    shutdown_library_workers();
     clear_library_cache();
     stop_playback();
     UnregisterClassW(monitor_class, plugin.hDllInstance);

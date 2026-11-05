@@ -1,5 +1,6 @@
 #include "plugin/plugin.h"
 #include "artwork_loader.h"
+#include "view_reaper.h"
 #include <gen_ml/ml_ipc_0313.h>
 #include "plex/page_cache.h"
 #include "plex/http_stream.h"
@@ -23,6 +24,7 @@ static_assert(sizeof(MLSKINNEDPOPUP) == 48, "Die Zielversion benötigt die dokum
 constexpr UINT result_ready = WM_APP + 42;
 PageCache cache;
 LibraryCache library_cache;
+std::unique_ptr<ViewReaper> view_reaper;
 std::atomic<unsigned long long> cache_scope{0};
 void clear_cache() { ++cache_scope; cache.clear(); library_cache.clear(); ArtworkLoader::clear_cache(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
@@ -160,7 +162,7 @@ HBITMAP artwork_bitmap(const std::optional<ArtworkPixels>& pixels) {
     return bitmap;
 }
 
-struct View {
+struct View : RetiredView {
     HWND dialog;
     HANDLE stop = nullptr;
     std::mutex mutex;
@@ -189,15 +191,23 @@ struct View {
         if (!stop) throw std::runtime_error("worker_event");
         try { worker = std::thread([this] { run(); }); } catch (...) { CloseHandle(stop); throw; }
     }
-    ~View() {
-        artwork.reset();
+    // Fensterressourcen gehören dem UI-Thread. Netzwerk- und COM-Abbau dürfen
+    // den anschließenden Navigationswechsel dagegen nicht blockieren.
+    void close() {
+        if (artwork) artwork->cancel();
         if (images) {
             const auto list = GetDlgItem(dialog, IDC_CATALOG);
             if (IsWindow(list)) ListView_SetImageList(list, nullptr, LVSIL_SMALL);
             ImageList_Destroy(images);
+            images = nullptr;
         }
         { std::lock_guard<std::mutex> lock(mutex); closing = true; SetEvent(stop); }
-        wake.notify_one(); if (worker.joinable()) worker.join(); CloseHandle(stop);
+        wake.notify_one();
+    }
+    ~View() override {
+        artwork.reset();
+        if (worker.joinable()) worker.join();
+        CloseHandle(stop);
     }
 
     void prepare_artwork() {
@@ -617,6 +627,8 @@ void layout(HWND dialog) {
 }
 
 void clear_library_cache() { clear_cache(); }
+void initialize_library_workers() { view_reaper = std::make_unique<ViewReaper>(); }
+void shutdown_library_workers() noexcept { view_reaper.reset(); }
 void skin_library_dialog(HWND dialog) { skin_view(dialog); }
 
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) {
@@ -630,6 +642,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
     }
     auto* view = reinterpret_cast<View*>(GetWindowLongPtrW(dialog, GWLP_USERDATA));
     if (message == WM_INITDIALOG) {
+        if (!view_reaper || !view_reaper->available()) throw std::runtime_error("view_cleanup_busy");
         auto created = std::make_unique<View>(dialog, static_cast<BrowseKind>(detail));
         view = created.get(); SetWindowLongPtrW(dialog, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(view)); created.release();
         SendDlgItemMessageW(dialog, IDC_SEARCH, EM_SETLIMITTEXT, 1024, 0);
@@ -785,7 +798,8 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         MLUnskinWindow(library, ListView_GetToolTips(list));
         MLUnskinWindow(library, ListView_GetHeader(list));
         MLUnskinWindow(library, list);
-        KillTimer(dialog, 2); SetWindowLongPtrW(dialog, GWLP_USERDATA, 0); delete view; return TRUE;
+        KillTimer(dialog, 2); SetWindowLongPtrW(dialog, GWLP_USERDATA, 0);
+        view->close(); view_reaper->retire(view); return TRUE;
     }
     return FALSE;
 }

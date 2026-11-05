@@ -20,8 +20,12 @@ ArtworkLoader::ArtworkLoader(HWND owner) : owner_(owner), stop_(CreateEventW(nul
     catch (...) { CloseHandle(stop_); throw; }
 }
 ArtworkLoader::~ArtworkLoader() {
-    { std::lock_guard<std::mutex> lock(mutex_); closing_ = true; SetEvent(stop_); }
-    wake_.notify_one(); if (worker_.joinable()) worker_.join(); CloseHandle(stop_);
+    cancel();
+    if (worker_.joinable()) worker_.join(); CloseHandle(stop_);
+}
+void ArtworkLoader::cancel() {
+    { std::lock_guard<std::mutex> lock(mutex_); closing_ = true; pending_.clear(); SetEvent(stop_); }
+    wake_.notify_one();
 }
 void ArtworkLoader::reset(unsigned generation) {
     std::lock_guard<std::mutex> lock(mutex_);

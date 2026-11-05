@@ -23,6 +23,7 @@ class ArtworkLoader {
 public:
     explicit ArtworkLoader(HWND owner);
     ~ArtworkLoader();
+    void cancel();
     void reset(unsigned generation);
     void submit(std::size_t row, PlexAlbum album, PlexConnectionSettings settings, std::string cache_scope);
     void submit_playlist(std::size_t row, PlexPlaylist playlist, PlexConnectionSettings settings, std::string cache_scope);

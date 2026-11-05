@@ -25,6 +25,8 @@ bool playback_active() noexcept;
 HWND create_view(HWND parent, BrowseKind kind = BrowseKind::artists) noexcept;
 INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM detail);
 void destroy_views() noexcept;
+void initialize_library_workers();
+void shutdown_library_workers() noexcept;
 bool show_settings(HWND parent) noexcept;
 PlexConnectionSettings connection_settings();
 PlexConnectionSettings request_connection_settings(bool include_connections = false);
