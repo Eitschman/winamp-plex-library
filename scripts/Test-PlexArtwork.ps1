@@ -11,8 +11,6 @@ do {
     Start-Sleep -Milliseconds 100
 } while ([DateTime]::UtcNow -lt $deadline)
 if ($outer.Count -ne 1) { throw 'Genau eine Plex-Bibliotheksansicht wird erwartet.' }
-[void][PlexNative]::ShowWindow($outer[0].Handle, 9)
-[void][PlexNative]::MoveWindow($outer[0].Handle, 250, 150, 1150, 700, $true)
 $tree = [PlexNative]::Children($outer[0].Handle) | Where-Object Class -eq 'SysTreeView32'
 $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]::Zero, [IntPtr]::Zero)
 $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]4, $node)

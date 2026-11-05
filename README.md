@@ -4,7 +4,7 @@ Natives Media-Library-Plugin für Winamp Legacy unter Windows 10/11, x86. Zielve
 
 ## Entwicklungsstand
 
-Der technische Prototyp erzeugt den Plex-Navigationsknoten und eine native Ansicht. Die DLL wurde in einer getrennten Kopie der Zielversion geladen, die Ansicht gerendert und die Testinstanz regulär beendet. Ein SDK-Testhost prüft zusätzlich wiederholtes Laden und Entladen.
+Das Plugin erzeugt den Plex-Navigationsknoten und native Bibliotheksansichten. Die DLL wird in einer getrennten Kopie der Zielversion geprüft. Der SDK-Testhost bestätigt 100 Lade-/Entladezyklen; eine native Prüfung mit 100 Ansichtswechseln besteht die festgelegten Ressourcengrenzen. Ansichtswechsel brechen laufende Anfragen ab und übergeben deren Abbau an einen kontrollierten Hintergrundthread. 13 automatisierte Testsuiten bestehen in Debug und Release. Einzelne Ergebnisse und offene Integrationsnachweise stehen in [docs/testing.md](docs/testing.md).
 
 Die Anmeldung folgt dem Plexa-Ablauf: **Einstellungen → Mit Plex anmelden**, Freigabe im Systembrowser, Server und Musikbibliothek auswählen. Das Öffnen der Einstellungen startet keine Browseranmeldung. Das Plugin bezieht Tokens intern und speichert den Zugriff benutzergebunden mit Windows DPAPI. Ein Passwort oder eine manuelle Token-Eingabe ist nicht vorgesehen.
 

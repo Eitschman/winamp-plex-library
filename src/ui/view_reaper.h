@@ -25,6 +25,8 @@ public:
     ViewReaper(const ViewReaper&) = delete;
     ViewReaper& operator=(const ViewReaper&) = delete;
     void retire(RetiredView* view) noexcept;
+    // Nur der UI-Thread erzeugt Ansichten. Der laufende Abbau zählt mit,
+    // damit rasche Wechsel bei langsamer Freigabe keine Workerflut erzeugen.
     bool available() const noexcept { return pending_.load() < 8; }
 private:
     void run() noexcept;

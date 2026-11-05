@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([switch]$CheckNavigationCancel)
+$ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
 $testExe = $process.Path
@@ -127,8 +128,28 @@ try {
     [void][PlexNative]::Query((Main-Window).Handle, 1024, [IntPtr]::Zero, [IntPtr]104)
     if ($watch.ElapsedMilliseconds -gt 250) { throw 'UI-Anfrage blockiert während der Netzwerkverbindung.' }
     Write-Output "UI-Abfrage während TLS-Anfrage: $($watch.ElapsedMilliseconds) ms."
+    if ($CheckNavigationCancel) {
+        $trees = @([PlexNative]::Children($outer) | Where-Object Class -eq SysTreeView32)
+        if ($trees.Count -ne 1) { throw 'Ein Navigationsbaum wird für die Abbruchprüfung erwartet.' }
+        $tree = $trees[0]
+        $root = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]::Zero, [IntPtr]::Zero)
+        while ($root -ne [IntPtr]::Zero -and [PlexNative]::TreeItemText($tree.Handle, $process.Id, $root) -cne 'Plex') {
+            $root = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]1, $root)
+        }
+        if ($root -eq [IntPtr]::Zero) { throw 'Plex-Knoten für die Abbruchprüfung fehlt.' }
+        $target = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]4, $root)
+        $selected = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]9, [IntPtr]::Zero)
+        if ($target -eq $selected) { $target = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]1, $target) }
+        if ($target -eq [IntPtr]::Zero) { throw 'Andere Plex-Ansicht für die Abbruchprüfung fehlt.' }
+        $watch.Restart()
+        [void][PlexNative]::Query($tree.Handle, 4363, [IntPtr]9, $target)
+        $navigationTime = $watch.ElapsedMilliseconds
+        if ($navigationTime -gt 250) { throw "Ansichtswechsel blockiert bei Netzwerkabbruch: $navigationTime ms." }
+        Write-Output "Ansichtswechsel bei nachweisbar hängendem TLS: $navigationTime ms."
+    }
     Stop-TestCopy
-    Write-Output 'Beenden bei nachweisbar ausstehender TLS-Anfrage geprüft.'
+    if ($CheckNavigationCancel) { Write-Output 'Beenden nach Navigation und Abbruch der hängenden TLS-Anfrage geprüft.' }
+    else { Write-Output 'Beenden bei nachweisbar ausstehender TLS-Anfrage geprüft.' }
 } finally {
     if ($server) { Stop-Job $server; Remove-Job $server }
     Stop-TestCopy
