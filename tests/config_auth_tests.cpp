@@ -148,6 +148,24 @@ int main() {
             });
             check(local.origin == "https://local.example" && local.libraries.size() == 1 && calls == 2, "verified_connection_and_libraries");
             calls = 0;
+            auto fixed = plex::verify_server_connection(server, "https://remote.example", [&](const auto& origin, const auto& token, const auto& path) {
+                ++calls;
+                check(origin == "https://remote.example", "fixed_route_does_not_probe_local");
+                check((path == "/identity") == token.empty(), "fixed_route_identity_before_authentication");
+                return path == "/identity" ? identity : sections;
+            });
+            check(fixed.origin == "https://remote.example" && calls == 2, "fixed_route_remains_fixed_at_startup");
+            calls = 0;
+            auto matched = plex::verify_server_connection(server, {}, [&](const auto& origin, const auto& token, const auto& path) {
+                ++calls;
+                if (origin == "https://local.example") {
+                    check(token.empty() && path == "/identity", "foreign_local_server_never_receives_credentials");
+                    return nlohmann::json::parse(R"({"MediaContainer":{"machineIdentifier":"foreign-id"}})");
+                }
+                return path == "/identity" ? identity : sections;
+            });
+            check(matched.origin == "https://remote.example" && calls == 3, "automatic_route_requires_matching_server_identity");
+            calls = 0;
             auto remote = plex::verify_server_connection(server, {}, [&](const auto& origin, const auto& token, const auto& path) {
                 ++calls;
                 if (origin == "https://local.example") { check(token.empty(), "unreachable_route_has_no_token"); throw plex::HttpError(ERROR_TIMEOUT); }

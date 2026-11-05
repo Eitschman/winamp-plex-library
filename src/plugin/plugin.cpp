@@ -26,6 +26,8 @@ std::shared_ptr<LocalMediaStore> media_store;
 std::unordered_map<std::wstring, std::shared_ptr<const LocalMediaFile>> playback_files;
 DWORD ui_thread = 0;
 PlexConnectionSettings settings;
+unsigned long long settings_revision = 0;
+bool verified_connection = false;
 std::unordered_map<std::wstring, std::wstring> playback_titles;
 std::unordered_map<std::wstring, Metadata> playback_metadata;
 std::mutex metadata_mutex;
@@ -80,6 +82,7 @@ int initialize() noexcept {
             return 1;
         ui_thread = GetCurrentThreadId();
         settings = load_settings(settings_path());
+        ++settings_revision; verified_connection = false;
         const auto language = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC,
                                                                                  MAKEWPARAM(5, LANG_LANG_CODE), IPC_GETLANGUAGEPACKINSTANCE));
         if (reinterpret_cast<UINT_PTR>(language) <= 65535) throw std::runtime_error("host_language_unavailable");
@@ -262,9 +265,27 @@ bool playback_active() noexcept { return proxy != nullptr; }
 PlexConnectionSettings connection_settings() { return settings; }
 // Hintergrundanfragen benötigen nur den ausgewählten Zugang, keine weiteren
 // Server-Tokens oder Kopien aller gespeicherten Verbindungen pro Coverauftrag.
-PlexConnectionSettings request_connection_settings() {
-    return {settings.client_identifier, settings.server_identifier, settings.server_origin, settings.server_name,
+PlexConnectionSettings request_connection_settings(bool include_connections) {
+    PlexConnectionSettings result{settings.client_identifier, settings.server_identifier, settings.server_origin, settings.server_name,
             settings.server_token, settings.library_identifier, settings.library_title, settings.cache_enabled};
+    if (include_connections) {
+        result.preferred_origin = settings.preferred_origin;
+        result.server_connections = settings.server_connections;
+    }
+    return result;
+}
+unsigned long long connection_revision() noexcept { return settings_revision; }
+bool connection_verified() noexcept { return verified_connection; }
+// Nur der UI-Thread übernimmt ein zum aktuellen Profil gehörendes Worker-Ergebnis.
+// Die Auswahl gilt für die laufende Sitzung und schreibt keine Konfiguration beim Browsen.
+bool accept_verified_connection(unsigned long long revision, const std::string& origin) {
+    if (revision != settings_revision) return false;
+    if (!parse_server_address(origin).secure) throw std::invalid_argument("insecure_verified_origin");
+    if (settings.server_origin != origin) {
+        stop_playback(); clear_library_cache(); settings.server_origin = origin;
+    }
+    verified_connection = true;
+    return true;
 }
 void update_connection_settings(PlexConnectionSettings value) {
     save_settings(settings_path(), value);
@@ -273,6 +294,7 @@ void update_connection_settings(PlexConnectionSettings value) {
         value.cache_enabled != settings.cache_enabled) clear_library_cache();
     if (value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
+    ++settings_revision; verified_connection = false;
 }
 }
 

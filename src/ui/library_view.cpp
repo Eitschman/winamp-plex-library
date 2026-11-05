@@ -107,6 +107,8 @@ struct Job {
     std::vector<PlexItem> selected;
     unsigned generation = 0;
     bool load_libraries = false;
+    bool verify_connection = false;
+    unsigned long long connection_revision = 0;
     unsigned long long cache_scope = 0;
     std::shared_ptr<LocalMediaStore> media;
 };
@@ -118,6 +120,8 @@ struct Result {
     PreparedMedia prepared;
     std::vector<PlexLibrary> libraries;
     bool libraries_loaded = false;
+    unsigned long long connection_revision = 0;
+    std::string verified_origin;
     DWORD error = 0;
 };
 struct Navigation { BrowseQuery query; std::wstring caption; std::vector<std::size_t> offsets{0}; };
@@ -262,14 +266,23 @@ struct View {
                 if (closing) return;
                 job = std::move(*pending); pending.reset(); ResetEvent(stop);
             }
-            Result result; result.action = job.action;
+            Result result; result.action = job.action; result.connection_revision = job.connection_revision;
             try {
-                const PlexCatalog client(job.settings, stop);
-                if (job.load_libraries) {
+                if (job.verify_connection) {
+                    const PlexAuth auth(job.settings.client_identifier, stop);
+                    auto connection = auth.connect_server(
+                        {job.settings.server_identifier, job.settings.server_name, job.settings.server_token, job.settings.server_connections},
+                        job.settings.preferred_origin);
+                    job.settings.server_origin = connection.origin;
+                    result.verified_origin = std::move(connection.origin);
+                    result.libraries = std::move(connection.libraries);
+                    result.libraries_loaded = true;
+                } else if (job.load_libraries) {
                     const PlexAuth auth(job.settings.client_identifier, stop);
                     result.libraries = parse_libraries(auth.get_server(job.settings.server_origin, job.settings.server_token, "/library/sections"));
                     result.libraries_loaded = true;
                 }
+                const PlexCatalog client(job.settings, stop);
                 if (job.action == Action::browse) {
                     const auto key = std::to_string(job.cache_scope) + "|" + job.settings.server_identifier + "|" + catalog_path(job.query);
                     const auto cached = job.settings.cache_enabled ? cache.get(key) : std::nullopt;
@@ -358,7 +371,9 @@ struct View {
         layout(dialog);
     }
     void submit(Job job) {
-        job.settings = request_connection_settings(); job.query = current.query;
+        job.verify_connection = !connection_verified();
+        job.connection_revision = connection_revision();
+        job.settings = request_connection_settings(job.verify_connection); job.query = current.query;
         job.cache_scope = cache_scope.load();
         if (job.settings.server_origin.empty() || job.settings.library_identifier.empty()) {
             SetDlgItemTextW(dialog, IDC_STATUS, text(L"Bitte mit Plex anmelden und eine Musikbibliothek auswählen.", L"Sign in with Plex and choose a music library."));
@@ -412,10 +427,15 @@ struct View {
         { std::lock_guard<std::mutex> lock(mutex); result = std::move(completed); completed.reset(); }
         if (!result) return;
         busy = false;
+        if (result->connection_revision != connection_revision()) { load(); return; }
+        if (!result->verified_origin.empty() && !accept_verified_connection(result->connection_revision, result->verified_origin)) {
+            load(); return;
+        }
         if (result->error) {
             const auto error = result->error;
             const auto http = error >= 0x20000000UL && error < 0x20000400UL ? error - 0x20000000UL : 0;
-            if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
+            if (error == server_identity_mismatch) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Serveridentität stimmt nicht mit dem ausgewählten Plex-Server überein.", L"The server identity does not match the selected Plex server."));
+            else if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
             else if (error == ERROR_NOT_SUPPORTED) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Auswahl ist kein unterstütztes Direct-Play-Medium verfügbar.", L"No supported direct-play media is available for this selection."));
             else if (error == ERROR_FILE_TOO_LARGE) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Eine Mediendatei überschreitet das Vorbereitungslimit von 512 MiB.", L"A media file exceeds the preparation limit of 512 MiB."));
             else if (error == ERROR_DISK_FULL) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Dateivorbereitung ist kein Speicherplatz verfügbar oder das Limit von 2 GiB ist erreicht.", L"Media preparation has no free disk space or has reached the 2 GiB limit."));
@@ -462,6 +482,10 @@ struct View {
     }
     void play(bool now) {
         if (busy || current.query.kind == BrowseKind::artists) return;
+        if (!connection_verified()) {
+            SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Verbindung muss vor der Wiedergabe erfolgreich aktualisiert werden.", L"Refresh the connection successfully before playback."));
+            return;
+        }
         auto selected = selection(); if (selected.empty()) return;
         Job job; job.action = now ? Action::play : Action::enqueue; job.selected = std::move(selected); submit(std::move(job));
     }

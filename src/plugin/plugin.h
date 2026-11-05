@@ -22,7 +22,10 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
 void destroy_views() noexcept;
 bool show_settings(HWND parent) noexcept;
 PlexConnectionSettings connection_settings();
-PlexConnectionSettings request_connection_settings();
+PlexConnectionSettings request_connection_settings(bool include_connections = false);
+unsigned long long connection_revision() noexcept;
+bool connection_verified() noexcept;
+bool accept_verified_connection(unsigned long long revision, const std::string& origin);
 void update_connection_settings(PlexConnectionSettings settings);
 void clear_library_cache();
 void skin_library_dialog(HWND dialog);

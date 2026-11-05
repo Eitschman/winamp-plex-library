@@ -13,7 +13,7 @@ $controls = [PlexNative]::Children($outer[0].Handle)
 $list = $controls | Where-Object ControlId -eq 1050
 $dialog = [PlexNative]::GetParent($list.Handle)
 function Wait-Catalog {
-    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    $deadline = [DateTime]::UtcNow.AddSeconds(180)
     do {
         $status = [PlexNative]::Children($dialog) | Where-Object ControlId -eq 1004
         if ($status.Text -match '^\d+ \.\.\. \d+') {

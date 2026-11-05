@@ -66,6 +66,8 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 
 ### Audio
 
+Die native Probe `.local/logs/startup-route-native.log` lädt die Bibliothek nach einem Plugin-Neustart ohne Einstellungsdialog. Sie prüft Seitenwechsel von 250 auf 56 Künstler, Navigation, Suche und Rückkehr ohne falsche Zeilenhöhe. Die Root-Ansicht wurde in Big Bento angesehen; Wiedergabe wurde nicht gestartet. Die Startauswahl verwendet den zentralen Identitätshelfer. Dessen Gegenproben prüfen lokale Priorität, nicht erreichbare lokale Route, fremde lokale Identität ohne Tokenweitergabe, feste Route, Authentifizierungsfehler ohne weitere Routensuche und Abbruch. Eine tatsächlich lokale Verbindung zuhause ist aus der Büro-Testumgebung nicht nachgewiesen.
+
 | Format | Echtes Plex Direct Play | Länge / Titel | Seeking | Abbruch / Neustart |
 | --- | --- | --- | --- | --- |
 | MP3 | getestet | getestet | getestet | weitere Fehlerfälle offen |
