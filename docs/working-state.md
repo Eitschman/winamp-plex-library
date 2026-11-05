@@ -2,6 +2,10 @@
 
 Prüfstand: 05.11.2026. Der ursprüngliche Plugin-Auftrag bleibt maßgeblich; das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument. Die detaillierten Nachweise stehen in `docs/testing.md`.
 
+Feierabend am 05.11.2026: nach ausdrücklicher Verlängerung spätestens gegen 18:10 Uhr. Die eigene Testkopie ist gestoppt, ihre gespeicherte Playlist geleert und der Prozess regulär beendet (`release-day-shutdown.log`). Die normale Winamp-Installation wurde nicht ersetzt.
+
+Tag `v0.1.0` ist auf Quellstand `3644c12` veröffentlicht. Der Release-Lauf [42071402195](https://github.com/Eitschman/winamp-plex-library/actions/runs/42071402195) führt Debug, Release und Geheimnisprüfung aus und veröffentlicht anschließend ZIP und SHA-256-Datei. Beim nächsten Einstieg zuerst dessen tatsächliches Ergebnis und das Release unter `https://github.com/Eitschman/winamp-plex-library/releases/tag/v0.1.0` prüfen. Der vorangegangene Lauf 42070363161 besteht bereits. Der Tag selbst ist kein Nachweis einer erfolgreichen Veröffentlichung. Das heruntergeladene Releasepaket und dessen Prüfsumme gesondert nachprüfen, falls dies bis zur Arbeitsgrenze offen bleibt.
+
 ## Öffentliches Repository und CI
 
 Aktuelle Priorität ist der wiederholt gemeldete vorzeitige Titelabbruch. „The Puppeteer“ ist nach 129,8 statt 273 Sekunden mit fehlenden Medienbytes reproduziert. Die bytegenaue Fortsetzung derselben Datei mit starkem ETag besteht synthetische Gegenproben und einen echten Titelendetest einschließlich tatsächlich unterbrochener Upstream-Verbindung. „Until Dawn“ besteht den zweiten hörbaren Titelendetest. Künstler und Titel erscheinen zusammen in Winamps Playlist und Anzeige. Debug und Release bestehen jeweils 13 CTest-Suiten mit 137 Transportprüfungen. Ein sporadischer Handle-Anstieg im Lifecycle-Test bleibt als eigener Befund offen.
