@@ -60,7 +60,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/packaging_tests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Package-Plugin.ps1
 ```
 
-Das lokale Standardziel `.local/package` muss neu sein. Für einen weiteren Lauf mit bestehendem Paket einen anderen konkreten `-OutputDirectory` angeben. CI verwendet `build/package`, damit das Artefakt nicht unter einem versteckten Verzeichnis liegt. Actions stellt das Paket als ZIP für 30 Tage und CTest-Protokolle für 14 Tage bereit. Es gibt keinen automatischen GitHub-Release und keine automatische Installation. Ein erfolgreicher CI-Lauf belegt Build und automatisierte Tests; Winamp-Oberfläche und echte Plex-Wiedergabe bleiben eigenständige Integrationsprüfungen.
+Das lokale Standardziel `.local/package` muss neu sein. Für einen weiteren Lauf mit bestehendem Paket einen anderen konkreten `-OutputDirectory` angeben. CI verwendet `build/package`, damit das Artefakt nicht unter einem versteckten Verzeichnis liegt. Actions stellt das Paket als ZIP für 30 Tage und CTest-Protokolle für 14 Tage bereit. Der Release-Workflow verarbeitet ausdrücklich gepushte Tags wie `v0.1.0`: Version und Release-Hinweise müssen passen; erst nach dem wiederverwendeten Buildworkflow veröffentlicht er ZIP und SHA-256-Datei. Dazu gehört ein prüfsummengesicherter Gitleaks-Scan der gesamten Historie mit redigierter Ausgabe. Es gibt keine automatische Installation. Ein erfolgreicher CI-Lauf belegt Build und automatisierte Tests; Winamp-Oberfläche und echte Plex-Wiedergabe bleiben eigenständige Integrationsprüfungen.
 
 ## Isolierte Laufzeitprüfung
 

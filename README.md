@@ -23,7 +23,7 @@ WACUP ist ein späteres Kompatibilitätsziel und bisher nicht zur Laufzeit gepr�
 
 ## Download
 
-Unter [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) erzeugen erfolgreiche Windows-Builds das Artefakt **`winamp-plex-library-win32-release`** mit DLL, Installationshinweisen und Lizenztexten. Zum Herunterladen von Actions-Artefakten ist eine GitHub-Anmeldung erforderlich. Diese zeitlich aufbewahrten Buildpakete sind keine automatisch veröffentlichten Releases. Alternativ lässt sich das Plugin aus dem Quellcode bauen.
+Veröffentlichte Versionen stehen unter [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Das ZIP enthält DLL, Installationshinweise und Lizenztexte; eine SHA-256-Datei erlaubt die Downloadprüfung. Unter [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) stehen zusätzlich zeitlich aufbewahrte Entwicklungspakete als **`winamp-plex-library-win32-release`** zur Verfügung. Dafür ist eine GitHub-Anmeldung erforderlich. Alternativ lässt sich das Plugin aus dem Quellcode bauen.
 
 ## Entwicklungsstand
 

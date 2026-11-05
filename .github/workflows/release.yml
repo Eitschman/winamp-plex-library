@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+  publish:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Release-Quellstand laden
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Geprüftes Release-Buildpaket laden
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: winamp-plex-library-win32-release
+          path: build/release-package
+      - name: Version prüfen und Downloadpaket erstellen
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Ungültiger Release-Tag.' }
+          $version = $Matches[1]
+          $projectVersion = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'project\(WinampPlexLibrary VERSION ([0-9.]+)').Groups[1].Value
+          if ($version -ne $projectVersion) { throw 'Tag und Projektversion stimmen nicht überein.' }
+          if (-not (Test-Path -LiteralPath "docs/releases/$version.md" -PathType Leaf)) { throw 'Release-Hinweise fehlen.' }
+          $archive = "WinampPlexLibrary-$version-win32.zip"
+          Compress-Archive -Path build/release-package/* -DestinationPath "build/$archive"
+          $hash = (Get-FileHash -LiteralPath "build/$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path (Get-Location) 'build/SHA256SUMS.txt'), "$hash  $archive`n", [Text.Encoding]::ASCII)
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: GitHub-Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:RELEASE_TAG "build/WinampPlexLibrary-$env:RELEASE_VERSION-win32.zip" build/SHA256SUMS.txt --verify-tag --title "Winamp Plex Library $env:RELEASE_TAG" --notes-file "docs/releases/$env:RELEASE_VERSION.md" --latest
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub-Release konnte nicht veröffentlicht werden.' }
