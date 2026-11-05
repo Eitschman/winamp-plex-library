@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $samples = Get-Content -LiteralPath $SamplesPath -Encoding UTF8 -Raw | ConvertFrom-Json
 $sample = @($samples | Where-Object format -eq flac)[0]
-if (-not $sample.title -or -not $sample.artist -or -not $sample.album) { throw 'Eine echte FLAC-Probe aus der Inventur wird benötigt.' }
+if (-not $sample.title -or -not $sample.artist -or -not $sample.album_artist -or -not $sample.album) { throw 'Eine echte FLAC-Probe aus der Inventur wird benötigt.' }
 $process = Get-PlexTestProcess
 $testExe = $process.Path
 $mediaRoot = Join-Path $env:LOCALAPPDATA 'WinampPlexLibrary\playback'
@@ -47,7 +47,7 @@ try {
     [void][PlexNative]::Query($tree.Handle, 4363, [IntPtr]9, $artists)
     Start-Sleep -Milliseconds 200
     Catalog; Wait-Catalog
-    foreach ($term in @($sample.artist, $sample.album)) {
+    foreach ($term in @($sample.album_artist, $sample.album)) {
         Search $term
         if ([PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) -ne 1 -or
             [PlexNative]::CatalogCellText($list.Handle, $process.Id, 0, 0) -cne $term) { throw 'Künstler oder Album ist nicht eindeutig zugeordnet.' }

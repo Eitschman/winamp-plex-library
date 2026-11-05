@@ -58,7 +58,7 @@ try {
         $search = [PlexNative]::Children($view) | Where-Object ControlId -eq 1051
         [void](Wait-Catalog)
         if ($sample.narrow) {
-            foreach ($term in @($sample.artist, $sample.album)) {
+            foreach ($term in @($sample.album_artist, $sample.album)) {
                 if (-not $term) { throw 'Kontext für mehrdeutigen Titel fehlt.' }
                 [void][PlexNative]::SendMessage($search.Handle, 12, [IntPtr]::Zero, [string]$term)
                 Start-Sleep -Milliseconds 500

@@ -12,12 +12,34 @@
 // Bewusster Integrationstest, nicht Teil von CTest; keine privaten Inhalte ausgeben.
 int main(int count, char** arguments) {
     const bool inventory = (count == 2 || count == 3) && std::string(arguments[1]) == "--formats";
-    if (count != 1 && count != 3 && !inventory) return 2;
+    const bool sorts = count == 2 && std::string(arguments[1]) == "--sorts";
+    if (count != 1 && count != 3 && !inventory && !sorts) return 2;
     const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     int stage = 0;
     try {
         const auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexCatalog client(settings, stop);
+        if (sorts) {
+            const plex::PlexAuth auth(settings.client_identifier, stop);
+            const auto connection = auth.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
+            const auto document = auth.get_server(connection.origin, settings.server_token,
+                "/library/sections/" + settings.library_identifier + "/all?includeMeta=1&includeAdvanced=1&X-Plex-Container-Start=0&X-Plex-Container-Size=0");
+            const auto& types = document.at("MediaContainer").at("Meta").at("Type");
+            if (!types.is_array()) throw std::runtime_error("sort_capabilities_required");
+            for (const auto& type : types) {
+                if (!type.contains("Sort")) continue;
+                for (const auto& sort : type.at("Sort")) {
+                    const auto key = sort.at("key").get<std::string>();
+                    // Nur technische Sortierschlüssel, keine übersetzten Titel ausgeben.
+                    // Plex liefert auch zusammengesetzte Schlüssel mit Kommatrennung.
+                    const auto invalid = key.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:,");
+                    if (key.empty() || key.size() > 100 || invalid != key.npos)
+                        throw std::runtime_error("sort_capability_key");
+                    std::cout << "sort_key=" << key << '\n';
+                }
+            }
+            CloseHandle(stop); return 0;
+        }
         if (inventory) {
             stage = 50;
             plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks;
@@ -84,7 +106,7 @@ int main(int count, char** arguments) {
                         selected = &title; break;
                     }
                     const auto& track = sample_tracks.at({format.first, *selected});
-                    samples.push_back({{"format", format.first}, {"title", *selected}, {"artist", track.artist}, {"album", track.album},
+                    samples.push_back({{"format", format.first}, {"title", *selected}, {"artist", track.artist}, {"album_artist", track.album_artist}, {"album", track.album},
                                        {"narrow", title_counts.at(*selected) != 1}});
                 }
                 // Der optionale lokale Bericht enthält private Titel-/Albumangaben,

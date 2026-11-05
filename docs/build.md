@@ -33,7 +33,9 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Debug und Release wurden mit MSVC x86 gebaut; elf CTest-Suiten bestehen jeweils in Debug und Release. Der Statusdialog-Test verwendet die originale Dialogprozedur mit kontrollierten Transportzuständen. Die Laufzeittests im echten Winamp verwenden die Release-DLL; ein erfolgreicher Debug-Testhostlauf ist kein eigener Nachweis für jeden Winamp-Skin. Prüfprotokolle: `.local/logs/build-debug-human-errors.log`, `.local/logs/ctest-debug-human-errors.log`, `.local/logs/build-release-human-errors.log` und `.local/logs/ctest-release-human-errors.log`.
+Debug und Release wurden mit MSVC x86 gebaut; elf CTest-Suiten bestehen jeweils in Debug und Release. Der Statusdialog-Test verwendet die originale Dialogprozedur mit kontrollierten Transportzuständen. Die Laufzeittests im echten Winamp verwenden die Release-DLL; ein erfolgreicher Debug-Testhostlauf ist kein eigener Nachweis für jeden Winamp-Skin. Prüfprotokolle: `.local/logs/build-compilation-debug.log`, `.local/logs/ctest-compilation-debug.log`, `.local/logs/build-compilation-release.log` und `.local/logs/ctest-compilation-release.log`.
+
+Ein zusätzliches, neu angelegtes Buildverzeichnis unter `.local/repro-build` bestätigt Konfiguration mit erneut geladenem JSON-Archiv, SDK-Prüfsummen, x86-Release-Build und elf erfolgreiche CTest-Suiten. Es verwendet keine Artefakte des regulären `build`-Verzeichnisses. Nachweise: `.local/logs/repro-configure.log`, `.local/logs/repro-compilation-build.log` und `.local/logs/repro-compilation-ctest.log`. Das belegt den reproduzierbaren Buildablauf, keine Bitidentität der DLLs.
 
 Der Konfigurationsschritt lädt nlohmann/json 3.12.0 über CMake FetchContent. Die Archiv-Prüfsumme ist im Projekt festgelegt. Der Build benötigt keine Plex-Zugangsdaten und keinen Plex-Server. Alle automatisierten Fixtures verwenden erfundene Tokens und Loopback.
 
