@@ -115,7 +115,7 @@ int wmain(int count, wchar_t** arguments) {
         SetFocus(input); SetFocus(window); DestroyWindow(input);
         const auto baseline = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
         const auto gdi_baseline = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
-        DWORD warm_gdi = 0;
+        DWORD warm_gdi = 0, warm_process_handles = 0;
         for (int iteration = 0; iteration < 100; ++iteration) {
             german_host = iteration % 2 == 0;
             const auto library = LoadLibraryW(arguments[1]);
@@ -175,6 +175,14 @@ int wmain(int count, wchar_t** arguments) {
             // Ressourcen. Weitere 99 Lade- und Dialogrunden dürfen nichts akkumulieren.
             if (iteration == 0) warm_gdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
             else check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == warm_gdi, "no_gdi_growth_across_settings_cycles");
+            DWORD process_handles = 0;
+            check(GetProcessHandleCount(GetCurrentProcess(), &process_handles) != FALSE, "process_handle_measurement");
+            if (iteration == 0) warm_process_handles = process_handles;
+            else {
+                if (process_handles > warm_process_handles)
+                    std::cerr << "Process handles after cycle " << iteration + 1 << ": " << process_handles << ", baseline=" << warm_process_handles << '\n';
+                check(process_handles <= warm_process_handles, "no_process_handle_growth_across_lifecycle_cycles");
+            }
             if (iteration == 0 || iteration == 49 || iteration == 99)
                 std::cerr << "GDI objects after cycle " << iteration + 1 << ": " << GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) << ", baseline=" << gdi_baseline << '\n';
         }
