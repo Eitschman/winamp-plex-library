@@ -27,7 +27,8 @@ void clear_cache() { ++cache_scope; cache.clear(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
 void layout(HWND dialog);
 
-// gen_ml besitzt die Skin-Ressourcen und entfernt seine Subklassen bei WM_NCDESTROY.
+// gen_ml besitzt die Skin-Ressourcen. Die Tabelle löst ihre Anbindung vor WM_NCDESTROY,
+// damit die Skin-Engine das Windows-Theme noch am lebenden Steuerelement wiederherstellt.
 // Die Ansicht verwendet dieselbe Skin-Engine wie die eingebauten Bibliotheksansichten.
 void skin_view(HWND dialog) {
     const auto library = descriptor().hwndLibraryParent;
@@ -763,7 +764,16 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
                                                            reinterpret_cast<WPARAM>(&popup), ML_IPC_TRACKSKINNEDPOPUPEX));
         DestroyMenu(menu); if (command) PostMessageW(dialog, WM_COMMAND, command, 0); return TRUE;
     }
-    if (message == WM_DESTROY) { KillTimer(dialog, 2); SetWindowLongPtrW(dialog, GWLP_USERDATA, 0); delete view; return TRUE; }
+    if (message == WM_DESTROY) {
+        const auto library = descriptor().hwndLibraryParent;
+        const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        // Tooltip und Kopfzeile werden von gen_ml zusammen mit der Tabelle angebunden.
+        // Spätes Lösen erst bei WM_NCDESTROY lässt in Winamp 5.9.2 GDI-Ressourcen zurück.
+        MLUnskinWindow(library, ListView_GetToolTips(list));
+        MLUnskinWindow(library, ListView_GetHeader(list));
+        MLUnskinWindow(library, list);
+        KillTimer(dialog, 2); SetWindowLongPtrW(dialog, GWLP_USERDATA, 0); delete view; return TRUE;
+    }
     return FALSE;
 }
 }

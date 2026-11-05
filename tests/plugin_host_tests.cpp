@@ -14,6 +14,7 @@ int removals = 0;
 bool deny_navigation = false;
 unsigned child_count = 0;
 unsigned skin_dialogs = 0, skin_lists = 0;
+unsigned unskinned_lists = 0;
 MockServices services;
 unsigned settings_case = 0;
 bool settings_valid = false;
@@ -62,7 +63,11 @@ LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operat
         return deny_language ? 0 : reinterpret_cast<LRESULT>(german_host ? L"de" : L"en");
     if (message == WM_WA_IPC && operation == IPC_GET_API_SERVICE) return reinterpret_cast<LRESULT>(&services);
     if (message == WM_ML_IPC) {
-        if (operation == ML_IPC_UNSKINWINDOW) return IsWindow(reinterpret_cast<HWND>(parameter));
+        if (operation == ML_IPC_UNSKINWINDOW) {
+            const auto control = reinterpret_cast<HWND>(parameter);
+            if (IsWindow(control) && GetDlgCtrlID(control) == 1050) ++unskinned_lists;
+            return IsWindow(control);
+        }
         if (operation == ML_IPC_SKINWINDOW) {
             const auto* skin = reinterpret_cast<const MLSKINWINDOW*>(parameter);
             if (!skin || !IsWindow(skin->hwndToSkin) || !(skin->style & SWS_USESKINCOLORS) || !(skin->style & SWS_USESKINFONT)) return FALSE;
@@ -175,15 +180,18 @@ int wmain(int count, wchar_t** arguments) {
         }
         check(additions == 500 && removals == 100, "balanced_navigation");
         check(skin_dialogs == 302 && skin_lists == 100, "native_skin_registration");
+        check(unskinned_lists == 100, "list_skin_released_before_window_destruction");
         const auto handles = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
-        if (handles != baseline) {
+        if (handles > baseline) {
             std::cerr << "USER objects: before=" << baseline << ", after=" << handles << '\n';
             EnumThreadWindows(GetCurrentThreadId(), [](HWND handle, LPARAM) -> BOOL {
                 wchar_t type[100]{}; GetClassNameW(handle, type, 100);
                 std::wcerr << L"Remaining window: " << type << L'\n'; return TRUE;
             }, 0);
         }
-        check(handles == baseline, "balanced_user_handles");
+        // Der Fokuswechsel darf temporäre Windows-Ressourcen aus der Ausgangsmessung
+        // freigeben. Ausschließlich ein Anstieg ist hier ein Leckhinweis.
+        check(handles <= baseline, "balanced_user_handles");
         check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == warm_gdi, "balanced_gdi_handles");
         DestroyWindow(window);
         check(std::filesystem::remove(configuration / L"connection.dpapi"), "settings_test_file_cleanup");

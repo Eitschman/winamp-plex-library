@@ -128,6 +128,19 @@ public static class PlexNative {
       }
     }
   }
+  public static string TreeItemText(IntPtr window, int processId, IntPtr node) {
+    if(node==IntPtr.Zero || node.ToInt64()<0 || (ulong)node.ToInt64()>uint.MaxValue) throw new ArgumentException("Invalid tree item");
+    using(var memory=new CatalogMemory(window,processId)) {
+      byte[] item=new byte[256]; Buffer.BlockCopy(BitConverter.GetBytes(1),0,item,0,4);
+      Buffer.BlockCopy(BitConverter.GetBytes((uint)node.ToInt64()),0,item,4,4);
+      Buffer.BlockCopy(BitConverter.GetBytes((uint)memory.Address.ToInt64()+64),0,item,16,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(96),0,item,20,4); memory.Write(item);
+      if(QueryInt32(window,4414,IntPtr.Zero,memory.Address)==0) throw new InvalidOperationException("Tree text query failed");
+      return Encoding.Unicode.GetString(memory.Read(256),64,192).TrimEnd('\0');
+    }
+  }
+  [DllImport("user32.dll", SetLastError=true)] public static extern uint GetGuiResources(IntPtr process, uint flags);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GetProcessHandleCount(IntPtr process, out uint count);
   public static int CatalogImageIndex(IntPtr window, int processId, int row) {
     if(row<0 || row>=QueryInt32(window,4100,IntPtr.Zero,IntPtr.Zero)) throw new ArgumentException("Invalid image row");
     using(var memory=new CatalogMemory(window,processId)) {

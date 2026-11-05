@@ -44,10 +44,16 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 - [x] Plex-Knoten in der echten Zielversion öffnen.
 - [x] Eigene Ansicht erzeugen und visuell prüfen.
 - [x] Testinstanz regulär beenden und neu starten.
-- [ ] Eintrag in Einstellungen → Plugins → Media Library visuell prüfen.
+- [x] Eintrag in Einstellungen → Plugins → Media Library visuell prüfen und dessen Konfigurationsaufruf ausführen.
 - [ ] Mehrfach zwischen fremden Ansichten und Plex wechseln.
 - [ ] Beenden bei aktiver Anmeldung, Medienanfrage und unterbrochener Verbindung prüfen.
 - [ ] Über einen längeren Lauf Prozess-, GDI-, USER- und Socket-Ressourcen beobachten. Die bisherigen Tests sind kein allgemeiner Speicherlecknachweis.
+
+`scripts/Test-PlexViewResources.ps1` prüft gezielt Wechsel zwischen den vier Plex-Ansichten. Nach drei Aufwärmzyklen und jeweils 60 Sekunden Ruhezeit vor und nach 20 gemessenen Zyklen ergeben sich 562 → 564 Prozesshandles, 1490 → 1491 GDI-Objekte, 229 → 229 USER-Objekte und 17 → 17 Threads. Der private Speicher liegt bei 93323264 → 93474816 Bytes. Das belegt diesen begrenzten Prüflauf, keinen allgemeinen Speicherlecknachweis. Während der Wechsel erzeugte Prozesshandles werden zeitversetzt freigegeben; unmittelbare Spitzenwerte dürfen deshalb nicht mit einer Messung nach Ruhezeit vermischt werden.
+
+Die Tabellen lösen ihre gen_ml-Skin-Anbindung einschließlich Tooltip und Kopfzeile bei `WM_DESTROY`, bevor die Steuerelemente `WM_NCDESTROY` erreichen. Ohne diese Freigabe wächst der GDI-Zähler pro neu erzeugter Tabelle. Die isolierte Gegenprobe mit ausgesetzter Freigabe wird vom selben Skript nach drei gemessenen Zyklen als Fehler erkannt. Der SDK-Testhost prüft zusätzlich 100 ausdrückliche Tabellenfreigaben. Nachweise: `.local/logs/view-resources-regression.log`, `.local/logs/view-resources-negative.log` und `.local/logs/ctest-skin-release-verified.log`.
+
+Mit der wiederhergestellten Korrektur besteht die native Playlistprüfung erneut für 22 Titel. Playlistübersicht und Titelansicht mit Albumcovern wurden in Big Bento bei 2048 × 1183 Pixeln angesehen; Tabellen, Kopfzeilen, Scrollbalken und Bedienelemente verwenden weiterhin den aktiven Skin. Die Wiedergabe bleibt gestoppt, die gespeicherte Playlist wird vom Prüfer geleert. Siehe `.local/logs/playlists-after-skin-release.log`.
 
 ### Verbindung und Konfiguration
 
