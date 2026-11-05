@@ -63,6 +63,11 @@ void verify_status(HWND parent) {
     proxy_status.local_rejection = "request_host";
     tick(first);
     check(status(first) == localized(L"Lokale Wiedergabe abgewiesen. Titel erneut aus Plex hinzufügen.", L"Local playback rejected. Add the track from Plex again."), "local_rejection_priority");
+    proxy_status.local_rejection = "request_expired";
+    tick(first);
+    check(status(first) == localized(L"Wiedergabelink abgelaufen. Titel erneut aus Plex hinzufügen.", L"Playback link expired. Add the track from Plex again."), "expired_playback_link_visible");
+    proxy_status = {}; tick(first);
+    check(status(first) == L"Neue Ladeantwort", "expired_link_overlay_clears_after_recovery");
     active = false; tick(first);
     check(status(first) == L"Neue Ladeantwort", "inactive_playback_does_not_retain_proxy_error");
 

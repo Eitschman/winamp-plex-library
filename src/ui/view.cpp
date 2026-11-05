@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <vector>
+#include <string_view>
 
 namespace plex::plugin {
 namespace {
@@ -23,7 +24,9 @@ void update_status(HWND dialog) {
     const auto status = playback_active() ? playback_status() : ProxyStatus{};
     const auto reporting = playback_reporting_status();
     std::array<wchar_t, 256> message{};
-    if (status.local_rejection)
+    if (status.local_rejection && std::string_view(status.local_rejection) == "request_expired")
+        wcscpy_s(message.data(), message.size(), text(L"Wiedergabelink abgelaufen. Titel erneut aus Plex hinzufügen.", L"Playback link expired. Add the track from Plex again."));
+    else if (status.local_rejection)
         wcscpy_s(message.data(), message.size(), text(L"Lokale Wiedergabe abgewiesen. Titel erneut aus Plex hinzufügen.", L"Local playback rejected. Add the track from Plex again."));
     else if (status.upstream_status == 401 || status.upstream_status == 403)
         wcscpy_s(message.data(), message.size(), text(L"Zugriff verweigert. Erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));

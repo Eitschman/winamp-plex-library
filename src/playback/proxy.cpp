@@ -109,7 +109,10 @@ struct PlaybackProxy::State {
                 if (found == grants.end()) throw std::invalid_argument("request_target");
                 grant = found->second;
             }
-            if (std::chrono::steady_clock::now() >= grant->expires) { send_status(client, 410); return; }
+            if (std::chrono::steady_clock::now() >= grant->expires) {
+                upstream.store(0); error.store(0); rejection.store("request_expired");
+                send_status(client, 410); return;
+            }
             const auto parsed = parse_local_request(request, authority, capability);
             rejection.store(nullptr);
             HttpStream stream(grant->source.server, grant->source.token, grant->source.media_path, parsed.head, parsed.range, stop);

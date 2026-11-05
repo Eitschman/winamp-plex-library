@@ -104,6 +104,8 @@ Es gibt kein Logging von Tokens, Account-Antworten oder Medien-URLs mit Anmelded
 
 Die Standardarchitektur ist Direct Play. Winamp erhält eine URL der Form `http://127.0.0.1:<port>/stream/<zufall>/audio.<format>`. Die 192-Bit-Capability ist nicht der Plex-Token und enthält keine Serverkennung. Sie gilt höchstens zwei Stunden und nur für die eine zugeordnete Datei. Eine dauerhafte Playlist darf daraus keine dauerhafte Plex-Zugangsmöglichkeit ableiten.
 
+Ein abgelaufener Grant wird lokal mit HTTP 410 und `request_expired` abgewiesen. Die Oberfläche fordert zum erneuten Hinzufügen des Titels auf. Dies ist von einer verweigerten Plex-Authentifizierung getrennt; weder Browseranmeldung noch Serveranfrage werden dadurch ausgelöst. Ein erfolgreicher Zugriff mit neuem Grant entfernt die lokale Ablaufdiagnose.
+
 Der Listener verwendet ausschließlich Loopback und exklusive Portbindung. Host-Header, Methode, Capability und optionaler einzelner Byte-Range werden geprüft. Browser-Origin, fremder Host, Request-Body, Transfer-Encoding, Mehrfach-Range und abweichender Pfad werden abgewiesen, bevor ein Upstream-Request entsteht. Es gibt keinen allgemeinen URL-Proxy und keine Weiterleitung frei gewählter Ziele.
 
 An Plex werden Token und Client-Header serverseitig angefügt. Zertifikatsprüfung bleibt aktiv. Redirects, automatische Windows-Anmeldedaten und HTTP-Kompression werden nicht als Ausweichpfade verwendet. Nur Medienheader werden weitergegeben; Fehlermeldungstexte, Cookies und Location bleiben intern.

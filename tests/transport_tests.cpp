@@ -376,7 +376,11 @@ int main() {
             const auto hits = fixture.hits.load();
             std::this_thread::sleep_for(std::chrono::milliseconds(550));
             check(fetch(expiring.url()).status == 410, "expired_grant_rejected");
+            check(expiring.status().local_rejection && std::string(expiring.status().local_rejection) == "request_expired" &&
+                  !expiring.status().upstream_status && !expiring.status().transport_error, "expired_grant_reports_local_expiry");
             check(fixture.hits.load() == hits, "expired_grant_never_contacts_upstream");
+            const auto renewed = expiring.add({server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+            check(fetch(renewed).body == fixture.media && !expiring.status().local_rejection, "new_grant_recovers_after_expiry");
             for (const auto lifetime : {std::chrono::milliseconds(0), std::chrono::milliseconds(std::chrono::hours(3))}) {
                 bool rejected = false;
                 try { plex::PlaybackProxy invalid({server, "synthetic-test-token", "/library/parts/1/file.mp3"}, lifetime); }
