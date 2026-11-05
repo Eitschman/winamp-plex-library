@@ -2,6 +2,14 @@
 
 Prüfstand: 05.11.2026. Der ursprüngliche Plugin-Auftrag bleibt maßgeblich; das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument. Die detaillierten Nachweise stehen in `docs/testing.md`.
 
+## Öffentliches Repository und CI
+
+Das Repository liegt unter `https://github.com/Eitschman/winamp-plex-library`; `origin/main` ist mit der lokalen Historie verbunden. Der ursprüngliche GitHub-Lizenzcommit bleibt erhalten. Die Veröffentlichung und GitHub Actions sind freigegeben. Der Workflow baut MSVC-x86-Debug und Release auf Windows 2022 und besteht für Quellstand `d85e25a` jeweils 13 CTest-Suiten. Release besteht zusätzlich sieben Paketprüfungen. Nachweis: [Actions-Lauf 42061725581](https://github.com/Eitschman/winamp-plex-library/actions/runs/42061725581).
+
+Das heruntergeladene Artefakt `winamp-plex-library-win32-release` enthält exakt die x86-DLL, `INSTALL.md`, `LICENSE`, `THIRD-PARTY-NOTICES.md` und die MIT-Lizenz von nlohmann/json. SDK-Dateien und lokale Einstellungen sind nicht enthalten. Die DLL hat SHA-256 `246d2754b71be06afcda5e7303f026c45563b218bf47406fbadd20003440cca9`. CI ersetzt keinen nativen Winamp-/Plex-Nachweis. Es gibt keinen automatischen GitHub-Release und keine automatische Installation in der normalen Winamp-Installation.
+
+Die heruntergeladene CI-DLL ist zusätzlich in der getrennten Zielversion geprüft: 30 Sekunden MP3 ohne Seeking, Länge, Seeking, Plex-Sitzung ohne TranscodeSession und Titelmetadaten bestehen im Wiederholungslauf. Der erste Lauf findet nach bestandener Wiedergabeprüfung die eigene Plex-Sitzung nicht; dessen Ursache ist offen, siehe `docs/testing.md`. Die Testkopie erhält danach wieder den lokalen Build und bleibt gestoppt, leer und minimiert.
+
 ## Aktueller Produktstand
 
 - Natives x86-Media-Library-Plugin für Winamp 5.9.2 Build 10042, vier Bibliotheksknoten, native virtuelle Tabellen, Suche, Sortierung, Paging, Mehrfachauswahl, Künstler-/Album-/Titelnavigation und Plex-Playlists.
