@@ -136,4 +136,32 @@ std::vector<PlexLibrary> parse_libraries(const nlohmann::json& response) {
     }
     return result;
 }
+
+PlexConnectionResult verify_server_connection(const PlexServer& server, const std::string& preferred_origin, const PlexServerRequest& request) {
+    if (server.identifier.empty()) throw std::invalid_argument("server_identifier");
+    validate_token(server.access_token);
+    // Die vom Benutzer ausdrücklich konfigurierte Origin wird zuerst ohne Token geprüft.
+    // Redirects bleiben verboten; erst eine passende Serveridentität erlaubt den Zugriff.
+    const auto verified = [&](const PlexConnection& connection) {
+        if (!parse_server_address(connection.uri).secure) throw std::invalid_argument("https_required");
+        return request(connection.uri, {}, "/identity").at("MediaContainer").at("machineIdentifier").get<std::string>() == server.identifier;
+    };
+    std::string origin = preferred_origin;
+    if (origin.empty()) origin = select_server_connection(server, [&](const auto& connection) {
+        try { return verified(connection); }
+        catch (const HttpError& error) {
+            if (error.code == ERROR_CANCELLED || error.code == ERROR_OPERATION_ABORTED) throw;
+            return false;
+        }
+    }).uri;
+    else if (!verified({origin})) throw HttpError(server_identity_mismatch);
+    return {origin, parse_libraries(request(origin, server.access_token, "/library/sections"))};
+}
+
+PlexConnectionResult PlexAuth::connect_server(const PlexServer& server, const std::string& preferred_origin) const {
+    return verify_server_connection(server, preferred_origin, [&](const auto& origin, const auto& token, const auto& path) {
+        if (WaitForSingleObject(stop_, 0) == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
+        return get_server(origin, token, path);
+    });
+}
 }

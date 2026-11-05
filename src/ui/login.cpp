@@ -24,7 +24,6 @@ INT_PTR CALLBACK settings_frame(HWND dialog, UINT message, WPARAM parameter, LPA
 namespace {
 constexpr UINT state_changed = WM_APP + 31;
 HWND active_settings = nullptr;
-constexpr DWORD identity_mismatch = 0x30000001;
 enum class Step { starting, pin, authorized, libraries, reachable, failed };
 const wchar_t* localized(const wchar_t* german_text, const wchar_t* english_text) { return german() ? german_text : english_text; }
 const wchar_t* connection_error(DWORD error) {
@@ -36,7 +35,7 @@ const wchar_t* connection_error(DWORD error) {
         return localized(L"HTTPS-Zertifikat ungültig. Eine gültige HTTPS-Adresse verwenden.", L"HTTPS certificate invalid. Use a valid HTTPS address.");
     if (error == ERROR_WINHTTP_TIMEOUT || error == ERROR_TIMEOUT)
         return localized(L"Zeitüberschreitung. Server und Netzwerk prüfen.", L"Request timed out. Check the server and network.");
-    if (error == identity_mismatch)
+    if (error == server_identity_mismatch)
         return localized(L"Die Adresse gehört nicht zum ausgewählten Plex-Server.", L"The address does not match the selected Plex server.");
     if (error == ERROR_NOT_CONNECTED || error == ERROR_WINHTTP_CANNOT_CONNECT)
         return localized(L"Keine erreichbare HTTPS-Verbindung. Netzwerk und erweiterte Einstellungen prüfen.", L"No reachable HTTPS connection. Check the network and advanced settings.");
@@ -117,21 +116,9 @@ struct Login {
                 server = servers.at(server_index);
             }
             PlexAuth auth(settings.client_identifier, stop);
-            // Die vom Benutzer ausdrücklich konfigurierte Origin wird zuerst ohne Token geprüft.
-            // Redirects bleiben verboten; erst eine passende Serveridentität erlaubt den Zugriff.
-            const auto verified = [&](const PlexConnection& connection) {
-                if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
-                return auth.get_server(connection.uri, {}, "/identity").at("MediaContainer").at("machineIdentifier") == server.identifier;
-            };
-            if (automatic) origin = select_server_connection(server, [&](const auto& connection) {
-                try { return verified(connection); }
-                catch (const HttpError&) {
-                    if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) throw;
-                    return false;
-                }
-            }).uri;
-            else if (!verified({origin})) throw HttpError(identity_mismatch);
-            auto found = parse_libraries(auth.get_server(origin, server.access_token, "/library/sections"));
+            auto connection = auth.connect_server(server, automatic ? std::string{} : origin);
+            origin = std::move(connection.origin);
+            auto found = std::move(connection.libraries);
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 libraries = std::move(found);

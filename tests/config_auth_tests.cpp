@@ -1,4 +1,5 @@
 #include "plex/auth.h"
+#include "plex/http_stream.h"
 #include "plex/settings.h"
 #include <windows.h>
 #include <wincrypt.h>
@@ -132,6 +133,50 @@ int main() {
         ]}})"));
         check(libraries.size() == 1 && libraries[0].identifier == "7" && libraries[0].title == "Música & 日本語", "music_library_unicode");
         check(plex::parse_libraries(nlohmann::json::parse(R"({"MediaContainer":{"size":0}})")).empty(), "empty_libraries");
+        {
+            const plex::PlexServer server{"synthetic-id", "Server", "synthetic-token", {
+                {"https://remote.example", false, false}, {"https://local.example", true, false}}};
+            const auto identity = nlohmann::json::parse(R"({"MediaContainer":{"machineIdentifier":"synthetic-id"}})");
+            const auto sections = nlohmann::json::parse(R"({"MediaContainer":{"Directory":[{"key":"7","type":"artist","title":"Music"}]}})");
+            unsigned calls = 0;
+            auto local = plex::verify_server_connection(server, {}, [&](const auto& origin, const auto& token, const auto& path) {
+                ++calls;
+                check(origin == "https://local.example", "startup_prefers_local_route");
+                if (path == "/identity") { check(token.empty(), "identity_never_receives_token"); return identity; }
+                check(path == "/library/sections" && token == "synthetic-token" && calls == 2, "authentication_only_after_identity");
+                return sections;
+            });
+            check(local.origin == "https://local.example" && local.libraries.size() == 1 && calls == 2, "verified_connection_and_libraries");
+            calls = 0;
+            auto remote = plex::verify_server_connection(server, {}, [&](const auto& origin, const auto& token, const auto& path) {
+                ++calls;
+                if (origin == "https://local.example") { check(token.empty(), "unreachable_route_has_no_token"); throw plex::HttpError(ERROR_TIMEOUT); }
+                return path == "/identity" ? identity : sections;
+            });
+            check(remote.origin == "https://remote.example" && calls == 3, "startup_remote_when_local_unreachable");
+            calls = 0;
+            bool refused = false;
+            try { plex::verify_server_connection(server, {}, [&](const auto&, const auto&, const auto& path) {
+                ++calls;
+                if (path == "/identity") return identity;
+                throw plex::HttpError(0x20000000UL + 401);
+            }); } catch (const plex::HttpError& error) { refused = error.code == 0x20000000UL + 401; }
+            check(refused && calls == 2, "auth_failure_never_tries_another_route");
+            calls = 0;
+            refused = false;
+            try { plex::verify_server_connection(server, "https://remote.example", [&](const auto& origin, const auto& token, const auto&) {
+                ++calls;
+                check(origin == "https://remote.example" && token.empty(), "fixed_route_checked_without_token");
+                return nlohmann::json::parse(R"({"MediaContainer":{"machineIdentifier":"foreign-id"}})");
+            }); } catch (const plex::HttpError& error) { refused = error.code == plex::server_identity_mismatch; }
+            check(refused && calls == 1, "fixed_route_mismatch_blocks_authentication");
+            calls = 0;
+            refused = false;
+            try { plex::verify_server_connection(server, {}, [&](const auto&, const auto&, const auto&) -> nlohmann::json {
+                ++calls; throw plex::HttpError(ERROR_CANCELLED);
+            }); } catch (const plex::HttpError& error) { refused = error.code == ERROR_CANCELLED; }
+            check(refused && calls == 1, "connection_cancellation_stops_discovery");
+        }
         rejects([&] { plex::parse_libraries(nlohmann::json::parse(R"({"MediaContainer":{"Directory":"invalid"}})")); }, "malformed_libraries");
         // Nur die ausdrücklich für diesen Test erzeugten Dateien zurückbauen.
         check(std::filesystem::remove(path), "test_file_cleanup");
