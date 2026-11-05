@@ -8,17 +8,74 @@
 #include <set>
 #include <fstream>
 #include <algorithm>
+#include <charconv>
+#include <chrono>
+#include <thread>
 
 // Bewusster Integrationstest, nicht Teil von CTest; keine privaten Inhalte ausgeben.
 int main(int count, char** arguments) {
     const bool inventory = (count == 2 || count == 3) && std::string(arguments[1]) == "--formats";
     const bool sorts = count == 2 && std::string(arguments[1]) == "--sorts";
-    if (count != 1 && count != 3 && !inventory && !sorts) return 2;
+    const bool resources = count == 3 && std::string(arguments[1]) == "--resources";
+    if (count != 1 && count != 3 && !inventory && !sorts && !resources) return 2;
+    unsigned cycles = 0;
+    if (resources) {
+        const std::string value(arguments[2]);
+        const auto parsed = std::from_chars(value.data(), value.data() + value.size(), cycles);
+        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || cycles < 3 || cycles > 100) return 2;
+    }
     const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     int stage = 0;
     try {
         const auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexCatalog client(settings, stop);
+        if (resources) {
+            stage = 60;
+            // Derselbe Transport und WIC wie im Plugin, getrennt vom Winamp-Host.
+            struct Apartment {
+                HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                ~Apartment() { if (SUCCEEDED(result)) CoUninitialize(); }
+            } apartment;
+            if (FAILED(apartment.result)) throw std::runtime_error("resource_com");
+            const auto cycle = [&] {
+                bool artwork_loaded = false;
+                for (const auto kind : {plex::BrowseKind::artists, plex::BrowseKind::albums, plex::BrowseKind::tracks, plex::BrowseKind::playlists}) {
+                    plex::BrowseQuery query; query.kind = kind;
+                    query.library_identifier = settings.library_identifier; query.limit = 5;
+                    const auto page = client.page(query);
+                    if (kind == plex::BrowseKind::albums) {
+                        for (const auto& item : page.items) {
+                            const auto& album = std::get<plex::PlexAlbum>(item);
+                            if (!album.thumb.empty()) {
+                                artwork_loaded = plex::fetch_artwork(settings, album.thumb, stop, 64).has_value();
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!artwork_loaded) throw std::runtime_error("resource_artwork_required");
+            };
+            const auto measure = [](const char* phase) {
+                DWORD handles = 0;
+                if (!GetProcessHandleCount(GetCurrentProcess(), &handles)) throw std::runtime_error("resource_handle_count");
+                std::cout << "resource_phase=" << phase << " handles=" << handles
+                    << " gdi=" << GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS)
+                    << " user=" << GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS) << std::endl;
+                return handles;
+            };
+            std::cout << "resource_process=" << GetCurrentProcessId() << " cycles=" << cycles << std::endl;
+            for (unsigned warmup = 0; warmup < 3; ++warmup) cycle();
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+            const auto before = measure("before");
+            for (unsigned index = 0; index < cycles; ++index) {
+                cycle(); std::this_thread::sleep_for(std::chrono::seconds(5));
+                measure("cycle");
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+            const auto after = measure("after");
+            if (after > before + 4) throw std::runtime_error("resource_handle_growth");
+            CloseHandle(stop); return 0;
+        }
         if (sorts) {
             const plex::PlexAuth auth(settings.client_identifier, stop);
             const auto connection = auth.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
@@ -201,7 +258,8 @@ int main(int count, char** arguments) {
     } catch (const std::exception& error) {
         if (stop) CloseHandle(stop);
         const char* code = "unclassified";
-        for (const auto* known : {"pagination_size", "pagination_offset", "catalog_type", "catalog_identifier", "catalog_number", "live_search", "live_pagination", "api_response_error", "media_path", "media_id", "media_version", "media_filename", "catalog_media", "catalog_parts", "catalog_text", "catalog_title"})
+        for (const auto* known : {"pagination_size", "pagination_offset", "catalog_type", "catalog_identifier", "catalog_number", "live_search", "live_pagination", "api_response_error", "media_path", "media_id", "media_version", "media_filename", "catalog_media", "catalog_parts", "catalog_text", "catalog_title",
+                                  "resource_com", "resource_artwork_required", "resource_handle_count", "resource_handle_growth", "sort_capabilities_required", "sort_capability_key"})
             if (std::string(error.what()) == known) code = known;
         std::cerr << "Live catalog failure; stage=" << stage << "; code=" << code << '\n'; return 1;
     }
