@@ -19,12 +19,15 @@ struct HttpStream::State {
     HINTERNET request = nullptr;
     HANDLE completed = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     HANDLE closed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    HANDLE unloaded = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE stop = nullptr;
     std::atomic<DWORD> error{0};
     std::atomic<DWORD> bytes{0};
     bool context_installed = false;
+    bool unload_notification_installed = false;
 
-    // Der Kontext lebt bis zur letzten HANDLE_CLOSING-Benachrichtigung.
+    // Der Kontext lebt bis zur letzten HANDLE_CLOSING-Benachrichtigung und
+    // bis zur bestätigten Rückkehr aller Sitzungs-Callbacks.
     static void CALLBACK callback(HINTERNET, DWORD_PTR context, DWORD status, void* data, DWORD length) noexcept {
         auto* state = reinterpret_cast<State*>(context);
         if (!state) return;
@@ -64,9 +67,15 @@ struct HttpStream::State {
             if (context_installed) WaitForSingleObject(closed, INFINITE);
         }
         if (connection) WinHttpCloseHandle(connection);
-        if (session) WinHttpCloseHandle(session);
+        if (session) {
+            WinHttpCloseHandle(session);
+            // HANDLE_CLOSING ist zugestellt, bevor dessen Callback zurückkehrt.
+            // Erst der Sitzungsabschluss erlaubt das Entladen des Plugin-Codes.
+            if (unload_notification_installed) WaitForSingleObject(unloaded, INFINITE);
+        }
         if (completed) CloseHandle(completed);
         if (closed) CloseHandle(closed);
+        if (unloaded) CloseHandle(unloaded);
     }
 };
 
@@ -89,10 +98,12 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     if (!range.empty()) validate_range(range);
     auto& state = *state_;
     state.stop = stop;
-    if (!state.completed || !state.closed || !stop) throw HttpError(ERROR_NOT_ENOUGH_MEMORY);
+    if (!state.completed || !state.closed || !state.unloaded || !stop) throw HttpError(ERROR_NOT_ENOUGH_MEMORY);
     state.session = WinHttpOpen(L"Winamp Plex Library/0.1", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                 WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC);
     require(state.session != nullptr);
+    require(WinHttpSetOption(state.session, WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT, &state.unloaded, sizeof(state.unloaded)));
+    state.unload_notification_installed = true;
     require(WinHttpSetTimeouts(state.session, 5000, 5000, 5000, 5000));
     const auto host = widen(server.host);
     state.connection = WinHttpConnect(state.session, host.c_str(), server.port, 0);

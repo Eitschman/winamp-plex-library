@@ -12,7 +12,7 @@ Der Wiedergabe-Prototyp übergibt befristete Loopback-URLs für MP3 und M4A an W
 
 Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Plex-Playlists. Native Tabellen laden Seiten im Hintergrund, unterstützen Suche, Sortierung, Mehrfachauswahl und Kontextmenüs. Künstler → Alben → Titel → Winamp-Playlist wurde mit realen Daten geprüft. Ein begrenzter Metadaten-Cache hält bereits geladene Seiten vor.
 
-Die Kontextaktion „Nach aktuellem Titel einfügen“ fügt ausgewählte Titel hinter dem aktuellen Playlist-Eintrag ein und erhält Wiedergabe beziehungsweise Pause. Die tatsächliche nächste Wiedergabe richtet sich weiterhin nach Winamps Zufallswiedergabe und gegebenenfalls dessen Warteschlangen-Plugins. Abgelaufene lokale Wiedergabelinks werden mit einer eigenen Meldung angezeigt; der Titel kann erneut aus Plex hinzugefügt werden.
+Die Kontextaktion „Nach aktuellem Titel einfügen“ fügt ausgewählte Titel hinter dem aktuellen Playlist-Eintrag ein und erhält Wiedergabe beziehungsweise Pause. Die tatsächliche nächste Wiedergabe richtet sich weiterhin nach Winamps Zufallswiedergabe und gegebenenfalls dessen Warteschlangen-Plugins. Die Menüaktion ist in Classic, Winamp Modern, Bento und Big Bento sowie auf Deutsch und Englisch geprüft. Wartende Streaming-Titel bleiben innerhalb derselben Winamp-Sitzung auch nach Ablauf ihrer exportierbaren Links abspielbar; fremde Prozesse erhalten dann HTTP 410. Andere abgelaufene lokale Links werden mit einer eigenen Meldung angezeigt.
 
 Die Titelansicht zeigt persönliche Plex-Bewertungen auf einer Fünf-Sterne-Skala. Das Kontextmenü eines einzelnen Titels setzt ein bis fünf Sterne oder entfernt die Bewertung. Schreiben und Rücklesen laufen im Hintergrund; erst der bestätigte Serverwert aktualisiert die Tabelle. Vorhandene Bruchteile bleiben beim Lesen erhalten. Die Änderung und Wiederherstellung eines Testtitels sind am echten Server nachgewiesen.
 
@@ -21,8 +21,6 @@ Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_m
 Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrund geladen. Titel übernehmen das vorhandene Albumcover, sofern sie kein eigenes Bild besitzen. Ein begrenzter Bildcache hält Miniaturen vor. Das reale Dimmu-Borgir-Album „Grand Serpent Rising“ wurde mit Cover und 13 Titeln geprüft. Fehlende Bilder werden ohne Ersatzbild dargestellt. Winamps Album-Art-Dienst erhält vorbereitete PNG-Bilder für eigene Wiedergabe-URLs. Beide Coverfelder des Big-Bento-Players wurden damit visuell geprüft.
 
 Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der lokale Dateizugriff ermöglicht bei den geprüften FLAC-, OGG- und AAC-Dateien Laufzeit und Seeking mit den vorhandenen Winamp-Decodern. Automatische Plex-Statusmeldungen für Abspielen, Pause, Fortsetzen, Seeking und Stop sind am echten Winamp geprüft. Ein reguläres Titelende hat einen neuen Plex-Verlaufseintrag und einen erhöhten Wiedergabezähler erzeugt. Ein echter Plex-ADTS-Titel, weitere AAC-Profile und weitere Fehlerfälle bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
-
-Das Kontextmenü kann ausgewählte Titel hinter dem aktuellen Playlist-Eintrag einfügen, ohne dessen Wiedergabe oder Pause zu ändern. Dies bestimmt die Listenreihenfolge; Zufallswiedergabe und fremde Warteschlangen behalten ihre Steuerung. Die neue Menüzeile benötigt noch eine Sichtprüfung, siehe [Prüfstand](docs/testing.md).
 
 ## Build
 
