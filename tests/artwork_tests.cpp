@@ -1,3 +1,4 @@
+#include "artwork_fixture.h"
 #include "plex/artwork.h"
 #include "ui/artwork_loader.h"
 #include <objbase.h>
@@ -10,6 +11,16 @@ void check(bool condition, const char* name) { ++checks; if (!condition) throw s
 template<class Action> void rejects(Action action, const char* name) {
     bool rejected = false; try { action(); } catch (const std::exception&) { rejected = true; }
     check(rejected, name);
+}
+plex::plugin::ArtworkResult wait_for_artwork(plex::plugin::ArtworkLoader& loader, HWND window) {
+    const auto deadline = GetTickCount64() + 2000;
+    do {
+        auto results = loader.take();
+        if (!results.empty()) return results.front();
+        MSG message{}; while (PeekMessageW(&message, window, 0, 0, PM_REMOVE)) DispatchMessageW(&message);
+        Sleep(5);
+    } while (GetTickCount64() < deadline);
+    throw std::runtime_error("artwork_worker_timeout");
 }
 }
 
@@ -46,16 +57,7 @@ int main() {
         check(window != nullptr, "artwork_message_target");
         {
             plex::plugin::ArtworkLoader loader(window);
-            auto wait = [&] {
-                const auto deadline = GetTickCount64() + 2000;
-                do {
-                    auto results = loader.take();
-                    if (!results.empty()) return results.front();
-                    MSG message{}; while (PeekMessageW(&message, window, 0, 0, PM_REMOVE)) DispatchMessageW(&message);
-                    Sleep(5);
-                } while (GetTickCount64() < deadline);
-                throw std::runtime_error("artwork_worker_timeout");
-            };
+            const auto wait = [&] { return wait_for_artwork(loader, window); };
             loader.reset(1);
             loader.submit(0, {"42", "Album without cover", "Artist", "", 2026, 8}, {}, "test");
             const auto missing = wait();
@@ -75,6 +77,54 @@ int main() {
             check(wait().track_count == 9U, "disabled_cache_uses_current_metadata");
             loader.submit(1, {"43", "Cached album", "Artist", "", 2026, 11}, {}, "test");
             check(wait().track_count == 3U, "disabled_cache_does_not_replace_metadata");
+        }
+        {
+            plex::plugin::ArtworkLoader next_view(window);
+            next_view.reset(1);
+            next_view.submit(0, {"43", "Same album in another view", "Artist", "", 2026, 17}, {}, "test");
+            check(wait_for_artwork(next_view, window).track_count == 3U, "artwork_cache_survives_view_destruction");
+            plex::plugin::ArtworkLoader::clear_cache();
+            next_view.submit(0, {"43", "Refreshed album", "Artist", "", 2026, 17}, {}, "test");
+            check(wait_for_artwork(next_view, window).track_count == 17U, "shared_artwork_cache_clear_reloads_metadata");
+            plex::PlexConnectionSettings other_server; other_server.server_identifier = "synthetic-other-server";
+            next_view.submit(0, {"43", "Other server", "Artist", "", 2026, 21}, other_server, "test");
+            check(wait_for_artwork(next_view, window).track_count == 21U, "shared_artwork_cache_server_isolated");
+            next_view.submit(0, {"43", "New scope", "Artist", "", 2026, 23}, {}, "changed");
+            check(wait_for_artwork(next_view, window).track_count == 23U, "shared_artwork_cache_scope_isolated");
+            plex::plugin::ArtworkLoader::clear_cache();
+            for (unsigned index = 0; index < 65; ++index) {
+                next_view.submit(index, {std::to_string(1000 + index), "Synthetic cached album", "Artist", "", 2026, index + 1}, {}, "capacity");
+                check(wait_for_artwork(next_view, window).track_count == index + 1, "shared_artwork_cache_distinct_entries");
+            }
+            next_view.submit(0, {"1000", "Evicted album", "Artist", "", 2026, 99}, {}, "capacity");
+            check(wait_for_artwork(next_view, window).track_count == 99U, "shared_artwork_cache_capacity_evicts_oldest");
+            next_view.submit(64, {"1064", "Recent album", "Artist", "", 2026, 500}, {}, "capacity");
+            check(wait_for_artwork(next_view, window).track_count == 65U, "shared_artwork_cache_retains_recent_entry");
+        }
+        {
+            ArtworkFixture fixture(bitmap);
+            plex::PlexConnectionSettings settings;
+            settings.server_origin = fixture.origin(); settings.server_identifier = "synthetic-artwork-server";
+            settings.server_token = "synthetic-test-token"; settings.client_identifier = "synthetic-artwork-client";
+            const plex::PlexAlbum album{"42", "Synthetic image", "Artist", "/library/metadata/42/thumb", 2026, 8};
+            std::vector<std::uint8_t> first_pixels;
+            {
+                plex::plugin::ArtworkLoader first_view(window); first_view.reset(1);
+                first_view.submit(0, album, settings, "image");
+                const auto image = wait_for_artwork(first_view, window);
+                check(!image.error && image.pixels && !image.pixels->bgra.empty() && fixture.requests.load() == 1, "shared_artwork_first_image_downloaded");
+                first_pixels = image.pixels->bgra;
+            }
+            plex::plugin::ArtworkLoader second_view(window); second_view.reset(1);
+            second_view.submit(0, album, settings, "image");
+            const auto cached_image = wait_for_artwork(second_view, window);
+            check(!cached_image.error && cached_image.pixels && cached_image.pixels->bgra == first_pixels && fixture.requests.load() == 1,
+                  "shared_artwork_pixels_survive_view_without_second_request");
+            plex::plugin::ArtworkLoader::clear_cache();
+            second_view.submit(0, album, settings, "image");
+            const auto refreshed_image = wait_for_artwork(second_view, window);
+            check(!refreshed_image.error && refreshed_image.pixels && refreshed_image.pixels->bgra == first_pixels && fixture.requests.load() == 2 && fixture.valid.load(),
+                  "shared_artwork_clear_downloads_same_pixels_again");
         }
         DestroyWindow(window);
         CoUninitialize();

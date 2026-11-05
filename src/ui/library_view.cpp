@@ -24,7 +24,7 @@ constexpr UINT result_ready = WM_APP + 42;
 PageCache cache;
 LibraryCache library_cache;
 std::atomic<unsigned long long> cache_scope{0};
-void clear_cache() { ++cache_scope; cache.clear(); library_cache.clear(); }
+void clear_cache() { ++cache_scope; cache.clear(); library_cache.clear(); ArtworkLoader::clear_cache(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
 void layout(HWND dialog);
 

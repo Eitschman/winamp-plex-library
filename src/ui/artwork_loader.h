@@ -27,6 +27,7 @@ public:
     void submit(std::size_t row, PlexAlbum album, PlexConnectionSettings settings, std::string cache_scope);
     void submit_playlist(std::size_t row, PlexPlaylist playlist, PlexConnectionSettings settings, std::string cache_scope);
     std::deque<ArtworkResult> take();
+    static void clear_cache();
 private:
     struct Job { std::size_t row; unsigned generation; PlexAlbum album; std::string key; PlexConnectionSettings settings; bool playlist = false; };
     struct Cached {
@@ -46,6 +47,9 @@ private:
     unsigned generation_ = 0;
     std::deque<Job> pending_;
     std::deque<ArtworkResult> completed_;
-    std::deque<Cached> cache_;
+    // Die begrenzten Bilddaten überleben kurzlebige Ansichts-Worker.
+    static std::mutex cache_mutex_;
+    static std::deque<Cached> cache_;
+    static unsigned long long cache_generation_;
 };
 }

@@ -5,6 +5,15 @@
 #include <stdexcept>
 
 namespace plex::plugin {
+std::mutex ArtworkLoader::cache_mutex_;
+std::deque<ArtworkLoader::Cached> ArtworkLoader::cache_;
+unsigned long long ArtworkLoader::cache_generation_ = 0;
+
+void ArtworkLoader::clear_cache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    ++cache_generation_; cache_.clear();
+}
+
 ArtworkLoader::ArtworkLoader(HWND owner) : owner_(owner), stop_(CreateEventW(nullptr, TRUE, FALSE, nullptr)) {
     if (!stop_) throw std::runtime_error("artwork_event");
     try { worker_ = std::thread([this] { run(); }); }
@@ -52,13 +61,21 @@ void ArtworkLoader::run() noexcept {
             ArtworkResult result; result.row = job.row; result.generation = job.generation;
             try {
                 if (FAILED(initialized)) throw HttpError(static_cast<DWORD>(initialized));
-                const auto cached = std::find_if(cache_.begin(), cache_.end(), [&](const auto& entry) {
-                    return entry.key == job.key && std::chrono::steady_clock::now() < entry.expires;
-                });
-                if (job.settings.cache_enabled && cached != cache_.end()) {
-                    auto value = std::move(*cached); cache_.erase(cached);
-                    result.pixels = value.pixels; result.track_count = value.track_count; result.duration_ms = value.duration_ms;
-                    cache_.push_front(std::move(value));
+                std::optional<Cached> cached;
+                unsigned long long cache_generation = 0;
+                if (job.settings.cache_enabled) {
+                    std::lock_guard<std::mutex> lock(cache_mutex_);
+                    cache_generation = cache_generation_;
+                    const auto now = std::chrono::steady_clock::now();
+                    cache_.erase(std::remove_if(cache_.begin(), cache_.end(), [&](const auto& entry) { return now >= entry.expires; }), cache_.end());
+                    const auto found = std::find_if(cache_.begin(), cache_.end(), [&](const auto& entry) { return entry.key == job.key; });
+                    if (found != cache_.end()) {
+                        auto value = std::move(*found); cache_.erase(found);
+                        cache_.push_front(std::move(value)); cached = cache_.front();
+                    }
+                }
+                if (cached) {
+                    result.pixels = std::move(cached->pixels); result.track_count = cached->track_count; result.duration_ms = cached->duration_ms;
                 } else {
                     if (job.playlist) {
                         const auto details = PlexCatalog(job.settings, stop_).playlist(job.album.identifier);
@@ -77,8 +94,13 @@ void ArtworkLoader::run() noexcept {
                         result.pixels = fetch_artwork(job.settings, job.album.thumb, stop_);
                     }
                     if (job.settings.cache_enabled) {
-                        cache_.push_front({job.key, result.pixels, result.track_count, result.duration_ms});
-                        if (cache_.size() > 64) cache_.pop_back();
+                        std::lock_guard<std::mutex> lock(cache_mutex_);
+                        // Ein vor dem Leeren gestarteter Abruf darf den Cache nicht wieder befüllen.
+                        if (cache_generation == cache_generation_) {
+                            cache_.erase(std::remove_if(cache_.begin(), cache_.end(), [&](const auto& entry) { return entry.key == job.key; }), cache_.end());
+                            cache_.push_front({job.key, result.pixels, result.track_count, result.duration_ms});
+                            if (cache_.size() > 64) cache_.pop_back();
+                        }
                     }
                 }
             } catch (const HttpError& error) { result.error = error.code; }

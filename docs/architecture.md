@@ -4,6 +4,8 @@
 
 Die Liste der Musikbibliotheken liegt bei aktiviertem Cache für fünf Minuten gemeinsam im Prozess vor. `LibraryCache` hält höchstens eine Liste; Schlüssel aus Serverkennung, Verbindungsrevision und Cache-Gültigkeitsbereich verhindern die Übernahme in eine andere Sitzung. Ein neuer Ansichts-Worker muss diese unveränderte Liste nicht erneut abfragen. Die erste Verbindungsprüfung einschließlich TLS und Serveridentität bleibt erforderlich. Ausschalten umgeht den Cache, Verbindungsänderung und Cache-Leeren verwerfen ihn. „Aktualisieren“ fragt auch die Bibliotheksliste neu ab. Ein abgelaufener Eintrag verdeckt keinen Netzwerkfehler; Netzwerkzugriffe laufen außerhalb der Cache-Sperre.
 
+Auch die Miniaturen und ergänzenden Album-/Playlist-Zähler werden zwischen Ansichts-Workern geteilt. Der Cache besitzt höchstens 64 Einträge mit fünf Minuten Lebensdauer; eine Miniatur enthält höchstens 48 × 48 BGRA-Pixel. Schlüssel trennen Server, Gültigkeitsbereich und Medienkennung. Die gemeinsame Sperre schützt ausschließlich Zugriff und LRU-Verwaltung, keine Netzwerkoperation. Leeren erhöht eine Generation, damit ein zuvor gestarteter Abruf keine alten Daten wieder einträgt. Cache-Leeren, Verbindungsänderung und Plugin-Beendigung geben die Einträge frei. Die Worker bleiben kontrolliert an ihre jeweilige Ansicht gebunden.
+
 Der begrenzte Cover-Worker aktualisiert auch Titelanzahl und Laufzeit sichtbarer Plex-Playlists. Dafür verwendet er deren Detailendpunkt, da Übersichtswerte dynamischer Playlists veraltet sein können. Die Antworten sind an die angefragte Audio-Playlist gebunden, fünf Minuten gecacht und durch Navigationsgenerationen gegen verspätete Übernahme geschützt. Playlistzeilen erhalten dabei keine Cover-Bildliste.
 
 | Bereich | Verantwortung |

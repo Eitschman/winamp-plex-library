@@ -167,6 +167,7 @@ int initialize() noexcept {
 void shutdown() noexcept {
     if (monitor) { KillTimer(monitor, 1); DestroyWindow(monitor); monitor = nullptr; }
     destroy_views();
+    clear_library_cache();
     stop_playback();
     UnregisterClassW(monitor_class, plugin.hDllInstance);
     shutdown_artwork_provider();
