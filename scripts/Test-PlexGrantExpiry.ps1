@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][ValidateRange(1,60)][int]$ShortGrantSeconds, [switch]$Capture)
+﻿param([Parameter(Mandatory=$true)][ValidateRange(1,60)][int]$ShortGrantSeconds, [switch]$Capture, [switch]$VerifyHostPlayback)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -6,6 +6,7 @@ $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTe
 $samplePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\.local\grant-expiry-sample.json'))
 if (Test-Path -LiteralPath $samplePath) { throw 'Neue private Testzuordnung wird erwartet.' }
 $prepared = $false
+$volume = $null
 function Read-Head([string]$Location) {
     if (-not (Test-PlexPlaybackLocation $Location) -or $Location -notmatch '^http://127\.0\.0\.1:') { throw 'Eigener Loopback-Link erforderlich.' }
     $request = [Net.HttpWebRequest]::Create($Location)
@@ -55,14 +56,40 @@ try {
     if ((Read-Head $first[0]) -ne 410) { throw 'Grant ist nicht abgelaufen. Diese Prüfung benötigt ausdrücklich eine Test-DLL mit verkürzter Grant-Laufzeit.' }
     Wait-Status $true
     if ($Capture) { Save-PlexWindowScreenshot $selected.Outer (Join-Path $PSScriptRoot '..\.local\grant-expiry-status.png') }
+    if ($VerifyHostPlayback) {
+        $volume = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr](-666),[IntPtr]122)
+        if ($volume -lt 0 -or $volume -gt 255) { throw 'Lautstärke fehlt.' }
+        [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]122)
+        [void][PlexNative]::Query($main.Handle,273,[IntPtr]40045,[IntPtr]::Zero)
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            $position = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105)
+            if ($position -ge 500) { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($position -lt 500) { throw 'Winamp spielt den wartenden Titel nach Linkablauf nicht.' }
+        Wait-Status $false
+        if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]1,[IntPtr]105) -lt 15) { throw 'Die echte Probe ist für den Seeking-Nachweis zu kurz.' }
+        if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]10000,[IntPtr]106) -ne 0) { throw 'Seeking nach Ablauf wurde abgewiesen.' }
+        Start-Sleep -Milliseconds 600
+        $position = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105)
+        if ($position -lt 10000 -or $position -gt 14000) { throw 'Seeking nach Ablauf erreicht nicht die erwartete Position.' }
+        if ((Read-Head $first[0]) -ne 410) { throw 'Hostwiedergabe hat den exportierten Link verlängert.' }
+        [void][PlexNative]::Query($main.Handle,273,[IntPtr]40047,[IntPtr]::Zero)
+        Write-Output 'Wartender Titel nach Ablauf in Winamp mit Fortschritt und Seeking geprüft; derselbe Link bleibt für den fremden Prozess HTTP 410.'
+    }
     [void][PlexNative]::Query($selected.View,273,[IntPtr]1057,[IntPtr]::Zero)
     $renewed = @(Links 2)
     if ($renewed[1] -ceq $first[0] -or (Read-Head $renewed[1]) -ne 200) { throw 'Neuer unabhängiger Grant fehlt.' }
     Wait-Status $false
     if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]104) -ne 0) { throw 'Unerwarteter Wiedergabestart.' }
-    Write-Output 'Nativer Grant-Ablauf: zuerst HTTP 200, danach 410 mit verständlicher Statusmeldung, neuer Grant 200 mit erholter Kataloganzeige. Keine Wiedergabe gestartet.'
+    Write-Output "Nativer Grant-Ablauf: zuerst HTTP 200, danach 410 mit verständlicher Statusmeldung, neuer Grant 200 mit erholter Kataloganzeige. Hostwiedergabe geprüft: $VerifyHostPlayback."
 } finally {
     [void][PlexNative]::Query($main.Handle,273,[IntPtr]40047,[IntPtr]::Zero)
+    if ($null -ne $volume) {
+        if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]104) -ne 0) { throw 'Stop vor Lautstärkewiederherstellung nicht nachgewiesen.' }
+        [void][PlexNative]::Query($main.Handle,1024,[IntPtr]$volume,[IntPtr]122)
+    }
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]101)
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]120)
     if ($prepared -and (Test-Path -LiteralPath $samplePath -PathType Leaf)) { Remove-Item -LiteralPath $samplePath }

@@ -20,10 +20,13 @@ struct ProxyStatus {
     const char* local_rejection = nullptr;
 };
 
+enum class ProxyClientPolicy { capability_only, host_session };
+
 // Ein Listener bedient begrenzt viele unabhängige, befristete Wiedergabe-Grants.
 class PlaybackProxy {
 public:
-    explicit PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime = std::chrono::hours(2));
+    explicit PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime = std::chrono::hours(2),
+                           ProxyClientPolicy policy = ProxyClientPolicy::capability_only);
     ~PlaybackProxy();
     PlaybackProxy(const PlaybackProxy&) = delete;
     PlaybackProxy& operator=(const PlaybackProxy&) = delete;

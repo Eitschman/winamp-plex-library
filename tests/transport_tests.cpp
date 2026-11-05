@@ -11,6 +11,7 @@
 #include <aclapi.h>
 #include <objbase.h>
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <future>
 #include <iostream>
@@ -190,9 +191,37 @@ Response fetch(const std::string& url, const wchar_t* method = L"GET", const std
     while (WinHttpReadData(request.value, bytes, sizeof(bytes), &read) && read) response.body.append(bytes, read);
     return response;
 }
+
+// Ein eigener Prozess prüft die Clientidentität unabhängig vom Proxyprozess.
+bool child_status(const std::string& url, unsigned expected) {
+    std::array<wchar_t, 32768> executable{};
+    const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+    if (!length || length >= executable.size()) throw std::runtime_error("client_executable");
+    auto command = L"\"" + std::wstring(executable.data()) + L"\" --client-status \"" +
+        std::wstring(url.begin(), url.end()) + L"\" " + std::to_wstring(expected);
+    STARTUPINFOW startup{}; startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(executable.data(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                        nullptr, nullptr, &startup, &process)) throw std::runtime_error("client_start");
+    const auto waited = WaitForSingleObject(process.hProcess, 10000);
+    DWORD code = 1;
+    if (waited != WAIT_OBJECT_0) {
+        TerminateProcess(process.hProcess, 1); WaitForSingleObject(process.hProcess, 1000);
+    } else GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    if (waited != WAIT_OBJECT_0) throw std::runtime_error("client_timeout");
+    return code == 0;
+}
 }
 
-int main() {
+int main(int count, char** arguments) {
+    if (count != 1) {
+        if (count != 4 || std::string(arguments[1]) != "--client-status" ||
+            std::string(arguments[2]).rfind("http://127.0.0.1:", 0) != 0 ||
+            (std::string(arguments[3]) != "200" && std::string(arguments[3]) != "410")) return 2;
+        try { return fetch(arguments[2]).status == std::stoul(arguments[3]) ? 0 : 1; }
+        catch (...) { return 1; }
+    }
     try {
         struct Apartment {
             Apartment() { check(SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)), "artwork_com"); }
@@ -387,6 +416,27 @@ int main() {
                 catch (const std::invalid_argument&) { rejected = true; }
                 check(rejected, "invalid_grant_lifetime_rejected");
             }
+        }
+        {
+            plex::PlaybackProxy session({server, "synthetic-test-token", "/library/parts/1/file.mp3"},
+                std::chrono::seconds(3), plex::ProxyClientPolicy::host_session);
+            const auto pending = session.url();
+            check(child_status(pending, 200), "foreign_client_can_use_unexpired_capability");
+            std::this_thread::sleep_for(std::chrono::milliseconds(3050));
+            check(child_status(pending, 410), "foreign_process_cannot_use_expired_host_grant");
+            check(fetch(pending).body == fixture.media, "host_process_plays_waiting_track_after_expiry");
+            check(fetch(pending, L"GET", L"Range: bytes=5-11\r\n").body == fixture.media.substr(5, 7), "expired_host_grant_seeking");
+            check(fetch(pending, L"HEAD").status == 200, "expired_host_grant_head");
+            check(child_status(pending, 410), "host_access_does_not_extend_exported_capability");
+            const auto added = session.add({server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+            check(fetch(pending).body == fixture.media && fetch(added).body == fixture.media, "new_tracks_preserve_old_host_queue");
+            check(fetch(pending, L"GET", L"Origin: https://example.invalid\r\n").status == 403, "host_identity_does_not_bypass_origin_check");
+            session.revoke(pending);
+            check(fetch(pending).status == 403, "host_grant_revocation_still_applies");
+            bool invalid = false;
+            try { plex::PlaybackProxy rejected({server, "synthetic-test-token", "/library/parts/1/file.mp3"}, std::chrono::seconds(1), static_cast<plex::ProxyClientPolicy>(99)); }
+            catch (const std::invalid_argument&) { invalid = true; }
+            check(invalid, "invalid_client_policy_rejected");
         }
         for (const auto status : {401, 403, 404, 302, 500}) {
             plex::PlaybackProxy failure({server, "synthetic-test-token", "/library/parts/" + std::to_string(status) + "/file.mp3"});

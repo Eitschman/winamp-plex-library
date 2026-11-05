@@ -1,5 +1,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <bcrypt.h>
 #include "plex/proxy.h"
@@ -11,6 +12,8 @@
 #include <stdexcept>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
+#include <cstddef>
 
 namespace plex {
 namespace {
@@ -38,6 +41,38 @@ std::string random_key() {
     for (const auto byte : bytes) { result += hex[byte >> 4]; result += hex[byte & 15]; }
     return result;
 }
+
+// Nur der vom Kernel bestätigte Clientprozess erhält Sitzungszugriff.
+// Host-/Origin-Header oder übertragene Prozessnummern sind kein Identitätsnachweis.
+bool request_from_host(SOCKET client) {
+    sockaddr_in peer{}, local{};
+    int peer_size = sizeof(peer), local_size = sizeof(local);
+    if (getpeername(client, reinterpret_cast<sockaddr*>(&peer), &peer_size) ||
+        getsockname(client, reinterpret_cast<sockaddr*>(&local), &local_size)) throw HttpError(WSAGetLastError());
+    if (peer.sin_family != AF_INET || local.sin_family != AF_INET ||
+        peer.sin_addr.s_addr != htonl(INADDR_LOOPBACK) || local.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) return false;
+    DWORD size = 0;
+    auto outcome = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+    for (unsigned attempt = 0; attempt < 3 && outcome == ERROR_INSUFFICIENT_BUFFER; ++attempt) {
+        if (size < sizeof(MIB_TCPTABLE_OWNER_PID) || size > 8 * 1024 * 1024) throw HttpError(ERROR_INVALID_DATA);
+        std::vector<unsigned char> buffer(size);
+        outcome = GetExtendedTcpTable(buffer.data(), &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+        if (outcome == ERROR_INSUFFICIENT_BUFFER) continue;
+        if (outcome != NO_ERROR) throw HttpError(outcome);
+        const auto* table = reinterpret_cast<const MIB_TCPTABLE_OWNER_PID*>(buffer.data());
+        if (size < offsetof(MIB_TCPTABLE_OWNER_PID, table) ||
+            table->dwNumEntries > (size - offsetof(MIB_TCPTABLE_OWNER_PID, table)) / sizeof(MIB_TCPROW_OWNER_PID))
+            throw HttpError(ERROR_INVALID_DATA);
+        for (DWORD index = 0; index < table->dwNumEntries; ++index) {
+            const auto& row = table->table[index];
+            if (row.dwLocalAddr == peer.sin_addr.s_addr && static_cast<USHORT>(row.dwLocalPort) == peer.sin_port &&
+                row.dwRemoteAddr == local.sin_addr.s_addr && static_cast<USHORT>(row.dwRemotePort) == local.sin_port)
+                return row.dwOwningPid == GetCurrentProcessId();
+        }
+        return false;
+    }
+    throw HttpError(outcome == NO_ERROR ? ERROR_INVALID_DATA : outcome);
+}
 }
 
 PlaybackSource::~PlaybackSource() {
@@ -58,6 +93,7 @@ struct PlaybackProxy::State {
     std::string authority;
     std::string local_url;
     std::chrono::milliseconds lifetime{std::chrono::hours(2)};
+    ProxyClientPolicy policy = ProxyClientPolicy::capability_only;
     std::atomic<DWORD> upstream{0};
     std::atomic<DWORD> error{0};
     std::atomic<const char*> rejection{nullptr};
@@ -73,7 +109,7 @@ struct PlaybackProxy::State {
         std::lock_guard<std::mutex> lock(grants_mutex);
         const auto now = std::chrono::steady_clock::now();
         for (auto entry = grants.begin(); entry != grants.end();) {
-            if (entry->second->expires <= now) entry = grants.erase(entry); else ++entry;
+            if (policy == ProxyClientPolicy::capability_only && entry->second->expires <= now) entry = grants.erase(entry); else ++entry;
         }
         if (grants.size() >= 10000) throw std::invalid_argument("grant_limit");
         grants.emplace(capability, std::make_shared<Grant>(Grant{std::move(source), now + lifetime}));
@@ -109,7 +145,8 @@ struct PlaybackProxy::State {
                 if (found == grants.end()) throw std::invalid_argument("request_target");
                 grant = found->second;
             }
-            if (std::chrono::steady_clock::now() >= grant->expires) {
+            if (std::chrono::steady_clock::now() >= grant->expires &&
+                !(policy == ProxyClientPolicy::host_session && request_from_host(client))) {
                 upstream.store(0); error.store(0); rejection.store("request_expired");
                 send_status(client, 410); return;
             }
@@ -195,10 +232,12 @@ struct PlaybackProxy::State {
     }
 };
 
-PlaybackProxy::PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime) : state_(std::make_unique<State>()) {
+PlaybackProxy::PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime, ProxyClientPolicy policy) : state_(std::make_unique<State>()) {
     auto& state = *state_;
     if (lifetime <= std::chrono::milliseconds::zero() || lifetime > std::chrono::hours(2)) throw std::invalid_argument("grant_lifetime");
     state.lifetime = lifetime;
+    if (policy != ProxyClientPolicy::capability_only && policy != ProxyClientPolicy::host_session) throw std::invalid_argument("client_policy");
+    state.policy = policy;
     // Auch Aufrufer außerhalb der UI müssen die Origin-Sicherheitsregeln einhalten.
     if (!state.stop) throw std::runtime_error("stop_event");
     WSADATA socket_data{};

@@ -234,7 +234,7 @@ void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement pl
             if (item.title.empty() || item.seconds < -1) throw std::invalid_argument("playback_input");
             std::string local;
             if (item.file) local = utf8(item.file->path().wstring());
-            else if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source)); local = proxy->url(); }
+            else if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source), std::chrono::hours(2), ProxyClientPolicy::host_session); local = proxy->url(); }
             else local = proxy->add(std::move(item.source));
             issued.push_back(local);
             for (auto& character : item.title) if (character < 32 || character == 127) character = L' ';

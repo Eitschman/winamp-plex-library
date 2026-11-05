@@ -51,9 +51,9 @@ Zur Deinstallation Winamp beenden und ausschließlich die selbst installierte `m
 ## Sicherheit und Einschränkungen
 
 - Wiedergabe-URLs enthalten weder Plex-Token noch Serveradresse oder Plex-Medienpfad.
-- Der Proxy bindet ausschließlich an `127.0.0.1` auf einem dynamisch vergebenen Port. Jeder Grant besitzt 192 Bit Zufall und eine feste Laufzeit von zwei Stunden.
+- Der Proxy bindet ausschließlich an `127.0.0.1` auf einem dynamisch vergebenen Port. Jeder Grant besitzt 192 Bit Zufall. Für andere Prozesse endet seine Gültigkeit nach zwei Stunden.
 - Ein Grant endet bei Austausch, Verbindungsende oder Plugin-Beendigung. Gespeicherte Winamp-Playlists können danach nicht wiederverwendbare lokale URLs enthalten.
-- Die zweistündige Frist beginnt bereits beim Hinzufügen. Bei langen Streaming-Playlists können spätere Einträge vor ihrem Abspielen ablaufen. Eine automatische Erneuerung wartender Einträge ist noch nicht umgesetzt.
+- Die laufende Winamp-Instanz besitzt zusätzlich prozessgebundenen Sitzungszugriff für lange Playlists. Windows muss sie als Eigentümer der konkreten TCP-Clientverbindung bestätigen. Dadurch wird die Frist exportierter Links nicht verlängert. Dieser Zugriff endet mit Verbindung oder Plugin; Widerruf und Sicherheitsprüfungen gelten auch für Winamp.
 - Ein gemeinsamer Listener verwaltet bis zu 10000 unabhängige Wiedergabe-Grants; die Workerzahl steigt nicht mit der Playlistlänge.
 - Vorbereitete FLAC-/OGG-Dateien und aus ADTS erzeugte M4A-Container liegen in einem privaten Sitzungsordner unter `%LOCALAPPDATA%/WinampPlexLibrary/playback`. Nur der aktuelle Benutzer und SYSTEM erhalten Zugriff. Zufällige Namen enthalten weder Serverpfade noch Tokens. Grenzen: 512 MiB je Datei und 2 GiB insgesamt. Der Download muss vor der Playlistübergabe beendet sein; die Dateien bleiben bis zum Verbindungswechsel oder Plugin-Ende erhalten. Verwaiste, eindeutig markierte Sitzungen werden beim nächsten Vorbereiten bereinigt. Diese lokalen Dateipfade besitzen keine HTTP-Grant-Laufzeit.
 - AAC-Vorbereitung benötigt Windows Media Foundation. Fehlende Medienkomponenten werden als Fehler gemeldet; andere Formate benötigen diese DLLs nicht. AAC mit Program Config Element oder mehreren Rohdatenblöcken pro ADTS-Frame wird abgewiesen; HE-AAC ist nicht geprüft.
