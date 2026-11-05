@@ -1,4 +1,4 @@
-﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0, [switch]$CheckPlexSession, [ValidateRange(15, 60)][int]$ObserveSeconds = 30, [switch]$ToEnd)
+﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0, [switch]$CheckPlexSession, [ValidateRange(15, 60)][int]$ObserveSeconds = 30, [switch]$ToEnd, [switch]$Audible)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -20,7 +20,7 @@ if ($volume -lt 0 -or $volume -gt 255) { throw 'Winamp-Lautstärke konnte nicht 
 if ($ToEnd -and $count -ne 1) { throw 'Der Endetest benötigt genau einen Titel in der Testplaylist.' }
 try {
     if ($ToEnd) { [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]253) }
-    [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]122)
+    [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]$(if ($Audible) { 128 } else { 0 }), [IntPtr]122)
     [void][PlexNative]::PostMessage($main.Handle, 273, [IntPtr]40045, [IntPtr]::Zero)
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {

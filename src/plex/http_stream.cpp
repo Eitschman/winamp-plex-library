@@ -25,6 +25,7 @@ struct HttpStream::State {
     std::atomic<DWORD> bytes{0};
     bool context_installed = false;
     bool unload_notification_installed = false;
+    DWORD operation_timeout = 15000;
 
     // Der Kontext lebt bis zur letzten HANDLE_CLOSING-Benachrichtigung und
     // bis zur bestätigten Rückkehr aller Sitzungs-Callbacks.
@@ -55,7 +56,7 @@ struct HttpStream::State {
     void wait(BOOL started) {
         if (!started && GetLastError() != ERROR_IO_PENDING) throw HttpError(GetLastError());
         HANDLE events[] = {stop, completed};
-        const auto outcome = WaitForMultipleObjects(2, events, FALSE, 15000);
+        const auto outcome = WaitForMultipleObjects(2, events, FALSE, operation_timeout);
         if (outcome == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
         if (outcome != WAIT_OBJECT_0 + 1) throw HttpError(outcome == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError());
         if (error.load()) throw HttpError(error.load());
@@ -81,7 +82,7 @@ struct HttpStream::State {
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                        bool head, const std::string& range, HANDLE stop)
-    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*") {}
+    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*", true) {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                        HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation)
@@ -89,7 +90,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
                  representation == HttpRepresentation::image ? L"image/*" : L"application/json") {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept)
+                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept, bool media)
     : state_(std::make_unique<State>()) {
     if (!token.empty()) validate_token(token);
     validate_token(client_identifier);
@@ -104,7 +105,10 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     require(state.session != nullptr);
     require(WinHttpSetOption(state.session, WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT, &state.unloaded, sizeof(state.unloaded)));
     state.unload_notification_installed = true;
-    require(WinHttpSetTimeouts(state.session, 5000, 5000, 5000, 5000));
+    // Kurzzeitige Medienpausen dürfen bei noch gefülltem Decoderpuffer nicht
+    // den ganzen Titel abschneiden. API-Aufrufe behalten ihre kurze Frist.
+    state.operation_timeout = media ? 20000 : 15000;
+    require(WinHttpSetTimeouts(state.session, 5000, 5000, 5000, media ? 15000 : 5000));
     const auto host = widen(server.host);
     state.connection = WinHttpConnect(state.session, host.c_str(), server.port, 0);
     require(state.connection != nullptr);

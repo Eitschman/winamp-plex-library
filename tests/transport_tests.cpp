@@ -107,6 +107,34 @@ struct Fixture {
             while (!stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             return;
         }
+        const bool resume_fixture = request.find("/library/parts/995/") != request.npos || request.find("/library/parts/994/") != request.npos ||
+            request.find("/library/parts/993/") != request.npos || request.find("/library/parts/992/") != request.npos ||
+            request.find("/library/parts/991/") != request.npos || request.find("/library/parts/990/") != request.npos;
+        if (resume_fixture) {
+            const bool repeated = request.find("/library/parts/990/") != request.npos;
+            const auto range = request.find("Range: bytes=");
+            if (range == request.npos) {
+                send_text(client, "HTTP/1.1 200 OK\r\nETag: \"fixture\"\r\nContent-Length: " + std::to_string(media.size()) + "\r\n\r\n" + media.substr(0, repeated ? 1 : 32768));
+            } else {
+                const auto first = static_cast<std::size_t>(std::stoull(request.substr(range + 13)));
+                if (first >= media.size()) throw std::runtime_error("resume_range_outside_fixture");
+                const bool changed = request.find("/library/parts/994/") != request.npos;
+                const bool wrong_range = request.find("/library/parts/993/") != request.npos;
+                const bool ignored_range = request.find("/library/parts/992/") != request.npos;
+                const bool wrong_length = request.find("/library/parts/991/") != request.npos;
+                send_text(client, std::string(ignored_range ? "HTTP/1.1 200 OK" : "HTTP/1.1 206 Partial Content") + "\r\nETag: \"" + std::string(changed ? "changed" : "fixture") + "\"\r\nContent-Length: " + std::to_string(media.size() - first + (wrong_length ? 1 : 0)) +
+                    "\r\nContent-Range: bytes " + std::to_string(first + (wrong_range ? 1 : 0)) + "-" + std::to_string(media.size() - 1) + "/" + std::to_string(media.size()) + "\r\n\r\n" + media.substr(first, repeated ? 1 : media.size()));
+            }
+            return;
+        }
+        if (request.find("/library/parts/996/") != request.npos) {
+            send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(media.size()) + "\r\n\r\n" + media.substr(0, 32768));
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+            while (!stop.load() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (!stop.load()) send_text(client, media.substr(32768));
+            return;
+        }
         for (const auto status : {401, 403, 404, 302, 500}) {
             if (request.find("/library/parts/" + std::to_string(status) + "/") != request.npos) {
                 const auto response = "HTTP/1.1 " + std::to_string(status) + " Test\r\nContent-Length: 0\r\n"
@@ -250,7 +278,7 @@ Response fetch(const std::string& url, const wchar_t* method = L"GET", const std
     const auto path_text = url.substr(authority_end);
     const std::wstring path(path_text.begin(), path_text.end());
     InternetHandle session{WinHttpOpen(L"Plex synthetic tests", WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0)};
-    WinHttpSetTimeouts(session.value, 2000, 2000, 2000, 2000);
+    WinHttpSetTimeouts(session.value, 2000, 2000, 2000, 10000);
     InternetHandle connection{WinHttpConnect(session.value, host.c_str(), origin.port, 0)};
     InternetHandle request{WinHttpOpenRequest(connection.value, method, path.c_str(), nullptr, nullptr, nullptr, 0)};
     if (!WinHttpSendRequest(request.value, headers.c_str(), static_cast<DWORD>(headers.size()), nullptr, 0, 0, 0) ||
@@ -523,11 +551,48 @@ int main(int count, char** arguments) {
             check(response.status == static_cast<DWORD>(status == 302 || status == 500 ? 502 : status), "classified_upstream_status");
             check(response.body.empty() && response.raw_headers.find(L"Set-Cookie") == response.raw_headers.npos &&
                   response.raw_headers.find(L"Location:") == response.raw_headers.npos, "private_headers_not_forwarded");
+            check(failure.status().last_failure.count == 1 && failure.status().last_failure.upstream_status == static_cast<unsigned long>(status),
+                  "upstream_rejection_remains_diagnosable");
         }
         {
             plex::PlaybackProxy truncated({server, "synthetic-test-token", "/library/parts/999/file.mp3"});
             check(fetch(truncated.url()).body == "truncated", "truncated_fixture_received");
             check(truncated.status().transport_error != 0, "truncated_response_reported");
+            const auto failure = truncated.status().last_failure;
+            check(failure.count == 1 && failure.transport_error != 0 && failure.upstream_status == 200 &&
+                  failure.expected_bytes == 999999 && failure.transferred_bytes == 9, "truncated_response_byte_diagnosis");
+            const auto healthy = truncated.add({server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+            check(fetch(healthy).body == fixture.media && !truncated.status().transport_error, "next_track_recovers_after_transport_failure");
+            const auto retained = truncated.status().last_failure;
+            check(retained.count == failure.count && retained.transport_error == failure.transport_error &&
+                  retained.expected_bytes == failure.expected_bytes && retained.transferred_bytes == failure.transferred_bytes,
+                  "next_track_preserves_last_failure_diagnosis");
+        }
+        {
+            plex::PlaybackProxy interrupted({server, "synthetic-test-token", "/library/parts/996/file.mp3"});
+            const auto response = fetch(interrupted.url());
+            check(response.body == fixture.media, "temporary_upstream_pause_keeps_complete_media");
+        }
+        {
+            plex::PlaybackProxy proxy({server, "synthetic-test-token", "/library/parts/995/file.mp3"});
+            check(fetch(proxy.url()).body == fixture.media, "interrupted_file_resumes_without_missing_or_duplicate_bytes");
+            check(proxy.status().last_failure.count == 1, "recovered_interruption_remains_visible");
+        }
+        {
+            plex::PlaybackProxy proxy({server, "synthetic-test-token", "/library/parts/994/file.mp3"});
+            bool rejected = false;
+            try { rejected = fetch(proxy.url()).body != fixture.media; } catch (const plex::HttpError&) { rejected = true; }
+            check(rejected, "changed_file_is_not_appended_after_interruption");
+            check(proxy.status().transport_error == ERROR_INVALID_DATA, "changed_file_reports_explicit_error");
+        }
+        for (const auto fixture_id : {993, 992, 991, 990}) {
+            const auto hits = fixture.hits.load();
+            plex::PlaybackProxy proxy({server, "synthetic-test-token", "/library/parts/" + std::to_string(fixture_id) + "/file.mp3"});
+            bool rejected = false;
+            try { rejected = fetch(proxy.url()).body != fixture.media; } catch (const plex::HttpError&) { rejected = true; }
+            check(rejected, "invalid_or_excessive_resumption_is_rejected");
+            check(proxy.status().transport_error == (fixture_id == 990 ? ERROR_HANDLE_EOF : ERROR_INVALID_DATA), "resumption_error_remains_explicit");
+            if (fixture_id == 990) check(fixture.hits.load() - hits == 4, "resumption_budget_is_three_followup_requests");
         }
         const auto handles_before = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
         for (int iteration = 0; iteration < 10; ++iteration) {

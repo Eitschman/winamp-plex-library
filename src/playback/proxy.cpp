@@ -1,5 +1,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <winhttp.h>
 #include <iphlpapi.h>
 #include <windows.h>
 #include <bcrypt.h>
@@ -111,6 +112,16 @@ struct PlaybackProxy::State {
     std::atomic<DWORD> upstream{0};
     std::atomic<DWORD> error{0};
     std::atomic<const char*> rejection{nullptr};
+    std::atomic<unsigned long long> local_disconnects{0};
+    mutable std::mutex failure_mutex;
+    ProxyFailure last_failure;
+
+    // Ein nachfolgender erfolgreicher Request darf den letzten Medienfehler
+    // nicht aus der Diagnose löschen. Es werden ausschließlich Zahlen erfasst.
+    void remember_failure(unsigned long status, unsigned long code, unsigned long long expected, unsigned long long transferred) {
+        std::lock_guard<std::mutex> lock(failure_mutex);
+        last_failure = {last_failure.count + 1, status, code, expected, transferred};
+    }
     std::atomic<unsigned long long> bytes{0};
 
     std::string add(PlaybackSource source) {
@@ -132,6 +143,8 @@ struct PlaybackProxy::State {
 
     void serve(SOCKET client) {
         bool response_started = false;
+        unsigned long response_status = 0;
+        unsigned long long expected = 0, transferred = 0;
         try {
             std::string request;
             std::array<char, 2048> chunk{};
@@ -164,10 +177,12 @@ struct PlaybackProxy::State {
             }
             const auto parsed = parse_local_request(request, authority, capability);
             rejection.store(nullptr);
-            HttpStream stream(grant->source.server, grant->source.token, grant->source.media_path, parsed.head, parsed.range, stop);
-            const auto status = stream.status();
+            auto stream = std::make_unique<HttpStream>(grant->source.server, grant->source.token, grant->source.media_path, parsed.head, parsed.range, stop);
+            const auto status = stream->status();
+            response_status = status;
             upstream.store(status); error.store(0);
             if (status != 200 && status != 206 && status != 416) {
+                remember_failure(status, 0, 0, 0);
                 send_status(client, status == 401 || status == 403 || status == 404 ? status : 502, stop); return;
             }
             if (status == 416) { send_status(client, 416, stop); return; }
@@ -176,27 +191,52 @@ struct PlaybackProxy::State {
                 "\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
             // Ausschließlich Medienheader weiterreichen, niemals Cookies, Redirects oder Fehlermeldungen.
             for (const auto* name : {L"Content-Length", L"Content-Range", L"Content-Type", L"Accept-Ranges"}) {
-                const auto value = stream.header(name);
+                const auto value = stream->header(name);
                 if (!value.empty()) {
                     for (const auto* character = name; *character; ++character) headers += static_cast<char>(*character);
                     headers += ": " + value + "\r\n";
                 }
             }
-            const auto encoding = stream.header(L"Content-Encoding");
+            const auto encoding = stream->header(L"Content-Encoding");
             if (!encoding.empty() && encoding != "identity") throw HttpError(ERROR_INVALID_DATA);
             headers += "\r\n";
             response_started = true;
             send_all(client, headers.data(), headers.size(), stop);
             if (parsed.head) return;
-            const auto length = stream.header(L"Content-Length");
-            unsigned long long expected = 0, transferred = 0;
+            const auto length = stream->header(L"Content-Length");
             if (!length.empty()) {
                 if (length.size() > 19 || length.find_first_not_of("0123456789") != length.npos) throw HttpError(ERROR_INVALID_DATA);
                 expected = std::stoull(length);
             }
             std::array<char, 65536> buffer{};
+            const auto identity = stream->header(L"ETag");
+            unsigned reconnects = 0;
             while (WaitForSingleObject(stop, 0) != WAIT_OBJECT_0) {
-                const auto count = stream.read(buffer.data(), static_cast<DWORD>(buffer.size()));
+                unsigned long count = 0;
+                try {
+                    count = stream->read(buffer.data(), static_cast<DWORD>(buffer.size()));
+                    if (!count && !length.empty() && transferred < expected) throw HttpError(ERROR_HANDLE_EOF);
+                } catch (const HttpError& failure) {
+                    // Ausschließlich dieselbe unveränderte Datei bytegenau fortsetzen.
+                    // Ohne starken ETag, bekannte Länge oder bei Stop bleibt es ein Fehler.
+                    if (status != 200 || identity.size() < 2 || identity.front() != '"' || identity.back() != '"' ||
+                        length.empty() || !transferred || transferred >= expected || reconnects >= 3 ||
+                        WaitForSingleObject(stop, 0) == WAIT_OBJECT_0 ||
+                        (failure.code != ERROR_HANDLE_EOF && failure.code != ERROR_WINHTTP_TIMEOUT &&
+                         failure.code != ERROR_TIMEOUT && failure.code != ERROR_WINHTTP_CONNECTION_ERROR)) throw;
+                    remember_failure(status, failure.code, expected, transferred);
+                    ++reconnects;
+                    stream.reset();
+                    const auto range = "bytes=" + std::to_string(transferred) + "-" + std::to_string(expected - 1);
+                    stream = std::make_unique<HttpStream>(grant->source.server, grant->source.token, grant->source.media_path, false, range, stop);
+                    const auto content_range = "bytes " + std::to_string(transferred) + "-" + std::to_string(expected - 1) + "/" + std::to_string(expected);
+                    if (stream->status() != 206 || stream->header(L"ETag") != identity ||
+                        stream->header(L"Content-Range") != content_range ||
+                        stream->header(L"Content-Length") != std::to_string(expected - transferred) ||
+                        (!stream->header(L"Content-Encoding").empty() && stream->header(L"Content-Encoding") != "identity"))
+                        throw HttpError(ERROR_INVALID_DATA);
+                    continue;
+                }
                 if (!count) break;
                 send_all(client, buffer.data(), count, stop);
                 bytes.fetch_add(count);
@@ -215,6 +255,8 @@ struct PlaybackProxy::State {
             if (!response_started) send_status(client, 403, stop);
         } catch (const HttpError& failure) {
             error.store(failure.code);
+            if (WaitForSingleObject(stop, 0) != WAIT_OBJECT_0)
+                remember_failure(response_status, failure.code, expected, transferred);
             if (!response_started) send_status(client, 502, stop);
         }
     }
@@ -232,7 +274,7 @@ struct PlaybackProxy::State {
                 error.store(WSAGetLastError()); closesocket(client); continue;
             }
             // Decoder schließen beim Seeking alte Requests. Das ist kein PMS-Fehler.
-            try { serve(client); } catch (const LocalDisconnect&) {} catch (...) { error.store(ERROR_CONNECTION_ABORTED); }
+            try { serve(client); } catch (const LocalDisconnect&) { local_disconnects.fetch_add(1); } catch (...) { error.store(ERROR_CONNECTION_ABORTED); }
             shutdown(client, SD_BOTH); closesocket(client);
         }
     }
@@ -286,5 +328,8 @@ void PlaybackProxy::revoke(const std::string& url) {
     std::lock_guard<std::mutex> lock(state_->grants_mutex);
     state_->grants.erase(url.substr(origin.size()));
 }
-ProxyStatus PlaybackProxy::status() const { return {state_->upstream.load(), state_->error.load(), state_->bytes.load(), state_->rejection.load()}; }
+ProxyStatus PlaybackProxy::status() const {
+    std::lock_guard<std::mutex> lock(state_->failure_mutex);
+    return {state_->upstream.load(), state_->error.load(), state_->bytes.load(), state_->rejection.load(), state_->last_failure, state_->local_disconnects.load()};
+}
 }

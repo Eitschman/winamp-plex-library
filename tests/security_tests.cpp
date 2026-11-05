@@ -66,6 +66,9 @@ int main() {
         rejects([&] { plex::parse_local_request("GET /wrong HTTP/1.1\r\nHost: " + authority + "\r\n\r\n", authority, target); }, "wrong_capability");
         rejects([&] { plex::parse_local_request(std::string(17000, 'a'), authority, target); }, "oversized_headers");
         const auto local = "http://127.0.0.1:12345/stream/" + std::string(48, 'a') + "/audio.mp3";
+        check(plex::playlist_display_title("The Puppeteer", "Elvellon") == "Elvellon - The Puppeteer", "playlist_artist_and_title");
+        check(plex::playlist_display_title("Jóga", "Björk") == "Björk - Jóga", "playlist_artist_unicode");
+        check(plex::playlist_display_title("Ohne Künstler", "") == "Ohne Künstler", "playlist_optional_artist");
         const auto playlist = plex::make_playlist({{local, "Björk\r\n#EXTINF:0,Injected", 306}});
         check(playlist.find("#EXTINF:306,Björk  #EXTINF:0,Injected\r\n") != playlist.npos, "playlist_unicode_and_line_safety");
         rejects([&] { plex::make_playlist({{"https://other.example/media?X-Plex-Token=fake", "Title", 5}}); }, "playlist_external_url_rejected");

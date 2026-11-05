@@ -39,8 +39,9 @@ int wmain(int count, wchar_t** arguments) {
     const bool sort_samples = operation == L"--prepare-sorts";
     const bool compilation_sample = operation == L"--prepare-compilation";
     const bool current_session = operation == L"--check-no-transcode";
+    const bool media_headers = operation == L"--inspect-media-headers";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session && !compilation_sample) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session && !compilation_sample && !media_headers) return 2;
     if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth || compilation_sample) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
@@ -74,6 +75,20 @@ int wmain(int count, wchar_t** arguments) {
         const plex::PlexAuth client(settings.client_identifier, stop.value);
         const auto connection = client.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
         settings.server_origin = connection.origin;
+        if (media_headers) {
+            plex::BrowseQuery query; query.kind = plex::BrowseKind::tracks;
+            query.library_identifier = settings.library_identifier; query.limit = 1;
+            const auto page = plex::PlexCatalog(settings, stop.value).page(query);
+            check(!page.items.empty(), "media_header_sample_required");
+            const auto parts = plex::direct_parts(std::get<plex::PlexTrack>(page.items.front()));
+            check(!parts.empty(), "media_header_part_required");
+            plex::HttpStream stream(plex::parse_server_address(settings.server_origin), settings.server_token, parts.front().key, true, {}, stop.value);
+            std::cout << "status=" << stream.status()
+                      << " etag_present=" << !stream.header(L"ETag").empty()
+                      << " modified_present=" << !stream.header(L"Last-Modified").empty()
+                      << " byte_ranges=" << (stream.header(L"Accept-Ranges") == "bytes") << '\n';
+            return 0;
+        }
         if (current_session) {
             for (unsigned attempt = 0; attempt < 20; ++attempt) {
                 const auto response = client.get_server(settings.server_origin, settings.server_token, "/status/sessions");
@@ -228,8 +243,12 @@ int wmain(int count, wchar_t** arguments) {
                 if (tracks.empty() || tracks.size() <= largest || supported != tracks.size()) continue;
                 check(first.total == tracks.size() && description.at("leafCount") == tracks.size(), "playlist_detail_count_readback");
                 sample["listed_count"] = item.track_count; sample["count"] = tracks.size();
-                nlohmann::json titles = nlohmann::json::array();
-                for (const auto& track : tracks) titles.push_back(track.title);
+                nlohmann::json titles = nlohmann::json::array(), display_titles = nlohmann::json::array();
+                for (const auto& track : tracks) {
+                    titles.push_back(track.title);
+                    display_titles.push_back(track.artist.empty() ? track.title : track.artist + " - " + track.title);
+                }
+                sample["display_titles"] = std::move(display_titles);
                 sample["titles"] = std::move(titles); selected = std::move(sample); largest = tracks.size();
             }
             write_restore(arguments[2], {{"empty", empty}, {"selected", selected}, {"playlist_count", page.items.size()}});

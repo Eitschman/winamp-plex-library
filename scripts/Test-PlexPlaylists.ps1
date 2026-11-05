@@ -63,7 +63,7 @@ try {
     $titles = @($playlist | Where-Object { $_.StartsWith('#EXTINF:') } | ForEach-Object { $_.Substring($_.IndexOf(',') + 1) })
     if ($locations.Count -ne $samples.selected.count -or $titles.Count -ne $samples.selected.count -or @($locations | Where-Object { -not (Test-PlexPlaybackLocation $_) }).Count) { throw 'Exportierte Playlist enthält falsche Wiedergabepfade.' }
     for ($index = 0; $index -lt $titles.Count; ++$index) {
-        if ($titles[$index] -cne $samples.selected.titles[$index]) { throw 'Plex-Playlistreihenfolge oder Unicode-Titel stimmen nicht.' }
+        if ($titles[$index] -cne $samples.selected.display_titles[$index]) { throw 'Plex-Playlistreihenfolge oder Künstler-Titel stimmen nicht.' }
     }
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) { throw 'Anhängen startet unerwartet die Wiedergabe.' }
     Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $PSScriptRoot '..\.local\playlists-root.png')
@@ -71,7 +71,7 @@ try {
     Start-Sleep -Milliseconds 200; Wait-Status '^1 \.\.\. '
     if ([PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) -ne $samples.selected.count) { throw 'Playlistnavigation verliert Titel.' }
     for ($index = 0; $index -lt $titles.Count; ++$index) {
-        if ([PlexNative]::CatalogCellText($list.Handle, $process.Id, $index, 0) -cne $titles[$index]) { throw 'Titelansicht verändert die Playlistreihenfolge.' }
+        if ([PlexNative]::CatalogCellText($list.Handle, $process.Id, $index, 0) -cne $samples.selected.titles[$index]) { throw 'Titelansicht verändert die Playlistreihenfolge.' }
     }
     Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $PSScriptRoot '..\.local\playlists-tracks.png')
     Command 1053; Wait-Status '^1 \.\.\. '

@@ -72,7 +72,8 @@ try {
                     }
                 } finally { $listener.Stop() }
             }
-            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            $waitSeconds = if ($mode -eq 'Stalled') { 25 } else { 15 }
+            $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
             do {
                 $ready = @(Receive-Job $server -Keep | Where-Object { $_.Port })
                 if ($ready.Count) { break }

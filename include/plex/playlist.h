@@ -10,6 +10,7 @@ struct PlaylistEntry {
     int seconds = -1;
     bool local_file = false;
 };
+std::string playlist_display_title(std::string_view title, std::string_view artist);
 // M3U8 überträgt Unicode-Metadaten ohne versionsabhängige Winamp-Strukturen.
 std::string make_playlist(const std::vector<PlaylistEntry>& entries, std::string_view local_directory = {});
 }

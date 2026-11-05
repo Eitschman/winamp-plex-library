@@ -4,6 +4,10 @@ Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `
 
 ## Verbindliche Projektentscheidungen
 
+- Unterbrochene vollständige HTTP-Medienantworten werden ausschließlich bytegenau aus derselben Datei fortgesetzt: bekannte Länge, starker identischer ETag, identischer Server und Pfad, geprüfter HTTP-206-Bytebereich und Restlänge. Höchstens drei Folgeabrufe; kein Format-, Decoder- oder Serverwechsel. Initiale Seeking-Antworten mit HTTP 206 benötigen einen eigenen weiteren Nachweis. Numerische Fehlerdaten bleiben nach dem nächsten erfolgreichen Titel erhalten. Ein solcher Wiederanlauf ist am echten Winamp bis zum natürlichen Titelende nachgewiesen; dauerhafte Netzwerkausfälle bleiben Fehler.
+- Die Winamp-Playlist und laufende Titelanzeige enthalten Künstler und Titel. Die Metadatenfelder Titel, Künstler und Albumkünstler bleiben getrennt.
+- Vor Veröffentlichung werden Quellstand, Historie, Logs und Paketinhalt auf Geheimnisexposition geprüft. Der CI-Workflow wiederholt einen redigierten Historien-Scan; Zugangsdaten und lokale Prüfberichte werden nicht veröffentlicht.
+
 - Jeder Titel muss ohne künstliche Zeitbegrenzung bis zu seinem regulären Ende laufen. Ein voller Decoderpuffer und Pause dürfen die Verbindung nicht abbrechen. Native Nachweise beobachten echte MP3-/M4A-Titel ohne Seeking bis zum natürlichen Stop; getrennte Tests prüfen Rückstau, Abbruch beim Beenden und die Frist unvollständiger HTTP-Anfragen.
 - Die Plex-Anmeldung erfolgt wie bei Plexa im Browser über den Plex-PIN-Anmeldevorgang. Der Benutzer gibt sein Passwort ausschließlich bei Plex ein. Eine manuelle Token-Eingabe gehört nicht zum regulären Ablauf.
 - Einstellungen öffnen zunächst ohne Browseranmeldung. Die normale Ansicht enthält Anmeldung, Server und Musikbibliothek; feste Verbindungswege und eine manuelle HTTPS-Adresse stehen unter „Erweitert“. Erreichbare lokale HTTPS-Verbindungen werden vor Fernzugriff und Relay gewählt. Der tatsächliche Zugangsweg wird angezeigt.

@@ -1,4 +1,4 @@
-﻿param([string]$SamplesPath = (Join-Path $PSScriptRoot '..\.local\format-samples.json'), [ValidateSet('mp3', 'flac', 'aac', 'm4a', 'ogg')][string[]]$Formats, [switch]$ToEnd)
+﻿param([string]$SamplesPath = (Join-Path $PSScriptRoot '..\.local\format-samples.json'), [ValidateSet('mp3', 'flac', 'aac', 'm4a', 'ogg')][string[]]$Formats, [switch]$ToEnd, [switch]$Audible)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $samples = Get-Content -LiteralPath $SamplesPath -Encoding UTF8 -Raw | ConvertFrom-Json
@@ -98,7 +98,7 @@ try {
         }
         if (-not $found) { throw 'Wiedergabe-URL entspricht keinem der gesuchten Formatkandidaten.' }
         Write-Output ('Formatnachweis: ' + $sample.format)
-        & (Join-Path $PSScriptRoot 'Test-PlexPlayback.ps1') -CheckPlexSession -ToEnd:$ToEnd
+        & (Join-Path $PSScriptRoot 'Test-PlexPlayback.ps1') -CheckPlexSession -ToEnd:$ToEnd -Audible:$Audible
         $caption = ([PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest).Text
         if ($caption.IndexOf([string]$sample.title, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Plex-Titel fehlt in Winamps aktuellem Fenstertitel.' }
         Write-Output ('Titelmetadaten geprüft: ' + $sample.format)

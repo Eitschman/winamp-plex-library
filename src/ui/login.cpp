@@ -405,7 +405,13 @@ INT_PTR CALLBACK login_dialog(HWND dialog, UINT message, WPARAM parameter, LPARA
                     L"\r\nWindows: " + std::to_wstring(status.transport_error) +
                     localized(L"\r\nVerbindungscode: ", L"\r\nConnection code: ") + std::to_wstring(login->error.load()) +
                     localized(L"\r\nCover-Zuordnungen: ", L"\r\nArtwork mappings: ") + std::to_wstring(artwork_provider_diagnostic(3)) +
-                    localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2));
+                    localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2)) +
+                    localized(L"\r\nÜbertragungsfehler: ", L"\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +
+                    localized(L"\r\nLetzter Fehler (HTTP / Windows): ", L"\r\nLast failure (HTTP / Windows): ") +
+                    std::to_wstring(status.last_failure.upstream_status) + L" / " + std::to_wstring(status.last_failure.transport_error) +
+                    localized(L"\r\nGesendete / erwartete Bytes: ", L"\r\nSent / expected bytes: ") +
+                    std::to_wstring(status.last_failure.transferred_bytes) + L" / " + std::to_wstring(status.last_failure.expected_bytes) +
+                    localized(L"\r\nLokale Verbindungsenden: ", L"\r\nLocal disconnects: ") + std::to_wstring(status.local_disconnects);
                 SettingsPanel panel{IDD_PLEX_DIAGNOSTICS, diagnostics_dialog, localized(L"Plex-Diagnose", L"Plex diagnostics"), reinterpret_cast<LPARAM>(information.c_str())};
                 DialogBoxParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_SETTINGS_FRAME), GetParent(dialog), settings_frame, reinterpret_cast<LPARAM>(&panel));
                 return TRUE;

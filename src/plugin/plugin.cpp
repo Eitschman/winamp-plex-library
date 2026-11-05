@@ -290,6 +290,7 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
                           {L"album", unicode(track.album)}, {L"year", track.year ? std::to_wstring(track.year) : L""},
                           {L"track", track.number ? std::to_wstring(track.number) : L""},
                           {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)}};
+        const auto display_title = unicode(playlist_display_title(label, track.artist));
         long long total = 0, offset = 0;
         bool offsets_known = true;
         for (const auto& part : parts) {
@@ -302,7 +303,7 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
             const auto file = prepared.find(part.key);
             if (requires_local_media(part.key) && file == prepared.end()) throw std::invalid_argument("local_media_missing");
-            items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, title,
+            items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, display_title,
                 part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
                 file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known}});
             if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;

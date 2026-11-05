@@ -2,7 +2,19 @@
 
 Prüfdatum: 05.11.2026. Dieser Stand trennt ausgeführte Prüfungen von offenen Produktanforderungen.
 
+## Unterbrochene Medienübertragung und Künstleranzeige
+
+Der native Test von „The Puppeteer“ weist einen vorzeitigen Stop nach 129788 Millisekunden bei 273 Sekunden Decoderlänge nach. Die Diagnose enthält HTTP 200, Windows-Code 38 und 4521984 von erwarteten 9330407 Bytes. Der Fehler ist damit im gemeinsamen Übertragungsweg reproduziert; die genaue Ursache des vorzeitigen Upstream-Endes ist noch offen. Die normale Winamp-Instanz meldet nach dem nächsten erfolgreichen Request wieder HTTP 200 und Windows 0; daraus lässt sich ein vorheriger Abbruch nicht rekonstruieren.
+
+Die Übertragung kann bei einem unterbrochenen vollständigen GET dieselbe Datei ab dem nächsten noch nicht gesendeten Byte fortsetzen. Voraussetzung sind bekannte Länge und ein starker ETag. Höchstens drei Fortsetzungen sind zulässig. Jeder Folgeabruf bleibt an dieselbe Origin und denselben Medienpfad gebunden und muss HTTP 206, identischen ETag, exakten Content-Range und passende Restlänge liefern. Geänderte Inhalte und unpassende Antworten werden abgewiesen. Seeking-Antworten mit initialem HTTP 206 besitzen noch keinen solchen Fortsetzungsnachweis. Es gibt keinen Wechsel auf einen anderen Server, Decoder oder ein anderes Format.
+
+Die synthetische Gegenprobe ohne Fortsetzung scheitert am fehlenden Restinhalt. Mit Fortsetzung stimmen alle Bytes ohne Duplikate überein; ein veränderter ETag wird als Fehler erkannt. Die Gegenprobe mit gelöschter Fehlerhistorie scheitert ebenfalls. Ein nachfolgender gesunder Titel darf den letzten numerischen Übertragungsfehler nicht löschen. Die Medien-Empfangsfrist beträgt 15 Sekunden, API-Fristen bleiben kurz; eine sechssekündige Medienpause besteht, die Gegenprobe mit fünf Sekunden Empfangsfrist scheitert.
+
+Künstler und Titel werden für die Winamp-Playlist und ihre Titelanzeige gemeinsam formatiert. Die getrennten Metadatenfelder behalten ihre eigenen Werte. Native Prüfung und Screenshot bestätigen „Elvellon - The Puppeteer“ in der Classic-Anzeige sowie im M3U8-Titeleintrag. Automatisierte Prüfungen enthalten außerdem Unicode und einen fehlenden Künstler. Der aktuelle Build besteht in Debug und Release jeweils 13 CTest-Suiten (`ctest-resume-debug.log`, `ctest-resume-release.log`). Ein Zwischenlauf erkennt einen Handle-Anstieg im Lifecycle-Test; der unveränderte Wiederholungslauf besteht. Dieser sporadische Befund bleibt offen.
+
 ## Ausgeführte Prüfungen
+
+Der native Titelendetest mit der Fortsetzung läuft für „The Puppeteer“ bis zum natürlichen Stop: 273 Sekunden Decoderlänge, letzte Position 271939 Millisekunden, Messzeit 272,5 Sekunden. Die Diagnose während der Wiedergabe weist tatsächlich eine unterbrochene Übertragung nach 2424832 von 9330407 Bytes aus; der Titel läuft danach weiter. Damit ist nicht nur ein störungsfreier Durchlauf, sondern eine Fortsetzung in der echten Winamp-/Plex-Verbindung nachgewiesen (`elvellon-resume-natural-end-repeat.log`, `diagnostics-resume-playing.log`). Ein vorangegangener Lauf scheitert an der Minimierungsprüfung der Testumgebung und gilt nicht als Wiedergabenachweis.
 
 Der aktuelle Ansichtsabbau besteht 100 native Wechselzyklen einschließlich gleicher 60-Sekunden-Ruhephasen in 319,4 Sekunden: Handles 584 → 586, GDI 1479 → 1479, USER 232 → 232, Threads 19 → 19, private Bytes 87932928 → 86704128, TCP/UDP null. Die unveränderten Fehlergrenzen bestehen (`view-resources-reaper-100.log`, `view-resources-reaper-100-summary.json`). Das ist ein begrenzter Ressourcenvergleich, kein allgemeiner Speicherlecknachweis. Der SDK-Testhost besteht zusätzlich 100 Ladezyklen. Jeweils 13 CTest-Suiten bestehen in Release und Debug in 25,10 beziehungsweise 24,98 Sekunden (`ctest-view-reaper-release.log`, `ctest-view-reaper-debug.log`).
 

@@ -3,6 +3,12 @@
 #include <stdexcept>
 
 namespace plex {
+// Der sichtbare Playlisttitel benötigt den Titelkünstler. Die getrennten
+// Metadatenfelder dürfen dafür weder verkettet noch verändert werden.
+std::string playlist_display_title(std::string_view title, std::string_view artist) {
+    return artist.empty() ? std::string(title) : std::string(artist) + " - " + std::string(title);
+}
+
 std::string make_playlist(const std::vector<PlaylistEntry>& entries, std::string_view local_directory) {
     if (entries.empty() || entries.size() > 10000) throw std::invalid_argument("playlist_count");
     std::string result = "\xef\xbb\xbf#EXTM3U\r\n";

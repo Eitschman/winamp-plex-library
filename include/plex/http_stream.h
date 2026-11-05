@@ -32,7 +32,7 @@ public:
 private:
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop,
-               const wchar_t* accept);
+               const wchar_t* accept, bool media = false);
     struct State;
     std::unique_ptr<State> state_;
 };

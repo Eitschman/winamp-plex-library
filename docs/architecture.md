@@ -120,6 +120,8 @@ An Plex werden Token und Client-Header serverseitig angefügt. Zertifikatsprüfu
 
 ## Fehlergrenzen und Erweiterungen
 
+Eine unterbrochene vollständige Medienantwort darf ab dem ersten noch nicht an Winamp gesendeten Byte höchstens dreimal fortgesetzt werden. Bekannte Gesamtlänge und ein starker ETag sind erforderlich. Der Folgeabruf verwendet dieselbe Origin, dasselbe Token und denselben Medienpfad; HTTP 206, identischer ETag, exakter Content-Range und Restlänge werden vor dem nächsten Byte geprüft. Authentifizierungsfehler oder unpassende Antworten führen zu einem sichtbaren Fehler. Ein initialer Seeking-Abruf mit HTTP 206 ist hiervon ausgenommen. Die numerische Diagnose erhält den letzten Übertragungsfehler auch nach einer erfolgreichen Fortsetzung oder einem nachfolgenden Titel.
+
 Alle ABI-Einstiegspunkte und Thread-Einstiege fangen Ausnahmen ab. JSON-Parserfehler werden vor der UI-Grenze in feste Fehlertypen übersetzt. Die UI zeigt Zustände und Codes, keine fremden Antworttexte. Eine nicht erreichbare Verbindung startet kein Transcoding und wechselt nicht auf unsicheres HTTP.
 
 API-Modelle und formatierte Ansichtszeilen sind getrennt. Stabile Plex-IDs werden verwendet; UI-Zeilenpositionen sind keine Identität. Pagination verwendet tatsächliche Offsets und Ergebnismengen. Der Cache-Schlüssel enthält Serveridentität, Verbindungsgeneration und die geprüfte Abfrage mit Bibliothek und Sortierung. Tokens stehen nicht im Schlüssel. Eine neue Verbindung oder explizite Cache-Leerung verwirft den Cache. Noch nicht implementierte Bereiche stehen in [testing.md](testing.md).
