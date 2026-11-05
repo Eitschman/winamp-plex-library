@@ -88,6 +88,13 @@ int main() {
         const auto path = plex::catalog_path(query);
         check(path.find("Bj%C3%B6rk%20%26%20AC%2FDC") != path.npos, "query_encoding");
         check(path.find("X-Plex-Container-Start=0&X-Plex-Container-Size=250") != path.npos, "pagination_query");
+        query.kind = plex::BrowseKind::tracks; query.sort = "originalTitle";
+        check(plex::catalog_path(query).find("sort=originalTitle%3Aasc") != std::string::npos, "track_artist_sort_query");
+        query.descending = true;
+        check(plex::catalog_path(query).find("sort=originalTitle%3Adesc") != std::string::npos, "track_artist_descending_query");
+        query.descending = false;
+        query.sort = "originalTitle&X-Plex-Token=injected";
+        rejects([&] { plex::catalog_path(query); }, "sort_query_injection_detected");
         query.parent_identifier = "42"; query.kind = plex::BrowseKind::tracks; query.sort = "albumOrder";
         check(plex::catalog_path(query).find("sort=") == std::string::npos, "album_preserves_server_order");
         query.search.clear();

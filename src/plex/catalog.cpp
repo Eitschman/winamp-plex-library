@@ -104,7 +104,7 @@ std::string catalog_path(const BrowseQuery& query) {
     if (!query.limit || query.limit > 500 || query.offset > 10000000 || query.search.size() > 1024)
         throw std::invalid_argument("catalog_query");
     if (query.sort != "titleSort" && query.sort != "year" && query.sort != "duration" && query.sort != "index" &&
-        query.sort != "artist.titleSort" && query.sort != "album.titleSort" && query.sort != "albumOrder") throw std::invalid_argument("catalog_sort");
+        query.sort != "artist.titleSort" && query.sort != "originalTitle" && query.sort != "album.titleSort" && query.sort != "albumOrder") throw std::invalid_argument("catalog_sort");
     std::string path;
     std::vector<std::string> parameters;
     if (!query.parent_identifier.empty()) {

@@ -725,7 +725,8 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             if (column == 0) sort = "titleSort";
             if (view->current.query.kind == BrowseKind::albums) { if (column == 1) sort = "artist.titleSort"; if (column == 2) sort = "year"; }
             if (view->current.query.kind == BrowseKind::tracks) {
-                const std::array<const char*, 7> fields{"titleSort", "artist.titleSort", "album.titleSort", "duration", "index", "year", ""};
+                // Plex unterscheidet den Titelinterpreten vom Künstler des Albums.
+                const std::array<const char*, 7> fields{"titleSort", "originalTitle", "album.titleSort", "duration", "index", "year", ""};
                 if (column >= 0 && column < 7) sort = fields[static_cast<std::size_t>(column)];
             }
             if (!sort.empty() && !view->current.query.playlist_items) {

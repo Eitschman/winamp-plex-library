@@ -168,7 +168,7 @@ int wmain(int count, wchar_t** arguments) {
             const plex::PlexCatalog catalog(settings, stop.value);
             nlohmann::json cases = nlohmann::json::array();
             const std::vector<std::vector<std::string>> fields{{"titleSort"}, {"titleSort", "artist.titleSort", "year"},
-                {"titleSort", "artist.titleSort", "album.titleSort", "duration", "index", "year"}};
+                {"titleSort", "originalTitle", "album.titleSort", "duration", "index", "year"}};
             for (std::size_t kind = 0; kind < fields.size(); ++kind) {
                 for (std::size_t column = 0; column < fields[kind].size(); ++column) {
                     for (const bool descending : {column == 0, column != 0}) {
