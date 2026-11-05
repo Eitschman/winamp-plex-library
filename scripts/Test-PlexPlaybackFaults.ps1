@@ -72,8 +72,7 @@ try {
                     }
                 } finally { $listener.Stop() }
             }
-            $waitSeconds = if ($mode -eq 'Stalled') { 25 } else { 15 }
-            $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
             do {
                 $ready = @(Receive-Job $server -Keep | Where-Object { $_.Port })
                 if ($ready.Count) { break }
@@ -97,7 +96,8 @@ try {
             [PlexNative]::EnqueuePlaylist($main.Handle, $playlist)
             if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124) -ne 1) { throw 'Fehlertest-Playlist ist nicht eindeutig.' }
             [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40045, [IntPtr]::Zero)
-            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            $waitSeconds = if ($mode -eq 'Stalled') { 25 } else { 15 }
+            $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
             $progress = $false; $progressBeforeError = $false; $maximumQueryMs = 0
             do {
                 Start-Sleep -Milliseconds 100
