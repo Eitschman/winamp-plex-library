@@ -1,4 +1,4 @@
-﻿param([string]$ScreenshotName = 'library-ui')
+﻿param([string]$ScreenshotName = 'library-ui', [switch]$RapidSearch)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -85,3 +85,40 @@ if ($matches -lt 1 -or $matches -ge $first) { throw 'Künstlersuche grenzt die E
 Start-Sleep -Milliseconds 500
 if ((Wait-Catalog) -ne $first) { throw 'Suchrücksetzung fehlgeschlagen.' }
 Write-Output "Bibliotheksidentität, Navigation und Suche geprüft; Unteransicht mit $albums Alben. Keine Wiedergabe gestartet."
+if ($RapidSearch) {
+    $maximumQueryMs = 0
+    $emptyTerm = [Guid]::NewGuid().ToString('N')
+    function Set-Query([string]$Term) {
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        [void][PlexNative]::SendMessage((Control 1051).Handle, 12, [IntPtr]::Zero, $Term)
+        # Der reguläre Timerpfad startet die Anfrage sofort, damit sich laufende
+        # Aufträge überholen können; die normale Eingabeverzögerung bleibt unverändert.
+        [void][PlexNative]::Query($view, 275, [IntPtr]2, [IntPtr]::Zero)
+        $script:maximumQueryMs = [Math]::Max($script:maximumQueryMs, $watch.ElapsedMilliseconds)
+        if ($script:maximumQueryMs -ge 1500) { throw 'Suchauslösung blockiert die Oberfläche über das Testlimit.' }
+    }
+    try {
+        foreach ($expectEmpty in @($true, $false)) {
+            for ($iteration = 0; $iteration -lt 25; ++$iteration) {
+                $term = if ($iteration % 2) { '' } else { $emptyTerm + $iteration }
+                Set-Query $term
+                Start-Sleep -Milliseconds 10
+            }
+            $finalTerm = if ($expectEmpty) { $emptyTerm } else { '' }
+            Set-Query $finalTerm
+            $expected = if ($expectEmpty) { 0 } else { $first }
+            if ((Wait-Catalog) -ne $expected) { throw 'Eine überholte Suchantwort ersetzt die letzte Eingabe.' }
+            # Auch später eintreffende Antworten dürfen das jüngste Ergebnis nicht ersetzen.
+            for ($check = 0; $check -lt 15; ++$check) {
+                Start-Sleep -Milliseconds 100
+                if ([PlexNative]::ControlText((Control 1051).Handle) -cne $finalTerm -or (Wait-Catalog) -ne $expected) {
+                    throw 'Die letzte Suche bleibt nach ausstehenden Antworten nicht erhalten.'
+                }
+            }
+        }
+        Write-Output "52 rasche Suchaufträge mit abwechselnd leerem und gefülltem Ergebnis geprüft; längste UI-Auslösung $maximumQueryMs ms."
+    } finally {
+        Set-Query ''
+        if ((Wait-Catalog) -ne $first) { throw 'Die erste Künstlerseite wurde nach der Suchprüfung nicht wiederhergestellt.' }
+    }
+}
