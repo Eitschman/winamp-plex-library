@@ -246,6 +246,20 @@ function Test-PlexPlaybackLocation([string]$Location) {
     return $Location -cmatch ('^' + [regex]::Escape($directory) + '\\session-[0-9a-f]{48}\\[0-9a-f]{48}\.(flac|ogg|m4a)$')
 }
 
+# Eine Freigabeverletzung belegt den noch exklusiv geöffneten Medien-Schreibhandle.
+# Fehlende Dateien und Zugriffsfehler dürfen diesen Nachweis nicht vortäuschen.
+function Test-PlexMediaWriteLock([string]$Path) {
+    try {
+        $reader = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+            [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+        $reader.Dispose()
+        return $false
+    } catch [IO.IOException] {
+        if (($_.Exception.HResult -band 65535) -ne 32) { throw }
+        return $true
+    }
+}
+
 function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     Add-Type -AssemblyName System.Drawing
     $rectangle = New-Object PlexNative+Rect
@@ -300,4 +314,4 @@ function Select-PlexFeedbackTrack($Sample) {
     return [pscustomobject]@{ List = $list.Handle; View = $view; Outer = $outer[0].Handle }
 }
 
-Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Select-PlexFeedbackTrack
+Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Test-PlexMediaWriteLock, Select-PlexFeedbackTrack
