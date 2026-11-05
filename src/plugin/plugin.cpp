@@ -19,7 +19,7 @@ INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept
 using Metadata = std::unordered_map<std::wstring, std::wstring>;
 struct PlaybackBinding { std::string identifier; long long duration_ms = 0, offset_ms = 0; bool reportable = true; };
 struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; PlaybackBinding binding; };
-void enqueue_items(std::vector<QueueItem> items, bool play);
+void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement placement);
 char description[] = "Winamp Plex Library 0.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
@@ -222,8 +222,9 @@ winampMediaLibraryPlugin& descriptor() noexcept { return plugin; }
 bool german() noexcept { return use_german; }
 
 namespace {
-void enqueue_items(std::vector<QueueItem> items, bool play) {
-    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000)
+void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement placement) {
+    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000 ||
+        (play && placement != PlaylistPlacement::append))
         throw std::invalid_argument("playback_input");
     std::vector<PlaylistEntry> entries;
     std::vector<std::string> issued;
@@ -245,16 +246,9 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
             entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
         }
     const TemporaryPlaylist playlist(make_playlist(entries, media_store ? utf8(media_store->directory().wstring()) : std::string{}));
-    const auto url = playlist.path().wstring();
-    COPYDATASTRUCT item{};
-    item.dwData = IPC_ENQUEUEFILEW;
-    item.lpData = const_cast<wchar_t*>(url.c_str());
-    item.cbData = static_cast<DWORD>((url.size() + 1) * sizeof(wchar_t));
-    const auto position = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
-    SendMessageW(plugin.hwndWinampParent, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&item));
-    const auto length = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
-    if (length != position + static_cast<LRESULT>(entries.size())) throw std::runtime_error("playlist_enqueue");
+    // Benötigte Hintergrundressourcen vor der Änderung der Host-Playlist anlegen.
     if (!reporter) reporter = std::make_unique<PlaybackReporter>(request_connection_settings());
+    const auto position = send_playlist_to_winamp(plugin.hwndWinampParent, playlist.path().wstring(), entries.size(), placement);
     if (play) {
         SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
         // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
@@ -279,7 +273,7 @@ std::shared_ptr<LocalMediaStore> local_media_store() {
     if (!media_store) media_store = std::make_shared<LocalMediaStore>(settings_path().parent_path() / L"playback");
     return media_store;
 }
-void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork, const PreparedMedia& prepared) {
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork, const PreparedMedia& prepared, PlaylistPlacement placement) {
     std::vector<QueueItem> items;
     for (const auto& track : tracks) {
         const auto parts = direct_parts(track);
@@ -311,7 +305,7 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
             if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;
         }
     }
-    enqueue_items(std::move(items), play);
+    enqueue_items(std::move(items), play, placement);
 }
 
 void stop_playback() noexcept {

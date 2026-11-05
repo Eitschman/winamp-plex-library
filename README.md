@@ -20,6 +20,8 @@ Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrun
 
 Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der lokale Dateizugriff ermöglicht bei den geprüften FLAC-, OGG- und AAC-Dateien Laufzeit und Seeking mit den vorhandenen Winamp-Decodern. Automatische Plex-Statusmeldungen für Abspielen, Pause, Fortsetzen, Seeking und Stop sind am echten Winamp geprüft. Ein reguläres Titelende hat einen neuen Plex-Verlaufseintrag und einen erhöhten Wiedergabezähler erzeugt. Ein echter Plex-ADTS-Titel, weitere AAC-Profile und weitere Fehlerfälle bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
 
+Das Kontextmenü kann ausgewählte Titel hinter dem aktuellen Playlist-Eintrag einfügen, ohne dessen Wiedergabe oder Pause zu ändern. Dies bestimmt die Listenreihenfolge; Zufallswiedergabe und fremde Warteschlangen behalten ihre Steuerung. Die neue Menüzeile benötigt noch eine Sichtprüfung, siehe [Prüfstand](docs/testing.md).
+
 ## Build
 
 Erforderlich sind Visual Studio 2022 oder dessen Build Tools mit C++-x86-Werkzeugen, Windows SDK, CMake ab 3.24 sowie die unveränderten SDK-5.55-Header und der veröffentlichte Skin-Schnittstellenheader von 2016. Die einzige zusätzliche C++-Bibliothek ist nlohmann/json 3.12.0, mit SHA-256 festgelegt. Die Bildverarbeitung verwendet Windows Imaging Component.

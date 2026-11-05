@@ -28,6 +28,29 @@ public static class PlexNative {
       Query(window, 74, IntPtr.Zero, payload);
     } finally { Marshal.FreeHGlobal(payload); Marshal.FreeHGlobal(name); }
   }
+  // fileinfoW aus SDK/Winamp/ipc_pe.h: 260 UTF-16-Zeichen und ein 32-Bit-Index.
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct PlaylistInsert {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string File;
+    public int Index;
+  }
+  public static void InsertPlaylist(IntPtr player, string path, int index) {
+    if(!System.IO.Path.IsPathRooted(path) || !path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+       path.Length>=260 || !System.IO.File.Exists(path) || index<0 ||
+       index>QueryInt32(player,1024,IntPtr.Zero,(IntPtr)124))
+      throw new ArgumentException("Invalid insertion playlist or index");
+    IntPtr editor=Query(player,1024,(IntPtr)1,(IntPtr)260);
+    uint playerId, editorId;
+    GetWindowThreadProcessId(player,out playerId); GetWindowThreadProcessId(editor,out editorId);
+    if(editor==IntPtr.Zero || playerId==0 || editorId!=playerId || Marshal.SizeOf(typeof(PlaylistInsert))!=524)
+      throw new InvalidOperationException("Invalid SDK playlist editor or fileinfoW layout");
+    IntPtr item=Marshal.AllocHGlobal(524);
+    IntPtr payload=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(CopyData)));
+    try {
+      Marshal.StructureToPtr(new PlaylistInsert { File=path,Index=index },item,false);
+      Marshal.StructureToPtr(new CopyData { Tag=(IntPtr)114,Size=524,Data=item },payload,false);
+      Query(editor,74,player,payload);
+    } finally { Marshal.FreeHGlobal(payload); Marshal.FreeHGlobal(item); }
+  }
   public delegate bool EnumProc(IntPtr window, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
@@ -238,7 +261,12 @@ public static class PlexNative {
     if(point.X>=rectangle.Right || point.Y>=rectangle.Bottom || !SetCursorPos(point.X,point.Y))
       throw new InvalidOperationException("Invalid menu position");
     // Nur das weiterhin sichtbare Menü der isolierten Testinstanz darf einen Klick erhalten.
-    if(WindowFromPoint(point)!=menu) throw new InvalidOperationException("Test menu is obscured");
+    IntPtr covering=WindowFromPoint(point);
+    if(covering!=menu) {
+      uint coveringProcess; GetWindowThreadProcessId(covering,out coveringProcess);
+      var type=new StringBuilder(256); GetClassName(covering,type,type.Capacity);
+      throw new InvalidOperationException("Test menu is obscured; class="+type+" same_process="+(coveringProcess==process));
+    }
     mouse_event(2,0,0,0,UIntPtr.Zero);
     mouse_event(4,0,0,0,UIntPtr.Zero);
   }

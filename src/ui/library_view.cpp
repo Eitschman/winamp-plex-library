@@ -113,7 +113,7 @@ Row make_row(const PlexItem& item) {
     }, item);
     return row;
 }
-enum class Action { browse, play, enqueue, rate };
+enum class Action { browse, play, enqueue, insert_after, rate };
 struct Job {
     Action action = Action::browse;
     BrowseQuery query;
@@ -428,7 +428,7 @@ struct View {
         }
         job.query.library_identifier = job.settings.library_identifier;
         job.load_libraries = libraries.empty();
-        if (job.action == Action::play || job.action == Action::enqueue) job.media = local_media_store();
+        if (job.action == Action::play || job.action == Action::enqueue || job.action == Action::insert_after) job.media = local_media_store();
         { std::lock_guard<std::mutex> lock(mutex); job.generation = ++generation; pending = std::move(job); completed.reset(); SetEvent(stop); }
         busy = true; controls();
         SetDlgItemTextW(dialog, IDC_STATUS, text(L"Wird geladen...", L"Loading..."));
@@ -525,7 +525,11 @@ struct View {
         } else {
             try {
                 if (result->tracks.empty()) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl enthält keine Titel.", L"The selection contains no tracks."));
-                else { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared); count_status(); }
+                else {
+                    enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared,
+                        result->action == Action::insert_after ? PlaylistPlacement::after_current : PlaylistPlacement::append);
+                    count_status();
+                }
             }
             catch (...) { SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl konnte nicht an Winamp übergeben werden.", L"Could not send the selection to Winamp.")); }
         }
@@ -538,14 +542,15 @@ struct View {
             if (static_cast<std::size_t>(index) < rows.size()) result.push_back(rows[static_cast<std::size_t>(index)].item);
         return result;
     }
-    void play(bool now) {
+    void play(bool now, bool insert_after = false) {
         if (busy || current.query.kind == BrowseKind::artists) return;
         if (!connection_verified()) {
             SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Verbindung muss vor der Wiedergabe erfolgreich aktualisiert werden.", L"Refresh the connection successfully before playback."));
             return;
         }
         auto selected = selection(); if (selected.empty()) return;
-        Job job; job.action = now ? Action::play : Action::enqueue; job.selected = std::move(selected); submit(std::move(job));
+        Job job; job.action = insert_after ? Action::insert_after : now ? Action::play : Action::enqueue;
+        job.selected = std::move(selected); submit(std::move(job));
     }
     void open() {
         if (busy) return;
@@ -654,6 +659,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         if (control == IDC_OPEN) { view->open(); return TRUE; }
         if (control == IDC_PLAY) { view->play(true); return TRUE; }
         if (control == IDC_ENQUEUE) { view->play(false); return TRUE; }
+        if (control == IDC_INSERT_AFTER) { view->play(false, true); return TRUE; }
         if (control >= IDC_RATE_NONE && control <= IDC_RATE_FIVE) {
             if (view->busy || !connection_verified()) return TRUE;
             auto selected = view->selection();
@@ -743,6 +749,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         if (!std::holds_alternative<PlexTrack>(selected.front())) AppendMenuW(menu, MF_STRING, IDC_OPEN, text(L"Öffnen", L"Open"));
         if (view->current.query.kind != BrowseKind::artists) {
             AppendMenuW(menu, MF_STRING, IDC_PLAY, text(L"Jetzt abspielen", L"Play now"));
+            AppendMenuW(menu, MF_STRING, IDC_INSERT_AFTER, text(L"Nach aktuellem Titel einfügen", L"Insert after current track"));
             AppendMenuW(menu, MF_STRING, IDC_ENQUEUE, text(L"Zur Playlist hinzufügen", L"Enqueue"));
         }
         if (selected.size() == 1 && std::holds_alternative<PlexTrack>(selected.front()) && connection_verified()) {

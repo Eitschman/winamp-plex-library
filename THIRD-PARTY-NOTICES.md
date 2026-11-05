@@ -15,6 +15,8 @@ Das gesamte SDK enthält weitere Beispiele und Komponenten mit eigenen Bedingung
 
 Die Album-Art-Schnittstelle verwendet außerdem die unveränderten Wasabi-/Agave-Header aus dem SDK-5.55-Archiv. Die konkrete Liste mit Prüfsummen steht in `cmake/WinampArtworkSdk.cmake`. Diese Header enthalten keinen einheitlichen eigenen Lizenztext und werden ausschließlich lokal beschafft. Es wird keine pauschale Erlaubnis zur Weitergabe dieser Dateien behauptet. Das Beispiel `coverdirectory` wird als Schnittstellenreferenz gelesen, nicht in das Projekt kopiert.
 
+`Winamp/ipc_pe.h` liefert die originale Playlisteditor-Schnittstelle für das Einfügen einer M3U8-Datei. Der reine Schnittstellenheader enthält keinen eigenen Lizenztext. Er wird ausschließlich unverändert aus demselben geprüften SDK-Archiv lokal extrahiert, mit SHA-256 geprüft und nicht mit dem Projekt weitergegeben. Es wird daraus keine eigenständige Weitergabelizenz abgeleitet.
+
 ## Veröffentlichter Skin-Schnittstellenheader von 2016
 
 Quelle: https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h

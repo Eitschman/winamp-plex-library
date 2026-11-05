@@ -3,6 +3,7 @@
 #include <gen_ml/ml_ipc_0313.h>
 #include <Winamp/wa_ipc.h>
 #include "wasabi_mock.h"
+#include "winamp_playlist_checks.h"
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
@@ -97,6 +98,7 @@ void check(bool value, const char* name) { if (!value) throw std::runtime_error(
 int wmain(int count, wchar_t** arguments) {
     if (count != 2) return 2;
     try {
+        playlist_checks::verify();
         const auto configuration = std::filesystem::temp_directory_path() / (L"PlexHostTest-" + std::to_wstring(GetCurrentProcessId()));
         check(!std::filesystem::exists(configuration), "isolated_configuration_path");
         check(SetEnvironmentVariableW(L"WINAMP_PLEX_CONFIG_DIRECTORY", configuration.c_str()) != FALSE, "isolate_configuration");

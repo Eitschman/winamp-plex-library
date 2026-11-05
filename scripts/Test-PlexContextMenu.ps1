@@ -1,4 +1,4 @@
-﻿param([ValidateSet('Enqueue', 'Play')][string]$Action = 'Enqueue')
+﻿param([ValidateSet('Enqueue', 'Play', 'InsertAfter')][string]$Action = 'Enqueue')
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -40,8 +40,8 @@ Save-PlexWindowScreenshot $menu[0].Handle (Join-Path $root '.local\library-conte
 $menuRect = New-Object PlexNative+Rect
 if (-not [PlexNative]::GetWindowRect($menu[0].Handle, [ref]$menuRect)) { throw 'Menüposition fehlt.' }
 $menuHeight = $menuRect.Bottom - $menuRect.Top
-$menuRow = if ($Action -eq 'Play') { 1 } else { 2 }
-[PlexNative]::ClickTestMenu($menu[0].Handle, $process.Id, 40, [int](($menuRow + 0.5) * $menuHeight / 3))
+$menuRow = switch ($Action) { Play {1} InsertAfter {2} Enqueue {3} }
+[PlexNative]::ClickTestMenu($menu[0].Handle, $process.Id, 40, [int](($menuRow + 0.5) * $menuHeight / 4))
 $deadline = [DateTime]::UtcNow.AddSeconds(20)
 do {
     Start-Sleep -Milliseconds 100

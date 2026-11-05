@@ -309,7 +309,7 @@ Unterstütze Sortierung, Mehrfachauswahl und Kontextmenüs.
 Unterstütze:
 
 - Jetzt abspielen
-- Als Nächstes abspielen, sofern zuverlässig implementierbar
+- Nach aktuellem Titel einfügen, ohne den laufenden Titel zu unterbrechen. Die physische Playlist-Reihenfolge wird geändert; Zufallswiedergabe und fremde Warteschlangen behalten ihre Steuerung.
 - Zur Playlist hinzufügen
 - Ganzes Album abspielen
 - Mehrere ausgewählte Titel abspielen

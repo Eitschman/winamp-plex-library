@@ -80,6 +80,8 @@ WinHTTP verwendet asynchrone Handles. Ein Worker wartet auf Abschluss oder Abbru
 
 Die Wiedergabe gehört dem Plugin-Core und überlebt das Zerstören einer Bibliotheksansicht. Ein Listener mit vier Workern verwaltet bis zu 10000 unabhängige Grants. Neue Titel widerrufen keine bereits angehängten Titel. Bei fehlgeschlagener Playlistübergabe werden nur die dabei neu ausgegebenen Grants zurückgenommen. Das Ende der Verbindung beendet alle Grants.
 
+Die UI übergibt den Wiedergabeauftrag als Anhängen, Abspielen oder Einfügen hinter dem aktuellen Titel. `send_playlist_to_winamp` kapselt die synchronen SDK-Aufrufe und prüft den tatsächlichen Playlist-Zuwachs. Beim Einfügen erhält der Playlisteditor die vorbereitete Unicode-M3U8-Datei am gewünschten Index. Diese Aktion sendet keinen Playerbefehl. Der Wiedergabe-Reporter wird vor der Hoständerung angelegt, damit eine dabei fehlgeschlagene Ressourcenallokation keine bereits eingefügten Titel zurücklässt. Ein vom Host nur teilweise importierter Auftrag wird als Fehler gemeldet; eine atomare Rücknahme des Hostimports ist nicht zugesichert.
+
 ## Authentifizierung und Konfiguration
 
 Ein zufälliger Client-Identifier wird mit der Verbindung gespeichert. Die Einstellungen öffnen ohne Browseranmeldung. Nur der ausdrückliche Anmeldebutton startet eine starke Plex-PIN und den Systembrowser. Das Passwort läuft ausschließlich durch Plex. Der Account-Token dient dem Abruf der Serverressourcen und wird nicht dauerhaft gespeichert. Die Serverprofile enthalten die jeweiligen Ressourcen-Tokens und die von Plex gelieferten HTTPS-Verbindungen.

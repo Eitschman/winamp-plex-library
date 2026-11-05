@@ -17,7 +17,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Fetch-WinampSdk.ps1 
   -SevenZip "C:\Program Files\7-Zip\7z.exe"
 ```
 
-Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `gen_tray/WINAMPCMD.H` sowie die Wasabi-/Agave-Header für Album-Art nach `.local/sdk`. Zusätzlich lädt es den unveränderten Skin-Schnittstellenheader von 2016 nach `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. CMake prüft die verwendeten Header einzeln, für Album-Art gemäß `cmake/WinampArtworkSdk.cmake`. Vorhandene Zielordner werden nicht überschrieben. Quellen, Hashes und ABI-Vertrag stehen in [winamp-sdk.md](winamp-sdk.md).
+Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `Winamp/ipc_pe.h`, `gen_tray/WINAMPCMD.H` sowie die Wasabi-/Agave-Header für Album-Art nach `.local/sdk`. Zusätzlich lädt es den unveränderten Skin-Schnittstellenheader von 2016 nach `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. CMake prüft die verwendeten Header einzeln, für Album-Art gemäß `cmake/WinampArtworkSdk.cmake`. Vorhandene Zielordner werden nicht überschrieben. Quellen, Hashes und ABI-Vertrag stehen in [winamp-sdk.md](winamp-sdk.md).
 
 Ein manuell entpacktes SDK kann mit `-DWINAMP_SDK_ROOT=C:/Pfad/zum/SDK` angegeben werden. Der getrennte Skin-Header wird mit `-DWINAMP_SKIN_SDK_ROOT=C:/Pfad/zum/SkinSDK` angegeben. Die Prüfsummen müssen zu den untersuchten Fassungen passen. Andere Fassungen erfordern eine gesonderte ABI-Prüfung und bewusste Änderung des Buildvertrags.
 
@@ -40,6 +40,8 @@ Ein zusätzliches, neu angelegtes Buildverzeichnis unter `.local/repro-build` be
 Der Konfigurationsschritt lädt nlohmann/json 3.12.0 über CMake FetchContent. Die Archiv-Prüfsumme ist im Projekt festgelegt. Der Build benötigt keine Plex-Zugangsdaten und keinen Plex-Server. Alle automatisierten Fixtures verwenden erfundene Tokens und Loopback.
 
 Die DLL liegt im Release-Build unter `build/Release/ml_plex.dll`, im Debug-Build unter `build/Debug/ml_plex.dll`. Keine nachträgliche Umbenennung ist erforderlich. Testprogramme und `.lib`-Dateien werden nicht in Winamp installiert. CMake enthält keinen Installationsschritt in eine bestehende Winamp-Installation.
+
+Die Release-DLL benötigt die Microsoft-C++-Laufzeit für **x86**, auch unter 64-Bit-Windows. Die tatsächliche PE-Prüfung mit `dumpbin /headers /exports /dependents build/Release/ml_plex.dll` bestätigt x86, den ungeschmückten Export `winampGetMediaLibraryPlugin` und die Importe `MSVCP140.dll` und `VCRUNTIME140.dll` (`.local/logs/plugin-release-pe.log`). Laut [Microsoft](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/) muss das x86-Redistributable mindestens so aktuell wie die verwendeten Build Tools sein. Debug-DLLs sind für die Entwicklungsumgebung vorgesehen. Es erfolgt keine automatische Runtime-Installation.
 
 Unter Linux lässt sich der plattformunabhängige Sicherheitscode mit CMake und CTest prüfen. Die Windows-DLL wird dort nicht mit MSVC gebaut. Ein Linux-Test ersetzt weder den x86-Build noch einen Winamp-Lauf.
 

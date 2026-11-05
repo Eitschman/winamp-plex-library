@@ -7,13 +7,14 @@
 #include "plex/local_media.h"
 #include "plex/catalog.h"
 #include "plex/playback_reporter.h"
+#include "plex/winamp_playlist.h"
 #include <memory>
 #include "artwork_provider.h"
 
 namespace plex::plugin {
 winampMediaLibraryPlugin& descriptor() noexcept;
 bool german() noexcept;
-void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork = {}, const PreparedMedia& prepared = {});
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork = {}, const PreparedMedia& prepared = {}, PlaylistPlacement placement = PlaylistPlacement::append);
 std::shared_ptr<LocalMediaStore> local_media_store();
 void stop_playback() noexcept;
 ProxyStatus playback_status() noexcept;
