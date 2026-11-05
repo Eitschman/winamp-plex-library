@@ -32,9 +32,10 @@ int wmain(int count, wchar_t** arguments) {
     if (count < 2 || count > 3) return 2;
     const std::wstring operation = arguments[1];
     const bool playlist_sample = operation == L"--prepare-playlist";
+    const bool sort_samples = operation == L"--prepare-sorts";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !native_check) return 2;
-    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || native_check) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check) return 2;
+    if ((operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -101,6 +102,38 @@ int wmain(int count, wchar_t** arguments) {
             check(DeleteFileW(arguments[2]) != FALSE, "restore_marker_cleanup");
             std::cout << "rating_restored=1\n"; return 0;
         }
+        if (sort_samples) {
+            const plex::PlexCatalog catalog(settings, stop.value);
+            nlohmann::json cases = nlohmann::json::array();
+            const std::vector<std::vector<std::string>> fields{{"titleSort"}, {"titleSort", "artist.titleSort", "year"},
+                {"titleSort", "artist.titleSort", "album.titleSort", "duration", "index", "year"}};
+            for (std::size_t kind = 0; kind < fields.size(); ++kind) {
+                for (std::size_t column = 0; column < fields[kind].size(); ++column) {
+                    for (const bool descending : {column == 0, column != 0}) {
+                        plex::BrowseQuery query; query.kind = static_cast<plex::BrowseKind>(kind);
+                        query.library_identifier = settings.library_identifier; query.sort = fields[kind][column]; query.descending = descending;
+                        const auto page = catalog.page(query);
+                        nlohmann::json rows = nlohmann::json::array();
+                        for (const auto& item : page.items) {
+                            nlohmann::json cells = nlohmann::json::array({plex::item_title(item)});
+                            if (const auto* album = std::get_if<plex::PlexAlbum>(&item)) {
+                                cells.push_back(album->artist); cells.push_back(album->year ? std::to_string(album->year) : "");
+                            } else if (const auto* track = std::get_if<plex::PlexTrack>(&item)) {
+                                cells.push_back(track->artist); cells.push_back(track->album);
+                                const auto seconds = track->duration_ms / 1000;
+                                cells.push_back(std::to_string(seconds / 60) + ":" + (seconds % 60 < 10 ? "0" : "") + std::to_string(seconds % 60));
+                                cells.push_back(track->number ? std::to_string(track->number) : "");
+                                cells.push_back(track->year ? std::to_string(track->year) : "");
+                            }
+                            rows.push_back(std::move(cells));
+                        }
+                        cases.push_back({{"kind", kind}, {"column", column}, {"descending", descending}, {"rows", rows}});
+                    }
+                }
+            }
+            write_restore(arguments[2], {{"cases", cases}});
+            std::cout << "native_sort_snapshots_read=1 cases=" << cases.size() << '\n'; return 0;
+        }
         if (playlist_sample) {
             plex::BrowseQuery query; query.kind = plex::BrowseKind::playlists; query.library_identifier = settings.library_identifier; query.limit = 250;
             const plex::PlexCatalog catalog(settings, stop.value);
@@ -145,6 +178,7 @@ int wmain(int count, wchar_t** arguments) {
         const auto page = plex::PlexCatalog(settings, stop.value).page(query);
         if (operation == L"--prepare-library") {
             nlohmann::json samples = nlohmann::json::array();
+            nlohmann::json bulk = nlohmann::json::array();
             nlohmann::json missing, covered;
             for (std::size_t index = 0; index < page.items.size(); ++index) {
                 if (!std::holds_alternative<plex::PlexTrack>(page.items[index])) continue;
@@ -153,11 +187,13 @@ int wmain(int count, wchar_t** arguments) {
                 nlohmann::json sample{{"row_index", index}, {"title", item.title}, {"artist", item.artist}, {"album", item.album}};
                 if (plex::track_artwork(item).empty() && missing.is_null()) missing = sample;
                 if (!plex::track_artwork(item).empty() && covered.is_null()) covered = sample;
-                if (samples.size() < 3 && item.parts.size() == 1 &&
-                    item.parts.front().key.size() > 4 && item.parts.front().key.substr(item.parts.front().key.size() - 4) == ".mp3") samples.push_back(sample);
+                if (item.parts.size() == 1 && item.parts.front().key.size() > 4 && item.parts.front().key.substr(item.parts.front().key.size() - 4) == ".mp3") {
+                    if (samples.size() < 3) samples.push_back(sample);
+                    bulk.push_back(sample);
+                }
             }
             check(samples.size() == 3 && !missing.is_null() && !covered.is_null(), "native_library_samples_available");
-            write_restore(arguments[2], {{"tracks", samples}, {"without_artwork", missing}, {"with_artwork", covered}});
+            write_restore(arguments[2], {{"tracks", samples}, {"bulk", bulk}, {"without_artwork", missing}, {"with_artwork", covered}});
             std::cout << "native_library_samples_prepared_without_mutation=1\n"; return 0;
         }
         const auto selected = std::find_if(page.items.begin(), page.items.end(), [](const auto& item) {

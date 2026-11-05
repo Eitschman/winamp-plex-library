@@ -254,6 +254,8 @@ function Select-PlexFeedbackTrack($Sample) {
     if ($outer.Count -ne 1) { throw 'Bibliotheksfenster fehlt.' }
     $tree = [PlexNative]::Children($outer[0].Handle) | Where-Object Class -eq 'SysTreeView32'
     $root = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]::Zero, [IntPtr]::Zero)
+    # Ein neu erzeugter Titelknoten verhindert geerbte Suche oder Sortierung anderer Tests.
+    [void][PlexNative]::Query($tree.Handle, 4363, [IntPtr]9, $root)
     $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]4, $root)
     for ($step = 0; $step -lt 2; ++$step) { $node = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]1, $node) }
     [void][PlexNative]::Query($tree.Handle, 4363, [IntPtr]9, $node)

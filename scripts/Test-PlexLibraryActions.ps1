@@ -1,4 +1,4 @@
-﻿param([string]$SamplesPath = (Join-Path $PSScriptRoot '..\.local\library-action-samples.json'))
+﻿param([string]$SamplesPath = (Join-Path $PSScriptRoot '..\.local\library-action-samples.json'), [switch]$Bulk)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -85,6 +85,26 @@ try {
         if ($locations.Count -ne $expected.Count -or $titles.Count -ne $expected.Count -or @($locations | Where-Object { -not (Test-PlexPlaybackLocation $_) }).Count -or @($locations | Select-Object -Unique).Count -ne $expected.Count) { throw 'Playlist enthält falsche oder mehrfach verwendete Wiedergabepfade.' }
         for ($index = 0; $index -lt $expected.Count; ++$index) { if ($titles[$index] -cne $expected[$index]) { throw 'Playlistreihenfolge oder Unicode-Titel stimmen nicht.' } }
         if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) { throw 'Anhängen startet unerwartet die Wiedergabe.' }
+    }
+    if ($Bulk) {
+        if ($samples.bulk.Count -lt 100) { throw 'Für die größere Übergabe werden mindestens 100 MP3-Titel benötigt.' }
+        [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]101)
+        $threadCount = $process.Threads.Count
+        [PlexNative]::SelectCatalogRows($list, $process.Id, [int[]]@($samples.bulk | ForEach-Object row_index))
+        if ([PlexNative]::QueryInt32($list, 4146, [IntPtr]::Zero, [IntPtr]::Zero) -ne $samples.bulk.Count) { throw 'Große Mehrfachauswahl verliert Zeilen.' }
+        [void][PlexNative]::Query($view, 273, [IntPtr]1057, [IntPtr]::Zero); Wait-Catalog
+        if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124) -ne $samples.bulk.Count) { throw 'Große Übergabe verliert Titel.' }
+        [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]120)
+        $playlist = Get-Content -LiteralPath (Join-Path (Split-Path $process.Path -Parent) 'settings\Winamp.m3u8') -Encoding UTF8
+        $locations = @($playlist | Where-Object { $_ -and -not $_.StartsWith('#') })
+        $titles = @($playlist | Where-Object { $_.StartsWith('#EXTINF:') } | ForEach-Object { $_.Substring($_.IndexOf(',') + 1) })
+        if ($locations.Count -ne $samples.bulk.Count -or $titles.Count -ne $samples.bulk.Count -or @($locations | Where-Object { -not (Test-PlexPlaybackLocation $_) }).Count -or @($locations | Select-Object -Unique).Count -ne $samples.bulk.Count) { throw 'Große Playlist enthält falsche oder wiederverwendete Wiedergabepfade.' }
+        for ($index = 0; $index -lt $titles.Count; ++$index) {
+            if ($titles[$index] -cne $samples.bulk[$index].title) { throw 'Große Übergabe verändert Reihenfolge oder Unicode-Titel.' }
+        }
+        if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) { throw 'Große Übergabe startet unerwartet die Wiedergabe.' }
+        $process.Refresh()
+        Write-Output "Große Mehrfachübergabe mit $($titles.Count) unabhängigen Wiedergabepfaden geprüft. Prozess-Threads vorher $threadCount, danach $($process.Threads.Count)."
     }
     $missing = [int]$samples.without_artwork.row_index
     [PlexNative]::SelectCatalogRows($list, $process.Id, [int[]]@($missing))
