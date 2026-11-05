@@ -11,9 +11,10 @@
 | `src/plex/catalog.cpp` | Typisierte Modelle, Künstler, Alben, Titel, Playlists, Query-Prüfung und Pagination |
 | `src/plex/artwork.cpp` | Geprüfte relative Coverpfade, authentifizierter Bildtransport und begrenzte WIC-Decodierung |
 | `src/ui/artwork_loader.cpp` | Bedarfsgesteuerte Cover-/Titelanzahlaufträge, Generationsprüfung und begrenzter Bildcache |
-| `src/plugin/artwork_provider.cpp` | Cache-basierter Album-Art-Dienst für eigene Loopback-Titel, ohne Netzwerkzugriff im Hostcallback |
+| `src/plugin/artwork_provider.cpp` | Cache-basierter Album-Art-Dienst für eigene Wiedergabepfade, ohne Netzwerkzugriff im Hostcallback |
 | `src/cache` | Thread-sicherer LRU-Metadaten-Cache mit 32 Seiten und fünf Minuten Gültigkeit |
 | `src/playback/proxy.cpp` | Loopback-Listener, begrenzte Worker, befristeter Grant und Range-Streaming |
+| `src/playback/local_media.cpp` | Abbrechbare Vorbereitung von FLAC und OGG, private Sitzungsdateien, Größenlimits und Bereinigung |
 | `src/config` | Benutzergebundene DPAPI-Datei und atomarer Austausch |
 | `src/common` | Origin-, Token-, Pfad-, Request- und Range-Prüfung sowie Query-Encoding |
 | `tests` | SDK-Host, synthetischer PMS-Transport und Tests unabhängiger Komponenten |
@@ -40,11 +41,21 @@ flowchart LR
     UI --> IPC[Winamp Playlist-IPC]
     IPC --> Decoder[Vorhandenes Winamp Input-Plugin]
     Decoder --> Proxy[Loopback-Proxy]
+    UI --> Prepare[Medienvorbereitung im Worker]
+    Prepare --> Files[Private FLAC-/OGG-Dateien]
+    Decoder --> Files
+    Prepare --> HTTP
     Proxy --> HTTP[WinHTTP mit Token-Header]
     HTTP --> PMS
 ```
 
 Plexa ist die Verhaltensreferenz für Anmeldung, Auswahl und Mediengateway. Es wird kein Node-Prozess und kein Alexa-Endpunkt eingebettet. Der Proxy ist ein internes Transportmodul, kein externer Dienst.
+
+FLAC und OGG verwenden deterministisch lokale Dateien, da der FLAC-Decoder HTTP ablehnt und der OGG-Decoder dort keine Länge und kein Seeking liefert. Es handelt sich um denselben unveränderten Plex-Part, ohne Transcoding. Der Katalog-Worker lädt die ausgewählten Parts mit dem vorhandenen WinHTTP-Transport vollständig herunter. HTTP-Fehler, fehlende oder widersprüchliche Dateilängen, Abbruch und Limits beenden den Auftrag vor der Playlistübergabe. MP3, M4A und AAC bleiben beim Proxy; ein Fehler löst keinen Wechsel des Wiedergabepfades aus.
+
+Der Speicher legt Sitzungen mit 192 Bit Zufall unter dem eigenen Anwendungsordner an. Eine geschützte DACL erlaubt ausschließlich dem aktuellen Windows-Benutzer und SYSTEM Zugriff. Mediennamen enthalten ebenfalls 192 Bit Zufall und nur die geprüfte Dateiendung. Pro Datei gelten 512 MiB, insgesamt 2 GiB. Ein Lesehandle verhindert Änderungen, solange das Plugin die Datei hält. Noch geöffnete Decoderdateien bleiben beim Speicherverbrauch berücksichtigt und werden nach Freigabe erneut bereinigt. Aktuelle Titel werden vor dem Freigeben des Speichers gestoppt. Bei Prozessabbruch verbleibende Sitzungen werden nur mit passendem Marker, ausschließlich eigenen Dateinamen und ohne Reparse Points bereinigt; ein exklusiver Markerzugriff schützt parallele aktive Instanzen. Unbekannte Ordner bleiben unberührt.
+
+Die Playlistübergabe akzeptiert lokale Dateien nur aus dem tatsächlich vom Speicher angelegten Sitzungsordner und mit exakt zufälligem FLAC-/OGG-Namen. Metadaten und vorbereitete Cover werden dem Unicode-Dateipfad zugeordnet. Der private Dateispeicher bleibt bis Verbindungswechsel oder Plugin-Ende bestehen; die zweistündige HTTP-Grant-Laufzeit gilt für diese Dateien nicht.
 
 ## Threading und Besitz
 

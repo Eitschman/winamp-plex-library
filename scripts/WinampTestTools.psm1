@@ -121,6 +121,12 @@ function Get-PlexTestProcess {
     return $process[0]
 }
 
+function Test-PlexPlaybackLocation([string]$Location) {
+    if ($Location -match '^http://127\.0\.0\.1:[0-9]+/stream/[0-9a-f]{48}/audio\.(mp3|aac|m4a)$') { return $true }
+    $directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WinampPlexLibrary\playback'
+    return $Location -cmatch ('^' + [regex]::Escape($directory) + '\\session-[0-9a-f]{48}\\[0-9a-f]{48}\.(flac|ogg)$')
+}
+
 function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     Add-Type -AssemblyName System.Drawing
     $rectangle = New-Object PlexNative+Rect
@@ -134,4 +140,4 @@ function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     try { $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
 }
 
-Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot
+Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation

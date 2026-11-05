@@ -10,9 +10,9 @@ if ($count -lt 1) { throw 'Zuerst Titel über die Plex-Bibliotheksansicht zur Te
 $root = Split-Path $PSScriptRoot -Parent
 $playlist = Join-Path $root '.local\winamp-test\settings\Winamp.m3u8'
 $urls = @(Get-Content -LiteralPath $playlist -Encoding UTF8 | Where-Object { $_ -and -not $_.StartsWith('#') })
-if ($urls.Count -ne $count -or @($urls | Where-Object {
-    $_ -notmatch '^http://127\.0\.0\.1:[0-9]+/stream/[0-9a-f]{48}/audio\.(mp3|flac|aac|m4a|ogg)$'
-}).Count) { throw 'Die Testplaylist muss ausschließlich eigene lokale Plex-Wiedergabe-URLs enthalten.' }
+if ($urls.Count -ne $count -or @($urls | Where-Object { -not (Test-PlexPlaybackLocation $_) }).Count) {
+    throw 'Die Testplaylist muss ausschließlich eigene Loopback-URLs oder vorbereitete lokale Mediendateien enthalten.'
+}
 $volume = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr](-666), [IntPtr]122)
 if ($volume -lt 0 -or $volume -gt 255) { throw 'Winamp-Lautstärke konnte nicht gelesen werden.' }
 try {
@@ -58,7 +58,7 @@ try {
     Start-Sleep -Milliseconds 600
     $position = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]105)
     if ($position -lt $SeekMs - 500 -or $position -gt $SeekMs + 3000) { throw 'Wiedergabeposition nach Seeking stimmt nicht.' }
-    Write-Output ('Stummer Wiedergabetest: LängeSekunden=' + $length + '; PositionMs=' + $position + '; PlaylistURLs=NurLoopback; Titelanzahl=' + $count)
+    Write-Output ('Stummer Wiedergabetest: LängeSekunden=' + $length + '; PositionMs=' + $position + '; PlaylistMedien=NurEigeneLokaleQuellen; Titelanzahl=' + $count)
 } finally {
     [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) {

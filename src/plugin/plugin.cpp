@@ -14,7 +14,7 @@ int initialize() noexcept;
 void shutdown() noexcept;
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept;
 using Metadata = std::unordered_map<std::wstring, std::wstring>;
-struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; };
+struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; };
 void enqueue_items(std::vector<QueueItem> items, bool play);
 char description[] = "Winamp Plex Library 0.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
@@ -22,6 +22,8 @@ UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
 bool use_german = false;
 std::unique_ptr<PlaybackProxy> proxy;
+std::shared_ptr<LocalMediaStore> media_store;
+std::unordered_map<std::wstring, std::shared_ptr<const LocalMediaFile>> playback_files;
 DWORD ui_thread = 0;
 PlexConnectionSettings settings;
 std::unordered_map<std::wstring, std::wstring> playback_titles;
@@ -167,17 +169,19 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
         for (auto& item : items) {
             if (item.title.empty() || item.seconds < -1) throw std::invalid_argument("playback_input");
             std::string local;
-            if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source)); local = proxy->url(); }
+            if (item.file) local = utf8(item.file->path().wstring());
+            else if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source)); local = proxy->url(); }
             else local = proxy->add(std::move(item.source));
             issued.push_back(local);
             for (auto& character : item.title) if (character < 32 || character == 127) character = L' ';
             { std::lock_guard<std::mutex> lock(metadata_mutex);
-              playback_titles[std::wstring(local.begin(), local.end())] = item.title;
-              playback_metadata[std::wstring(local.begin(), local.end())] = std::move(item.metadata); }
-            bind_playback_artwork(std::wstring(local.begin(), local.end()), std::move(item.artwork));
-            entries.push_back({local, utf8(item.title), item.seconds});
+              playback_titles[unicode(local)] = item.title;
+              playback_metadata[unicode(local)] = std::move(item.metadata); }
+            if (item.file) playback_files[unicode(local)] = item.file;
+            bind_playback_artwork(unicode(local), std::move(item.artwork));
+            entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
         }
-    const TemporaryPlaylist playlist(make_playlist(entries));
+    const TemporaryPlaylist playlist(make_playlist(entries, media_store ? utf8(media_store->directory().wstring()) : std::string{}));
     const auto url = playlist.path().wstring();
     COPYDATASTRUCT item{};
     item.dwData = IPC_ENQUEUEFILEW;
@@ -196,16 +200,21 @@ void enqueue_items(std::vector<QueueItem> items, bool play) {
         for (const auto& url : issued) {
             if (proxy) proxy->revoke(url);
             { std::lock_guard<std::mutex> lock(metadata_mutex);
-              playback_titles.erase(std::wstring(url.begin(), url.end()));
-              playback_metadata.erase(std::wstring(url.begin(), url.end())); }
-            unbind_playback_artwork(std::wstring(url.begin(), url.end()));
+              playback_titles.erase(unicode(url));
+              playback_metadata.erase(unicode(url)); }
+            playback_files.erase(unicode(url));
+            unbind_playback_artwork(unicode(url));
         }
         throw;
     }
 }
 }
 
-void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork) {
+std::shared_ptr<LocalMediaStore> local_media_store() {
+    if (!media_store) media_store = std::make_shared<LocalMediaStore>(settings_path().parent_path() / L"playback");
+    return media_store;
+}
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork, const PreparedMedia& prepared) {
     std::vector<QueueItem> items;
     for (const auto& track : tracks) {
         const auto parts = direct_parts(track);
@@ -222,8 +231,11 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
         for (const auto& part : parts) {
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
+            const auto file = prepared.find(part.key);
+            if (requires_local_media(part.key) && file == prepared.end()) throw std::invalid_argument("local_media_missing");
             items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, title,
-                part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata});
+                part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
+                file == prepared.end() ? nullptr : file->second});
         }
     }
     enqueue_items(std::move(items), play);
@@ -231,7 +243,7 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
 
 void stop_playback() noexcept {
     try {
-        if (proxy && GetCurrentThreadId() == ui_thread && IsWindow(plugin.hwndWinampParent)) {
+        if ((proxy || !playback_files.empty()) && GetCurrentThreadId() == ui_thread && IsWindow(plugin.hwndWinampParent)) {
             const auto index = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTPOS);
             const auto* url = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, index, IPC_GETPLAYLISTFILEW));
             bool owns = false;
@@ -243,6 +255,7 @@ void stop_playback() noexcept {
     proxy.reset();
     { std::lock_guard<std::mutex> lock(metadata_mutex); playback_titles.clear(); playback_metadata.clear(); }
     clear_playback_artwork();
+    playback_files.clear(); media_store.reset();
 }
 ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
 bool playback_active() noexcept { return proxy != nullptr; }

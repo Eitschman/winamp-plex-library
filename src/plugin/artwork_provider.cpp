@@ -1,4 +1,5 @@
 #include "artwork_provider.h"
+#include <filesystem>
 #include "wasabi_sdk.h"
 #include <cstring>
 #include <mutex>
@@ -120,7 +121,8 @@ void shutdown_artwork_provider() noexcept {
 }
 void bind_playback_artwork(const std::wstring& url, ArtworkBytes bytes) {
     if (!bytes) return;
-    if (bytes->empty() || bytes->size() > 300000 || url.compare(0, 17, L"http://127.0.0.1:") != 0)
+    if (bytes->empty() || bytes->size() > 300000 ||
+        (url.compare(0, 17, L"http://127.0.0.1:") != 0 && !std::filesystem::path(url).is_absolute()))
         throw std::invalid_argument("playback_artwork");
     std::lock_guard<std::mutex> lock(artwork_mutex);
     if (artwork.count(url) || artwork.size() >= 10000) throw std::invalid_argument("playback_artwork_limit");

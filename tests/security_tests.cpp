@@ -71,6 +71,13 @@ int main() {
         rejects([&] { plex::make_playlist({{"https://other.example/media?X-Plex-Token=fake", "Title", 5}}); }, "playlist_external_url_rejected");
         rejects([&] { plex::make_playlist({{local + "?X-Plex-Token=fake", "Title", 5}}); }, "playlist_query_rejected");
         rejects([&] { plex::make_playlist({}); }, "empty_playlist_rejected");
+        const std::string directory = "C:\\private\\playback\\session-test";
+        const auto file = directory + "\\" + std::string(48, 'a') + ".flac";
+        check(plex::make_playlist({{file, "Lokaler Titel", 120, true}}, directory).find(file) != std::string::npos, "owned_local_media_accepted");
+        for (const auto& path : {std::string("C:\\foreign\\file.flac"), directory + "\\..\\foreign.flac", file + "\r\nInjected", directory + "\\short.ogg", directory + "\\" + std::string(48, 'a') + ".exe"})
+            rejects([&] { plex::make_playlist({{path, "Title", 5, true}}, directory); }, "foreign_local_media_rejected");
+        rejects([&] { plex::make_playlist({{file, "Title", 5, true}}); }, "local_directory_required");
+        rejects([&] { plex::make_playlist({{file, "Title", 5}}); }, "local_file_requires_explicit_type");
         std::cout << checks << " security checks passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }

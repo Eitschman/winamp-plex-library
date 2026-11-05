@@ -6,6 +6,9 @@
 #include "plex/security.h"
 #include "plex/artwork.h"
 #include "plex/http_stream.h"
+#include "plex/local_media.h"
+#include <fstream>
+#include <aclapi.h>
 #include <objbase.h>
 #include <atomic>
 #include <chrono>
@@ -83,6 +86,12 @@ struct Fixture {
             bitmap[56] = static_cast<char>(255); bitmap[58] = static_cast<char>(255);
             const auto type = request.find("/metadata/2/thumb") == request.npos ? "image/bmp" : "text/html";
             send_text(client, std::string("HTTP/1.1 200 OK\r\nContent-Type: ") + type + "\r\nContent-Length: 62\r\n\r\n" + bitmap);
+            return;
+        }
+        if (request.find("/library/parts/997/") != request.npos) {
+            send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\npartial");
+            slow_started.store(true);
+            while (!stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             return;
         }
         if (request.find("/library/parts/998/") != request.npos) {
@@ -205,6 +214,111 @@ int main() {
             check(rejected, "artwork_non_image_rejected");
         } catch (...) { CloseHandle(image_stop); throw; }
         CloseHandle(image_stop);
+        {
+            const auto root = std::filesystem::temp_directory_path() / (L"plex-media-tests-" + std::to_wstring(GetCurrentProcessId()));
+            const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            check(stop != nullptr, "media_stop_event");
+            plex::LocalMediaStore store(root, {1000000, 1000000});
+            auto file = store.stage({server, "synthetic-test-token", "/library/parts/1/file.flac"}, stop);
+            const auto path = file->path();
+            check(std::filesystem::exists(path) && file->size() == fixture.media.size(), "local_media_prepared");
+            PSECURITY_DESCRIPTOR descriptor = nullptr; PACL acl = nullptr;
+            check(GetNamedSecurityInfoW(const_cast<wchar_t*>(store.directory().c_str()), SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION, nullptr, nullptr, &acl, nullptr, &descriptor) == ERROR_SUCCESS, "private_media_acl_read");
+            SECURITY_DESCRIPTOR_CONTROL control{}; DWORD revision = 0;
+            const bool private_acl = GetSecurityDescriptorControl(descriptor, &control, &revision) &&
+                (control & SE_DACL_PROTECTED) && acl && acl->AceCount == 2;
+            LocalFree(descriptor);
+            check(private_acl, "private_media_acl_has_only_explicit_user_and_system");
+            {
+                std::ifstream input(path, std::ios::binary);
+                const std::string bytes((std::istreambuf_iterator<char>(input)), {});
+                check(bytes == fixture.media, "local_media_complete_and_readable");
+            }
+            const auto write = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+            check(write == INVALID_HANDLE_VALUE, "prepared_media_cannot_be_modified");
+            if (write != INVALID_HANDLE_VALUE) CloseHandle(write);
+            file.reset();
+            check(!std::filesystem::exists(path) && store.bytes_used() == 0, "released_local_media_deleted");
+            auto locked_file = store.stage({server, "synthetic-test-token", "/library/parts/1/file.ogg"}, stop);
+            const auto locked_path = locked_file->path();
+            const auto decoder = CreateFileW(locked_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+            check(decoder != INVALID_HANDLE_VALUE, "native_decoder_can_open_prepared_file");
+            locked_file.reset();
+            check(std::filesystem::exists(locked_path) && store.bytes_used() == fixture.media.size(), "active_decoder_file_remains_accounted");
+            CloseHandle(decoder);
+            auto reclaimed = store.stage({server, "synthetic-test-token", "/library/parts/2/file.ogg"}, stop);
+            check(!std::filesystem::exists(locked_path) && store.bytes_used() == fixture.media.size(), "closed_decoder_file_reclaimed");
+            reclaimed.reset();
+            for (const auto status : {401, 403, 404, 302, 500, 999}) {
+                bool rejected = false;
+                try { store.stage({server, "synthetic-test-token", "/library/parts/" + std::to_string(status) + "/file.ogg"}, stop); }
+                catch (const plex::HttpError&) { rejected = true; }
+                check(rejected && store.bytes_used() == 0, "local_media_failure_has_no_partial_file");
+            }
+            SetEvent(stop);
+            bool cancelled = false;
+            try { store.stage({server, "synthetic-test-token", "/library/parts/1/file.ogg"}, stop); }
+            catch (const plex::HttpError& error) { cancelled = error.code == ERROR_CANCELLED; }
+            check(cancelled && store.bytes_used() == 0, "local_media_cancelled");
+            ResetEvent(stop);
+            plex::LocalMediaStore small_store(root, {99999, 99999});
+            bool limited = false;
+            try { small_store.stage({server, "synthetic-test-token", "/library/parts/1/file.ogg"}, stop); }
+            catch (const plex::HttpError& error) { limited = error.code == ERROR_FILE_TOO_LARGE; }
+            check(limited && small_store.bytes_used() == 0, "local_media_size_limit");
+            plex::LocalMediaStore quota(root, {100000, 100000});
+            auto retained = quota.stage({server, "synthetic-test-token", "/library/parts/1/file.ogg"}, stop);
+            limited = false;
+            try { quota.stage({server, "synthetic-test-token", "/library/parts/2/file.ogg"}, stop); }
+            catch (const plex::HttpError& error) { limited = error.code == ERROR_DISK_FULL; }
+            check(limited && std::filesystem::exists(retained->path()), "local_media_quota_and_active_session_preserved");
+            const auto abandoned = root / (L"session-" + std::wstring(48, L'c'));
+            std::filesystem::create_directory(abandoned);
+            {
+                std::ofstream owner(abandoned / L"owner.lock", std::ios::binary);
+                constexpr char marker[] = "WinampPlexLocalMedia1\r\n";
+                owner.write(marker, sizeof(marker));
+                std::ofstream media(abandoned / (std::wstring(48, L'a') + L".flac")); media << "partial";
+            }
+            const auto foreign = root / (L"session-" + std::wstring(48, L'd'));
+            std::filesystem::create_directory(foreign);
+            { std::ofstream owner(foreign / L"owner.lock"); owner << "foreign"; }
+            {
+                plex::LocalMediaStore cleanup(root);
+                auto prepared = cleanup.stage({server, "synthetic-test-token", "/library/parts/1/file.flac"}, stop);
+                check(!std::filesystem::exists(abandoned), "abandoned_marked_session_removed");
+                check(std::filesystem::exists(foreign / L"owner.lock"), "unrecognized_session_preserved");
+                check(std::filesystem::exists(retained->path()), "active_parallel_session_preserved");
+            }
+            std::filesystem::remove(foreign / L"owner.lock"); std::filesystem::remove(foreign);
+            CloseHandle(stop);
+        }
+        {
+            Fixture stalled;
+            const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            const auto root = std::filesystem::temp_directory_path() / (L"plex-cancel-tests-" + std::to_wstring(GetCurrentProcessId()));
+            plex::LocalMediaStore store(root);
+            const auto origin = plex::parse_server_address("http://127.0.0.1:" + std::to_string(stalled.port));
+            auto pending = std::async(std::launch::async, [&] {
+                try { store.stage({origin, "synthetic-test-token", "/library/parts/997/file.flac"}, stop); }
+                catch (const plex::HttpError& error) { return error.code == ERROR_CANCELLED; }
+                return false;
+            });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            bool partial_file = false;
+            while (!partial_file && std::chrono::steady_clock::now() < deadline) {
+                const auto directory = store.directory();
+                if (!directory.empty()) for (const auto& entry : std::filesystem::directory_iterator(directory))
+                    if (entry.path().extension() == L".flac") partial_file = true;
+                if (!partial_file) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            check(stalled.slow_started.load() && partial_file, "local_media_partial_transfer_started");
+            SetEvent(stop);
+            check(pending.wait_for(std::chrono::milliseconds(1500)) == std::future_status::ready, "local_media_cancel_does_not_wait_for_server");
+            check(pending.get() && store.bytes_used() == 0, "local_media_cancel_removes_partial_file");
+            CloseHandle(stop);
+        }
         auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/1/file.mp3"});
         const auto url = proxy->url();
         check(url.find("synthetic-test-token") == url.npos && url.find("/library/parts/") == url.npos, "opaque_url");

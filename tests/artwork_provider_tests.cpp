@@ -58,6 +58,13 @@ int main() {
         check(provider->SetAlbumArtData(url.c_str(), L"cover", nullptr, 0, nullptr) == ALBUMARTPROVIDER_READONLY, "artwork_readonly");
         unbind_playback_artwork(url);
         check(!provider->IsMine(url.c_str()), "revoked_mapping_removed");
+        const std::wstring local_file = L"C:\\private\\playback\\session-test\\012345678901234567890123456789012345678901234567.flac";
+        bind_playback_artwork(local_file, bytes);
+        check(provider->IsMine(local_file.c_str()), "prepared_file_cover_recognized");
+        check(provider->GetAlbumArtData(local_file.c_str(), L"cover", &bits, &length, &mime) == ALBUMARTPROVIDER_SUCCESS,
+              "prepared_file_cover_returned");
+        services.memory.memory.sysFree(bits); services.memory.memory.sysFree(mime);
+        unbind_playback_artwork(local_file);
         check(provider->GetAlbumArtData(url.c_str(), L"cover", &bits, &length, &mime) == ALBUMARTPROVIDER_FAILURE, "no_stale_cover");
         services.registered->releaseInterface(provider);
         shutdown_artwork_provider();

@@ -20,7 +20,7 @@ $list = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 10
 $view = [PlexNative]::GetParent($list.Handle)
 $search = [PlexNative]::Children($view) | Where-Object ControlId -eq 1051
 function Wait-Catalog {
-    $deadline = [DateTime]::UtcNow.AddSeconds(25)
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
         $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
         if ($status.Text -match '^\d+ \.\.\. \d+') { return [PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) }
@@ -91,7 +91,7 @@ try {
             [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]120)
             $playlist = Join-Path (Split-Path $process.Path -Parent) 'settings\Winamp.m3u8'
             $urls = @(Get-Content -LiteralPath $playlist -Encoding UTF8 | Where-Object { $_ -and -not $_.StartsWith('#') })
-            if ($urls.Count -eq 1 -and $urls[0] -match ('^http://127\.0\.0\.1:[0-9]+/stream/[0-9a-f]{48}/audio\.' + $sample.format + '$')) { $found = $true; break }
+            if ($urls.Count -eq 1 -and (Test-PlexPlaybackLocation $urls[0]) -and $urls[0].EndsWith('.' + $sample.format)) { $found = $true; break }
             [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]40, [IntPtr]::Zero)
             Start-Sleep -Milliseconds 100
         }

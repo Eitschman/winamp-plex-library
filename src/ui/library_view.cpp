@@ -108,12 +108,14 @@ struct Job {
     unsigned generation = 0;
     bool load_libraries = false;
     unsigned long long cache_scope = 0;
+    std::shared_ptr<LocalMediaStore> media;
 };
 struct Result {
     Action action = Action::browse;
     CatalogPage page;
     std::vector<PlexTrack> tracks;
     PlaybackArtwork artwork;
+    PreparedMedia prepared;
     std::vector<PlexLibrary> libraries;
     bool libraries_loaded = false;
     DWORD error = 0;
@@ -285,7 +287,13 @@ struct View {
                         }
                         if (result.tracks.size() > 10000) throw std::invalid_argument("queue_limit");
                     }
-                    for (const auto& track : result.tracks) direct_parts(track);
+                    for (const auto& track : result.tracks) {
+                        for (const auto& part : direct_parts(track)) {
+                            if (requires_local_media(part.key) && !result.prepared.count(part.key))
+                                result.prepared.emplace(part.key, job.media->stage(
+                                    {parse_server_address(job.settings.server_origin), job.settings.server_token, part.key}, stop));
+                        }
+                    }
                     std::size_t artwork_size = 0;
                     for (const auto& track : result.tracks) {
                         const auto& thumb = track_artwork(track);
@@ -358,6 +366,7 @@ struct View {
         }
         job.query.library_identifier = job.settings.library_identifier;
         job.load_libraries = libraries.empty();
+        if (job.action != Action::browse) job.media = local_media_store();
         { std::lock_guard<std::mutex> lock(mutex); job.generation = ++generation; pending = std::move(job); completed.reset(); SetEvent(stop); }
         busy = true; controls();
         SetDlgItemTextW(dialog, IDC_STATUS, text(L"Wird geladen...", L"Loading..."));
@@ -408,6 +417,8 @@ struct View {
             const auto http = error >= 0x20000000UL ? error - 0x20000000UL : 0;
             if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
             else if (error == ERROR_NOT_SUPPORTED) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Auswahl ist kein unterstütztes Direct-Play-Medium verfügbar.", L"No supported direct-play media is available for this selection."));
+            else if (error == ERROR_FILE_TOO_LARGE) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Eine Mediendatei überschreitet das Vorbereitungslimit von 512 MiB.", L"A media file exceeds the preparation limit of 512 MiB."));
+            else if (error == ERROR_DISK_FULL) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Dateivorbereitung ist kein Speicherplatz verfügbar oder das Limit von 2 GiB ist erreicht.", L"Media preparation has no free disk space or has reached the 2 GiB limit."));
             else if (error == ERROR_INVALID_DATA) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Plex-Antwort konnte nicht verarbeitet werden.", L"The Plex response could not be processed."));
             else {
                 const auto message = std::wstring(text(L"Plex-Verbindungsfehler, Code ", L"Plex connection error, code ")) + std::to_wstring(http ? http : error);
@@ -435,7 +446,7 @@ struct View {
             count_status();
             visible_artwork();
         } else {
-            try { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork); count_status(); }
+            try { enqueue_tracks(result->tracks, result->action == Action::play, result->artwork, result->prepared); count_status(); }
             catch (...) { SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Auswahl konnte nicht an Winamp übergeben werden.", L"Could not send the selection to Winamp.")); }
         }
         controls();
