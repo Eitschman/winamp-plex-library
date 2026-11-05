@@ -1,6 +1,29 @@
 # Winamp Plex Library
 
-Natives Media-Library-Plugin für Winamp Legacy unter Windows 10/11, x86. Zielversion ist **Winamp 5.9.2 Build 10042**. Die DLL heißt `ml_plex.dll`.
+Plex-Musik direkt in der klassischen Winamp-Medienbibliothek durchsuchen und mit Winamp abspielen. Natives C++17-Plugin für **Windows 10/11 und Winamp 5.9.2 Build 10042, x86**. Die DLL heißt `ml_plex.dll`.
+
+[![Windows x86](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml/badge.svg)](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml)
+[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
+
+## Funktionen
+
+- Künstler, Alben, Titel und Plex-Audio-Playlists in eigenen Medienbibliotheksknoten.
+- Suche, Sortierung, Mehrfachauswahl und Navigation vom Künstler bis zum Titel.
+- Titel und Alben abspielen, anhängen oder hinter dem aktuellen Playlisttitel einfügen. Die Player-Steuerung übernimmt Winamp.
+- Plex-Anmeldung im Browser, Server- und Musikbibliotheksauswahl sowie automatische HTTPS-Verbindungsauswahl.
+- Albumcover in den Listen und über Winamps Album-Art-Dienst; Titel übernehmen vorhandene Albumcover.
+- Native Skin-Anbindung und deutsche beziehungsweise englische Texte entsprechend Winamps aktivem Sprachpaket.
+- Asynchrone Netzwerkzugriffe, begrenzte Caches, Plex-Wiedergabestatus und persönliche Titelbewertungen.
+
+## Voraussetzungen
+
+Winamp 5.9.2 Build 10042 als 32-Bit-Version mit aktivierter Medienbibliothek (`gen_ml.dll`), Windows 10/11, ein erreichbarer Plex Media Server mit Musikbibliothek und ein berechtigtes Plex-Konto. Für die DLL wird die aktuelle [Microsoft Visual C++ v14 Runtime für x86](https://aka.ms/vc14/vc_redist.x86.exe) benötigt. Es gibt keinen zusätzlichen Hintergrunddienst und keinen eigenen Audiodecoder.
+
+WACUP ist ein späteres Kompatibilitätsziel und bisher nicht zur Laufzeit geprüft. Andere Winamp-Versionen sind ebenfalls nicht pauschal freigegeben.
+
+## Download
+
+Unter [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) erzeugen erfolgreiche Windows-Builds das Artefakt **`winamp-plex-library-win32-release`** mit DLL, Installationshinweisen und Lizenztexten. Zum Herunterladen von Actions-Artefakten ist eine GitHub-Anmeldung erforderlich. Diese zeitlich aufbewahrten Buildpakete sind keine automatisch veröffentlichten Releases. Alternativ lässt sich das Plugin aus dem Quellcode bauen.
 
 ## Entwicklungsstand
 
@@ -34,7 +57,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Ergebnis: `build/Release/ml_plex.dll`. SDK-Beschaffung, Debug-Build und Hinweise zu fehlenden Werkzeugen: [docs/build.md](docs/build.md).
+Ergebnis: `build/Release/ml_plex.dll`. Zuvor die SDK-Header mit `scripts/Fetch-WinampSdk.ps1` beschaffen; Voraussetzungen, genaue Befehle, Debug-Build und Fehlerdiagnose stehen in [docs/build.md](docs/build.md). SDK-Dateien werden lokal mit Prüfsummen geprüft und nicht im Repository mitgeliefert.
 
 ## Installation und Konfiguration
 
@@ -72,4 +95,6 @@ Zur Deinstallation Winamp beenden und ausschließlich die selbst installierte `m
 
 ## Veröffentlichung
 
-Das Projekt ist lokal versioniert. Es gibt weder ein öffentliches Repository noch einen Push. Der eigene Quellcode steht unter MIT, siehe [LICENSE](LICENSE). SDK-Dateien, Downloads, Binärdateien, private Adressen und lokale Zugänge werden nicht eingecheckt. Fremde Lizenzen sind in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) aufgeführt. Es besteht keine Verbindung zu den Markeninhabern von Winamp oder Plex.
+Der eigene Quellcode steht unter **MIT**, siehe [LICENSE](LICENSE). Fremde Bedingungen stehen in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). SDK-Dateien, Downloads, Build-Artefakte und lokale Zugänge gehören nicht in Git. Binärpakete enthalten die Lizenztexte des Projekts und von nlohmann/json. Es besteht keine Verbindung zu den Markeninhabern von Winamp oder Plex.
+
+Fehler bitte als [GitHub Issue](https://github.com/Eitschman/winamp-plex-library/issues) mit Winamp-Version, Skin, Windows-Version, Audioformat und reproduzierbaren Schritten melden. Tokens, private Serveradressen und lokale Konfigurationsdateien nicht veröffentlichen. Build- und Testhinweise für Beiträge stehen in [CONTRIBUTING.md](CONTRIBUTING.md).

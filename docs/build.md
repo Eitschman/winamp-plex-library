@@ -47,6 +47,21 @@ Unter Linux lässt sich der plattformunabhängige Sicherheitscode mit CMake und 
 
 Für separate ADTS-AAC-Dateien benötigt die Laufzeit Windows Media Foundation (`mfplat.dll` und `mfreadwrite.dll`). Bei Windows-N-Ausgaben können diese Medienkomponenten fehlen; die AAC-Vorbereitung meldet dann einen Fehler. Die DLLs werden erst bei diesem Vorgang aus System32 geladen. AAC wird ohne Neucodierung in M4A verpackt. FFmpeg ist keine Plugin-Abhängigkeit; es dient lokal ausschließlich zum Erzeugen und unabhängigen Prüfen synthetischer Testdateien. Bei `BUILD_TESTING=ON` entstehen zusätzlich `aac_remux_tests.exe` und `aac_remux_probe.exe`.
 
+## GitHub Actions und Buildpaket
+
+Der Workflow `.github/workflows/build.yml` läuft bei Pushes auf `main`, Pull Requests und manuell. Zwei getrennte Windows-2022-Jobs beschaffen die Original-SDK-Header mit Hashprüfung und bauen mit Visual Studio 2022 für Win32, jeweils in Debug und Release. Jeder Job führt CTest mit synthetischen Daten aus. Plex-Zugangsdaten, eine Winamp-Installation und persönliche Konfiguration sind dafür nicht erforderlich. Die Actions-Versionen sind an vollständige Commit-SHAs gebunden; der Workflow besitzt ausschließlich `contents: read` und speichert keine Git-Zugangsdaten im Checkout.
+
+Der Release-Job prüft zusätzlich `tests/packaging_tests.ps1` und erstellt mit `scripts/Package-Plugin.ps1` das Artefakt `winamp-plex-library-win32-release`. Es enthält ausschließlich `ml_plex.dll`, `INSTALL.md`, die Projektlizenz, Fremdhinweise und `licenses/nlohmann-json-LICENSE.MIT`. Der Paketprüfer weist fehlende Bestandteile, ungültige PE-Dateien, falsche Architektur und ein vorhandenes Zielverzeichnis ab. SDK-Dateien, MSVC-Runtime, Testprogramme und lokale Einstellungen werden nicht beigepackt. Die Microsoft-x86-Runtime wird nach Installationsanleitung separat bezogen.
+
+Lokal nach einem Release-Build:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/packaging_tests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Package-Plugin.ps1
+```
+
+Das lokale Standardziel `.local/package` muss neu sein. Für einen weiteren Lauf mit bestehendem Paket einen anderen konkreten `-OutputDirectory` angeben. CI verwendet `build/package`, damit das Artefakt nicht unter einem versteckten Verzeichnis liegt. Actions stellt das Paket als ZIP für 30 Tage und CTest-Protokolle für 14 Tage bereit. Es gibt keinen automatischen GitHub-Release und keine automatische Installation. Ein erfolgreicher CI-Lauf belegt Build und automatisierte Tests; Winamp-Oberfläche und echte Plex-Wiedergabe bleiben eigenständige Integrationsprüfungen.
+
 ## Isolierte Laufzeitprüfung
 
 Die Testinstanz startet minimiert. `scripts/Restart-PlexTest.ps1` beendet ausschließlich die über Pfad und Fensterklasse geprüfte Testkopie regulär, leert deren Playlist, übernimmt die Release-DLL und prüft den minimierten Zustand nach dem Start. Auch die Wiederstarts anderer Prüfscripts verwenden diesen Zustand. Nur für erforderliche Sicht- und Maustests wird die Oberfläche eingeblendet. Die Screenshotfunktion stellt anschließend den vorherigen minimierten Zustand wieder her, auch bei einem Ausgabefehler. Die Einfüge- und Kontextmenütests minimieren im `finally`-Pfad.

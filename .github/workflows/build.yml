@@ -1,0 +1,61 @@
+name: Windows x86
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: MSVC x86 ${{ matrix.configuration }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Quellcode laden
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Originale SDK-Header beschaffen und prüfen
+        run: ./scripts/Fetch-WinampSdk.ps1 -SevenZip (Get-Command 7z.exe -ErrorAction Stop).Source
+      - name: CMake für Win32 konfigurieren
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DBUILD_TESTING=ON
+      - name: Plugin und Tests bauen
+        run: cmake --build build --config ${{ matrix.configuration }} --parallel
+      - name: Automatisierte Tests ausführen
+        run: ctest --test-dir build -C ${{ matrix.configuration }} --output-on-failure
+      - name: Paketprüfungen ausführen
+        if: matrix.configuration == 'Release'
+        run: ./tests/packaging_tests.ps1
+      - name: Release-Paket zusammenstellen
+        if: matrix.configuration == 'Release'
+        run: ./scripts/Package-Plugin.ps1 -OutputDirectory build/package
+      - name: Release-Buildpaket hochladen
+        if: matrix.configuration == 'Release'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: winamp-plex-library-win32-release
+          path: build/package/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Testprotokoll hochladen
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-win32-${{ matrix.configuration }}
+          path: build/Testing/Temporary/LastTest.log
+          retention-days: 14

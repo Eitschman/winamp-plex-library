@@ -600,7 +600,7 @@ Committe keine:
 
 Bereite das Projekt auf eine spätere GitHub-Veröffentlichung vor.
 
-Erstelle aber zunächst kein öffentliches Repository und führe keinen Push ohne ausdrückliche Freigabe durch.
+Das öffentliche Repository `https://github.com/Eitschman/winamp-plex-library` im persönlichen Konto und dessen Befüllung einschließlich README und GitHub Actions sind ausdrücklich freigegeben. Firmenkonto für die Zusammenarbeit ist AndreasHT. Fremde Repositorys und andere Konten sind davon nicht erfasst.
 
 Prüfe die Lizenzbedingungen des Winamp-SDK und sämtlicher Abhängigkeiten, bevor eine Open-Source-Lizenz festgelegt wird.
 
