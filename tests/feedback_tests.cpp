@@ -1,4 +1,5 @@
 #include "plex/feedback.h"
+#include "session_checks.h"
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -14,6 +15,11 @@ template<class Action> void rejects(Action action, const char* name) {
 }
 int main() {
     try {
+        const nlohmann::json session{{"Player", {{"machineIdentifier", "synthetic-player"}}}};
+        plex::test::require_no_transcode_session(session);
+        rejects([&] { auto transcoded = session; transcoded["TranscodeSession"] = {{"audioDecision", "transcode"}};
+                      plex::test::require_no_transcode_session(transcoded); }, "transcode_session_detected");
+        rejects([&] { plex::test::require_no_transcode_session(nlohmann::json::object()); }, "missing_player_not_direct_play_proof");
         plex::TimelineReport report{"42", plex::PlaybackState::playing, 12000, 240000};
         check(plex::timeline_path(report) == "/:/timeline?key=%2Flibrary%2Fmetadata%2F42&ratingKey=42&state=playing&time=12000&duration=240000", "timeline_uses_milliseconds_and_metadata_key");
         report.state = plex::PlaybackState::paused;

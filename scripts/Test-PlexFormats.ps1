@@ -98,7 +98,7 @@ try {
         }
         if (-not $found) { throw 'Wiedergabe-URL entspricht keinem der gesuchten Formatkandidaten.' }
         Write-Output ('Formatnachweis: ' + $sample.format)
-        & (Join-Path $PSScriptRoot 'Test-PlexPlayback.ps1')
+        & (Join-Path $PSScriptRoot 'Test-PlexPlayback.ps1') -CheckPlexSession
         $caption = ([PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest).Text
         if ($caption.IndexOf([string]$sample.title, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Plex-Titel fehlt in Winamps aktuellem Fenstertitel.' }
         Write-Output ('Titelmetadaten geprüft: ' + $sample.format)

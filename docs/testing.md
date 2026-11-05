@@ -84,6 +84,8 @@ Mit der wiederhergestellten Korrektur besteht die native Playlistprüfung erneut
 
 ### Audio
 
+`scripts/Test-PlexFormats.ps1` prüft im echten Winamp MP3, M4A, FLAC und OGG einschließlich Fortschritt, Seeking und Plex-Titel. Nach Seeking liest `feedback_probe --check-no-transcode` die anhand der eigenen Client-ID zugeordnete aktive Sitzung zurück und verlangt das Fehlen von `TranscodeSession`. Alle vier Formate bestehen im Lauf `.local/logs/formats-no-transcode-native.log`. Der zusätzliche MP3-Timeline-Lauf prüft Abspielen, Pause, Fortsetzen und Seeking; siehe `.local/logs/timeline-no-transcode-native.log`. Die synthetischen Gegenproben im Feedback-Test erkennen eine eingefügte Transcoding-Sitzung und einen fehlenden Player. Ein Aufruf ohne laufende eigene Sitzung endet mit Fehler; Nachweis: `.local/logs/no-active-session-countercheck.log`. Die Unitprüfungen bestehen in Debug und Release, siehe `.local/logs/ctest-transcode-session-debug.log` und `.local/logs/ctest-transcode-session.log`. Die API-Auslegung und Referenzquelle stehen in `docs/plex-api.md`.
+
 Die native Probe `.local/logs/startup-route-native.log` lädt die Bibliothek nach einem Plugin-Neustart ohne Einstellungsdialog. Sie prüft Seitenwechsel von 250 auf 56 Künstler, Navigation, Suche und Rückkehr ohne falsche Zeilenhöhe. Die Root-Ansicht wurde in Big Bento angesehen; Wiedergabe wurde nicht gestartet. Die Startauswahl verwendet den zentralen Identitätshelfer. Dessen Gegenproben prüfen lokale Priorität, nicht erreichbare lokale Route, fremde lokale Identität ohne Tokenweitergabe, feste Route, Authentifizierungsfehler ohne weitere Routensuche und Abbruch. Eine tatsächlich lokale Verbindung zuhause ist aus der Büro-Testumgebung nicht nachgewiesen.
 
 | Format | Echtes Plex Direct Play | Länge / Titel | Seeking | Abbruch / Neustart |
@@ -103,7 +105,7 @@ Die native Probe `.local/logs/startup-route-native.log` lädt die Bibliothek nac
 - [x] Grant-Ablauf synthetisch mit verkürzter Laufzeit prüfen: zunächst Medienbytes, danach HTTP 410 ohne Upstream-Zugriff. Die Plugin-Standardeinstellung bleibt zwei Stunden; kein zweistündiger Winamp-Dauertest.
 - [x] Frischen Proxy-Link in der echten Testkopie mit HTTP 206 und 16 Medienbytes bestätigen, regulär beenden, denselben Link mit eindeutigem Verbindungsfehler prüfen (`scripts/Test-PlexProxyShutdown.ps1`).
 - [ ] Fehlende Mediendatei und Verbindungsunterbrechung während des Abspielens.
-- [ ] Prüfen, dass Plex tatsächlich keine Transcoding-Session erzeugt.
+- [x] MP3, M4A, FLAC und OGG: eigene aktive Plex-Sitzung nach Seeking ohne `TranscodeSession` zurücklesen. Synthetisches AAC besitzt keine echte Plex-Sitzung.
 - [ ] Keine anderen Titel oder Konfigurationen der vorhandenen Winamp-Instanz verändern.
 
 Die Formatprüfung besitzt positive Gegenproben mit M4A und MP3 und eine synthetische negative Gegenprobe mit einer unzulässigen Dateiendung. Der Pfadprüfer akzeptiert eigene FLAC-Sitzungsdateien und weist fremde Pfade, Pfadwechsel und angehängte Query-Parameter ab. Die Transporttests prüfen vollständige lokale Bytes, Dateifreigabe, Schreibschutz, private DACL, Größen- und Platzlimits, HTTP-Fehler, abgebrochene Downloads, Bereinigung verwaister markierter Sitzungen und Erhalt aktiver beziehungsweise fremder Sitzungen. Für AAC als eigene Dateiendung fehlt eine reale Probe.

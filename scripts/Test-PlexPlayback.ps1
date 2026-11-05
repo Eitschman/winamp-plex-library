@@ -1,4 +1,4 @@
-﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0)
+﻿param([ValidateRange(1000, 600000)][int]$SeekMs = 10000, [ValidateRange(0, 86400)][int]$ExpectedLengthSeconds = 0, [switch]$CheckPlexSession)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -62,6 +62,10 @@ try {
     $position = [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]105)
     if ($position -lt $SeekMs - 500 -or $position -gt $SeekMs + 3000) { throw 'Wiedergabeposition nach Seeking stimmt nicht.' }
     Write-Output ('Stummer Wiedergabetest: LängeSekunden=' + $length + '; PositionMs=' + $position + '; PlaylistMedien=NurEigeneLokaleQuellen; Titelanzahl=' + $count)
+    if ($CheckPlexSession) {
+        & (Join-Path $PSScriptRoot '..\build\Release\feedback_probe.exe') --check-no-transcode
+        if ($LASTEXITCODE -ne 0) { throw 'Plex bestätigt keine laufende eigene Sitzung ohne Transcoding.' }
+    }
 } finally {
     [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) {

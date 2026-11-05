@@ -52,6 +52,8 @@ Der Client fordert JSON explizit an. Fehlende oder falsch typisierte Felder sind
 
 Plexas Audio-Transcoding unter `/music/:/transcode/universal/start.mp3` ist zusätzlich im Referenzadapter belegt. Noch nicht belegt ist die erforderliche Parameterkombination für diesen Winamp-Client. Es gibt deshalb keinen automatischen Transcoding-Versuch.
 
+`GET /status/sessions` ist der offizielle Endpunkt für aktive Wiedergaben. Die [PlexAPI-Referenzimplementierung](https://github.com/pkkid/python-plexapi/blob/master/plexapi/base.py) liest `TranscodeSession` unmittelbar unter dem jeweiligen Medienobjekt; fehlt dieses Element, meldet die Sitzung keine Transcodierung. Der Integrationsprüfer ordnet die Sitzung zuerst anhand von `Player.machineIdentifier` dem eigenen Client zu und verlangt einen aktiven Player. Ein fehlender Player ist kein Nachweis für Direct Play. Eine vorhandene `TranscodeSession` wird als Fehler behandelt. Der echte MP3-Lauf prüft dies während Abspielen, Pause, Fortsetzen und nach Seeking; eine synthetische Gegenprobe erkennt die eingefügte Transcoding-Sitzung. Nachweis: `.local/logs/timeline-no-transcode-native.log`. Diese Beobachtung ist auf die geprüfte Sitzung und die Abfragezeitpunkte begrenzt.
+
 ## Fehler und Sicherheitsgrenzen
 
 401/403: Zugriff verweigert; 404: Datei oder Metadaten fehlen; 416: Byte-Range nicht erfüllbar. Redirects werden nicht gefolgt. Andere Upstream-Fehler ergeben am lokalen Proxy einen leeren HTTP-502-Fehler. Antworttexte, Cookies und Location-Header gehen nicht an Winamp. Die UI zeigt nur klassifizierte Codes, nie Tokens oder rohe API-Antworten.

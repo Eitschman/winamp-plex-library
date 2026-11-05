@@ -2,6 +2,7 @@
 #include "plex/catalog.h"
 #include "plex/artwork.h"
 #include "plex/feedback.h"
+#include "session_checks.h"
 #include "plex/http_stream.h"
 #include <chrono>
 #include <algorithm>
@@ -36,8 +37,9 @@ int wmain(int count, wchar_t** arguments) {
     if (stalled_connection ? count != 4 : count > 3) return 2;
     const bool playlist_sample = operation == L"--prepare-playlist";
     const bool sort_samples = operation == L"--prepare-sorts";
+    const bool current_session = operation == L"--check-no-transcode";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session) return 2;
     if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
@@ -71,6 +73,23 @@ int wmain(int count, wchar_t** arguments) {
         const plex::PlexAuth client(settings.client_identifier, stop.value);
         const auto connection = client.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
         settings.server_origin = connection.origin;
+        if (current_session) {
+            for (unsigned attempt = 0; attempt < 20; ++attempt) {
+                const auto response = client.get_server(settings.server_origin, settings.server_token, "/status/sessions");
+                const auto& container = response.at("MediaContainer");
+                if (container.contains("Metadata")) for (const auto& item : container.at("Metadata")) {
+                    if (!item.contains("Player")) continue;
+                    const auto& player = item.at("Player");
+                    if (player.value("machineIdentifier", std::string{}) != settings.client_identifier ||
+                        player.value("state", std::string{}) != "playing") continue;
+                    plex::test::require_no_transcode_session(item);
+                    std::cout << "native_player_session_without_transcode_session=1\n";
+                    return 0;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            }
+            throw std::runtime_error("active_native_player_session_required");
+        }
         if (invalid_auth) {
             // Nur die isolierte DPAPI-Datei erhält ungültigen Testzugriff. Der echte
             // Zugang und die Serverkonfiguration werden weder geschrieben noch geändert.
@@ -121,6 +140,7 @@ int wmain(int count, wchar_t** arguments) {
                         if (item.value("ratingKey", std::string{}) != identifier || !item.contains("Player")) continue;
                         const auto& player = item.at("Player");
                         if (player.value("machineIdentifier", std::string{}) != settings.client_identifier) continue;
+                        plex::test::require_no_transcode_session(item);
                         found = true;
                         if (!stopped && player.value("state", std::string{}) == state &&
                             item.value("viewOffset", 0LL) >= (operation == L"--check-seek" ? 9000 : operation == L"--check-paused" ? 500 : 0)) matched = true;
@@ -129,6 +149,7 @@ int wmain(int count, wchar_t** arguments) {
                     if (!matched) std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 }
                 check(matched, "native_playback_session_readback");
+                if (!stopped) std::cout << "native_player_session_without_transcode_session=1\n";
                 if (operation == L"--finish-timeline") check(DeleteFileW(arguments[2]) != FALSE, "timeline_marker_cleanup");
                 std::cout << "native_playback_state_read_back=1\n"; return 0;
             }
