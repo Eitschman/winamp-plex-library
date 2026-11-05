@@ -22,6 +22,7 @@ function Write-Playlist([string]$Path, [string]$Group, [int]$Count) {
     [IO.File]::WriteAllLines($Path, $lines, [Text.UTF8Encoding]::new($true))
 }
 try {
+    if ($CaptureMenu) { [void][PlexNative]::ShowWindow($main.Handle,9) }
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]122)
     [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]101)
@@ -133,4 +134,5 @@ try {
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]120)
     foreach ($path in @($basePath,$nextPath)) { if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path } }
     if ($prepared -and (Test-Path -LiteralPath $samplePath -PathType Leaf)) { Remove-Item -LiteralPath $samplePath }
+    Set-PlexTestMinimized
 }

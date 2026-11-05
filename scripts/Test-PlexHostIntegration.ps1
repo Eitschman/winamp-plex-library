@@ -21,7 +21,8 @@ function Stop-TestCopy {
     if (-not $process.WaitForExit(5000)) { throw 'Testkopie beendet sich nicht regulär.' }
 }
 function Start-TestCopy {
-    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent)
+    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent) -WindowStyle Minimized
+    Set-PlexTestMinimized
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
         Start-Sleep -Milliseconds 200

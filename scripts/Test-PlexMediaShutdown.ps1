@@ -111,5 +111,6 @@ try {
         [void][PlexNative]::PostMessage($main.Handle, 16, [IntPtr]::Zero, [IntPtr]::Zero)
         if (-not $process.WaitForExit(5000)) { throw 'Testkopie lässt sich nicht regulär wiederherstellen.' }
     }
-    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent)
+    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent) -WindowStyle Minimized
+    Set-PlexTestMinimized
 }

@@ -31,6 +31,7 @@ function Start-TestCopy([string]$Directory) {
     $start.Arguments = '/CLASS=WinampPlexTest'
     $start.WorkingDirectory = Split-Path $testExe -Parent
     $start.UseShellExecute = $false
+    $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Minimized
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
     if ($Directory) { $start.EnvironmentVariables['WINAMP_PLEX_CONFIG_DIRECTORY'] = $Directory }
@@ -43,7 +44,7 @@ function Start-TestCopy([string]$Directory) {
         $outer = @([PlexNative]::Windows($process.Id) | Where-Object {
             @([PlexNative]::Children($_.Handle) | Where-Object ControlId -eq 1050).Count -gt 0
         })
-        if ((Main-Window) -and $outer.Count -eq 1) { return $outer[0].Handle }
+        if ((Main-Window) -and $outer.Count -eq 1) { Set-PlexTestMinimized; return $outer[0].Handle }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Plex-Ansicht wird nicht rechtzeitig erzeugt.'

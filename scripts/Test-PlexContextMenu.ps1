@@ -26,6 +26,7 @@ if ($Action -eq 'Play') {
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]122)
 }
 try {
+[void][PlexNative]::ShowWindow($main.Handle,9)
 [void][PlexNative]::SetForegroundWindow($outer[0].Handle)
 [void][PlexNative]::PostMessage($dialog, 123, $list.Handle, [IntPtr](-1))
 $deadline = [DateTime]::UtcNow.AddSeconds(3)
@@ -76,4 +77,5 @@ if ($Action -eq 'Play') {
         }
         [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]$volume, [IntPtr]122)
     }
+    Set-PlexTestMinimized
 }

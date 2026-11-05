@@ -55,7 +55,7 @@ public static class PlexNative {
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string type, string title);
-  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maximum);
@@ -327,6 +327,20 @@ function Get-PlexTestProcess {
     return $process[0]
 }
 
+function Set-PlexTestMinimized {
+    $process = Get-PlexTestProcess
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest
+        if ($main) { break }
+        if ($process.HasExited) { throw 'Testinstanz wurde vor der Minimierung beendet.' }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $main) { throw 'Hauptfenster der Testinstanz fehlt.' }
+    [void][PlexNative]::Query($main.Handle,274,[IntPtr]61472,[IntPtr]::Zero)
+    if (([PlexNative]::WindowStyle($main.Handle,-16) -band 536870912) -eq 0) { throw 'Testinstanz wurde nicht minimiert.' }
+}
+
 function Test-PlexPlaybackLocation([string]$Location) {
     if ($Location -match '^http://127\.0\.0\.1:[0-9]+/stream/[0-9a-f]{48}/audio\.(mp3|aac|m4a)$') { return $true }
     $directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WinampPlexLibrary\playback'
@@ -349,15 +363,30 @@ function Test-PlexMediaWriteLock([string]$Path) {
 
 function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     Add-Type -AssemblyName System.Drawing
-    $rectangle = New-Object PlexNative+Rect
-    if (-not [PlexNative]::GetWindowRect($Window, [ref]$rectangle)) { throw 'Fensterrechteck nicht verfügbar.' }
-    $bitmap = New-Object Drawing.Bitmap(($rectangle.Right - $rectangle.Left), ($rectangle.Bottom - $rectangle.Top))
-    $graphics = [Drawing.Graphics]::FromImage($bitmap)
-    $device = $graphics.GetHdc()
+    $process = Get-PlexTestProcess
+    [uint32]$windowProcess = 0
+    [void][PlexNative]::GetWindowThreadProcessId($Window,[ref]$windowProcess)
+    if ($windowProcess -ne $process.Id) { throw 'Screenshot-Ziel gehört nicht zur Testinstanz.' }
+    $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest
+    if (-not $main) { throw 'Hauptfenster der Testinstanz fehlt.' }
+    $wasMinimized = ([PlexNative]::WindowStyle($main.Handle,-16) -band 536870912) -ne 0
+    $bitmap = $null
     try {
-        if (-not [PlexNative]::PrintWindow($Window, $device, 0)) { throw 'Fenster konnte nicht aufgenommen werden.' }
-    } finally { $graphics.ReleaseHdc($device); $graphics.Dispose() }
-    try { $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
+        if ($wasMinimized) { [void][PlexNative]::ShowWindow($main.Handle,9); Start-Sleep -Milliseconds 200 }
+        $rectangle = New-Object PlexNative+Rect
+        if (-not [PlexNative]::GetWindowRect($Window, [ref]$rectangle)) { throw 'Fensterrechteck nicht verfügbar.' }
+        $bitmap = New-Object Drawing.Bitmap(($rectangle.Right - $rectangle.Left), ($rectangle.Bottom - $rectangle.Top))
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $device = $graphics.GetHdc()
+            try { if (-not [PlexNative]::PrintWindow($Window, $device, 0)) { throw 'Fenster konnte nicht aufgenommen werden.' } }
+            finally { $graphics.ReleaseHdc($device) }
+        } finally { $graphics.Dispose() }
+        $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        if ($bitmap) { $bitmap.Dispose() }
+        if ($wasMinimized) { Set-PlexTestMinimized }
+    }
 }
 
 function Select-PlexFeedbackTrack($Sample) {
@@ -401,4 +430,4 @@ function Select-PlexFeedbackTrack($Sample) {
     return [pscustomobject]@{ List = $list.Handle; View = $view; Outer = $outer[0].Handle }
 }
 
-Export-ModuleMember -Function Get-PlexTestProcess, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Test-PlexMediaWriteLock, Select-PlexFeedbackTrack
+Export-ModuleMember -Function Get-PlexTestProcess, Set-PlexTestMinimized, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Test-PlexMediaWriteLock, Select-PlexFeedbackTrack

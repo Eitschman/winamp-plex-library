@@ -49,6 +49,8 @@ Für separate ADTS-AAC-Dateien benötigt die Laufzeit Windows Media Foundation (
 
 ## Isolierte Laufzeitprüfung
 
+Die Testinstanz startet minimiert. `scripts/Restart-PlexTest.ps1` beendet ausschließlich die über Pfad und Fensterklasse geprüfte Testkopie regulär, leert deren Playlist, übernimmt die Release-DLL und prüft den minimierten Zustand nach dem Start. Auch die Wiederstarts anderer Prüfscripts verwenden diesen Zustand. Nur für erforderliche Sicht- und Maustests wird die Oberfläche eingeblendet. Die Screenshotfunktion stellt anschließend den vorherigen minimierten Zustand wieder her, auch bei einem Ausgabefehler. Die Einfüge- und Kontextmenütests minimieren im `finally`-Pfad.
+
 Das Skript `scripts/Prepare-WinampTest.ps1` erstellt ausschließlich nach ausdrücklicher Freigabe eine getrennte Testkopie. Die Quellinstallation muss explizit angegeben werden; Version und Dateien werden geprüft. Ein bereits vorhandenes Ziel wird abgewiesen.
 
 ```powershell

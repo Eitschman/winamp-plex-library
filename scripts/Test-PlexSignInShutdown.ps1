@@ -71,7 +71,8 @@ try {
         [void][PlexNative]::PostMessage($main.Handle, 16, [IntPtr]::Zero, [IntPtr]::Zero)
         if (-not $process.WaitForExit(5000)) { throw 'Testkopie lässt sich nicht regulär beenden.' }
     }
-    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent)
+    Start-Process -FilePath $testExe -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory (Split-Path $testExe -Parent) -WindowStyle Minimized
+    Set-PlexTestMinimized
     if ((Get-FileHash -LiteralPath $configuration -Algorithm SHA256).Hash -cne $originalHash) { throw 'Abgebrochene Anmeldung verändert die gespeicherte Konfiguration.' }
     Write-Output 'Gespeicherte Konfiguration unverändert; Testkopie neu gestartet.'
 }
