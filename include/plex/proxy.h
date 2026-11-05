@@ -3,6 +3,7 @@
 #include "plex/security.h"
 #include <memory>
 #include <string>
+#include <chrono>
 
 namespace plex {
 struct PlaybackSource {
@@ -22,7 +23,7 @@ struct ProxyStatus {
 // Ein Listener bedient begrenzt viele unabhängige, befristete Wiedergabe-Grants.
 class PlaybackProxy {
 public:
-    explicit PlaybackProxy(PlaybackSource source);
+    explicit PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime = std::chrono::hours(2));
     ~PlaybackProxy();
     PlaybackProxy(const PlaybackProxy&) = delete;
     PlaybackProxy& operator=(const PlaybackProxy&) = delete;

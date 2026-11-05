@@ -352,6 +352,20 @@ int main() {
         bool revoked = false;
         try { fetch(url); } catch (...) { revoked = true; }
         check(revoked, "grant_revoked_after_shutdown");
+        {
+            plex::PlaybackProxy expiring({server, "synthetic-test-token", "/library/parts/1/file.mp3"}, std::chrono::milliseconds(500));
+            check(fetch(expiring.url()).body == fixture.media, "unexpired_grant_streams");
+            const auto hits = fixture.hits.load();
+            std::this_thread::sleep_for(std::chrono::milliseconds(550));
+            check(fetch(expiring.url()).status == 410, "expired_grant_rejected");
+            check(fixture.hits.load() == hits, "expired_grant_never_contacts_upstream");
+            for (const auto lifetime : {std::chrono::milliseconds(0), std::chrono::milliseconds(std::chrono::hours(3))}) {
+                bool rejected = false;
+                try { plex::PlaybackProxy invalid({server, "synthetic-test-token", "/library/parts/1/file.mp3"}, lifetime); }
+                catch (const std::invalid_argument&) { rejected = true; }
+                check(rejected, "invalid_grant_lifetime_rejected");
+            }
+        }
         for (const auto status : {401, 403, 404, 302, 500}) {
             plex::PlaybackProxy failure({server, "synthetic-test-token", "/library/parts/" + std::to_string(status) + "/file.mp3"});
             const auto response = fetch(failure.url());

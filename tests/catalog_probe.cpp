@@ -28,6 +28,7 @@ int main(int count, char** arguments) {
             std::map<std::string, std::vector<std::string>> sample_titles;
             std::map<std::pair<std::string, std::string>, plex::PlexTrack> sample_tracks;
             std::size_t without_artwork = 0, unsupported = 0;
+            std::size_t media_parts = 0, aac_files = 0, aac_codec_parts = 0;
             std::optional<std::size_t> total;
             for (;;) {
                 const auto page = client.page(query);
@@ -38,6 +39,20 @@ int main(int count, char** arguments) {
                     if (!identifiers.insert(track.identifier).second) throw std::runtime_error("inventory_duplicate_track");
                     ++title_counts[track.title];
                     if (plex::track_artwork(track).empty()) ++without_artwork;
+                    // Auch Varianten außerhalb der automatisch gewählten Direct-Play-Version prüfen.
+                    for (const auto& part : track.parts) {
+                        ++media_parts;
+                        auto extension = part.key.substr(part.key.rfind('.') + 1);
+                        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+                        if (part.audio_codec == "aac") ++aac_codec_parts;
+                        if (extension == "aac") {
+                            ++aac_files;
+                            if (!track.title.empty() && track.duration_ms > 30000 && sample_titles[extension].size() < 50) {
+                                sample_titles[extension].push_back(track.title);
+                                sample_tracks.emplace(std::pair{extension, track.title}, track);
+                            }
+                        }
+                    }
                     try {
                         const auto parts = plex::direct_parts(track);
                         const auto format = parts.front().container;
@@ -59,6 +74,7 @@ int main(int count, char** arguments) {
             if (total && identifiers.size() != *total) throw std::runtime_error("inventory_total_mismatch");
             for (const auto& entry : formats) std::cout << "format=" << entry.first << " tracks=" << entry.second << '\n';
             std::cout << "tracks=" << identifiers.size() << " without_artwork_metadata=" << without_artwork << " unsupported=" << unsupported << '\n';
+            std::cout << "all_media_parts=" << media_parts << " aac_files=" << aac_files << " aac_codec_parts=" << aac_codec_parts << '\n';
             if (count == 3) {
                 nlohmann::json samples = nlohmann::json::array();
                 for (auto& format : sample_titles) {

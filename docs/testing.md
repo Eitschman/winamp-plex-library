@@ -80,12 +80,15 @@ Die Zielversion benötigt die dokumentierte `WM_COPYDATA`-Playlistübergabe anst
 
 - [x] Winamp-Testplaylist gespeichert und jede Medienzeile gegen das vollständige eigene Loopback-URL- oder private Sitzungsdateiformat ohne Plex-Tokens geprüft. Alle vier Formatproben mit Winamps aktuellem Fenstertitel verglichen.
 - [x] Nach den FLAC-/OGG-Proben zwei vorbereitete Dateien festgestellt, Testkopie regulär beendet und Entfernung beider Dateien sowie des Sitzungsordners geprüft (`.local/logs/local-media-shutdown.log`).
-- [ ] Abgelaufene lokale Capability und URL nach Plugin-Beendigung abweisen.
+- [x] Grant-Ablauf synthetisch mit verkürzter Laufzeit prüfen: zunächst Medienbytes, danach HTTP 410 ohne Upstream-Zugriff. Die Plugin-Standardeinstellung bleibt zwei Stunden; kein zweistündiger Winamp-Dauertest.
+- [x] Frischen Proxy-Link in der echten Testkopie mit HTTP 206 und 16 Medienbytes bestätigen, regulär beenden, denselben Link mit eindeutigem Verbindungsfehler prüfen (`scripts/Test-PlexProxyShutdown.ps1`).
 - [ ] Fehlende Mediendatei und Verbindungsunterbrechung während des Abspielens.
 - [ ] Prüfen, dass Plex tatsächlich keine Transcoding-Session erzeugt.
 - [ ] Keine anderen Titel oder Konfigurationen der vorhandenen Winamp-Instanz verändern.
 
 Die Formatprüfung besitzt positive Gegenproben mit M4A und MP3 und eine synthetische negative Gegenprobe mit einer unzulässigen Dateiendung. Der Pfadprüfer akzeptiert eigene FLAC-Sitzungsdateien und weist fremde Pfade, Pfadwechsel und angehängte Query-Parameter ab. Die Transporttests prüfen vollständige lokale Bytes, Dateifreigabe, Schreibschutz, private DACL, Größen- und Platzlimits, HTTP-Fehler, abgebrochene Downloads, Bereinigung verwaister markierter Sitzungen und Erhalt aktiver beziehungsweise fremder Sitzungen. Für AAC als eigene Dateiendung fehlt eine reale Probe.
+
+Die gezielte AAC-Suche hat alle 20.782 Titel und sämtliche 20.782 gelieferten Medienparts der ausgewählten Bibliothek geprüft. Keine Part-Datei besitzt die Endung `.aac`; 77 Parts melden AAC als Audiocodec. Der Bericht `.local/logs/catalog-aac-search.log` enthält ausschließlich Zähler. Zusätzliche Varianten werden unabhängig vom automatisch ausgewählten Direct-Play-Medium erfasst. Der Bestand liefert damit keinen separaten AAC-Dateinachweis.
 
 ### Bibliotheken und Erweiterungen
 

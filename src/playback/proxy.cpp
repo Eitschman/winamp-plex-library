@@ -47,7 +47,7 @@ PlaybackSource::~PlaybackSource() {
 struct PlaybackProxy::State {
     struct Grant {
         PlaybackSource source;
-        std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::now() + std::chrono::hours(2);
+        std::chrono::steady_clock::time_point expires;
     };
     std::mutex grants_mutex;
     std::unordered_map<std::string, std::shared_ptr<Grant>> grants;
@@ -57,6 +57,7 @@ struct PlaybackProxy::State {
     std::array<std::thread, 4> workers;
     std::string authority;
     std::string local_url;
+    std::chrono::milliseconds lifetime{std::chrono::hours(2)};
     std::atomic<DWORD> upstream{0};
     std::atomic<DWORD> error{0};
     std::atomic<const char*> rejection{nullptr};
@@ -75,7 +76,7 @@ struct PlaybackProxy::State {
             if (entry->second->expires <= now) entry = grants.erase(entry); else ++entry;
         }
         if (grants.size() >= 10000) throw std::invalid_argument("grant_limit");
-        grants.emplace(capability, std::make_shared<Grant>(Grant{std::move(source)}));
+        grants.emplace(capability, std::make_shared<Grant>(Grant{std::move(source), now + lifetime}));
         return "http://" + authority + capability;
     }
 
@@ -191,8 +192,10 @@ struct PlaybackProxy::State {
     }
 };
 
-PlaybackProxy::PlaybackProxy(PlaybackSource source) : state_(std::make_unique<State>()) {
+PlaybackProxy::PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime) : state_(std::make_unique<State>()) {
     auto& state = *state_;
+    if (lifetime <= std::chrono::milliseconds::zero() || lifetime > std::chrono::hours(2)) throw std::invalid_argument("grant_lifetime");
+    state.lifetime = lifetime;
     // Auch Aufrufer außerhalb der UI müssen die Origin-Sicherheitsregeln einhalten.
     if (!state.stop) throw std::runtime_error("stop_event");
     WSADATA socket_data{};
