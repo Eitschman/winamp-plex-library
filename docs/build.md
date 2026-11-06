@@ -1,29 +1,29 @@
-# Build, SDK und Installation
+# Build, SDK and installation
 
-## Voraussetzungen
+## Prerequisites
 
-- Windows 10 oder 11, x64-Host mit Unterstützung für x86-Anwendungen.
-- Visual Studio 2022 oder Build Tools 2022, C++-Werkzeuge für x86/x64.
-- Windows 10/11 SDK und CMake ab 3.24. Die VS-Komponente für CMake genügt.
-- 7-Zip zum Extrahieren des SDK-Archivs, ohne dessen Installer auszuführen.
-- Netzwerkzugriff auf den historischen Nullsoft-Download, das veröffentlichte WACUP-SDK-Verzeichnis und GitHub für die prüfsummengesicherten Abhängigkeiten.
+- Windows 10/11 with x86 application support.
+- Visual Studio 2022 or Build Tools 2022 with C++ x86/x64 tools.
+- Windows SDK and CMake 3.24 or later; the Visual Studio CMake component is sufficient.
+- 7-Zip to extract the SDK without running its installer.
+- Access to the historical Nullsoft download, published WACUP SDK directory and GitHub for checksum-pinned dependencies.
 
-Im aktuellen Lauf wurden mit ausdrücklicher Freigabe Build Tools 2022 installiert. Der verwendete Compiler meldet MSVC 19.44.35229. Der CMake-Lauf wählte Windows SDK 10.0.19041.0. Diese Versionsangaben sind Testbefunde und keine zusätzlichen Mindestanforderungen an spätere Entwicklerinstallationen.
+The validated development environment uses MSVC 19.44.35229 and Windows SDK 10.0.19041.0. These are observed versions, not additional minimum requirements.
 
-## SDK beschaffen
+## Obtain SDK headers
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Fetch-WinampSdk.ps1 `
   -SevenZip "C:\Program Files\7-Zip\7z.exe"
 ```
 
-Der angegebene 7-Zip-Pfad ist vom Entwickler zu prüfen. Das Skript lädt `WA5.55_SDK.exe` von der historischen HTTPS-Quelle, prüft die SHA-256 und extrahiert `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `Winamp/ipc_pe.h`, `gen_tray/WINAMPCMD.H` sowie die Wasabi-/Agave-Header für Album-Art nach `.local/sdk`. Zusätzlich lädt es den unveränderten Skin-Schnittstellenheader von 2016 nach `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. CMake prüft die verwendeten Header einzeln, für Album-Art gemäß `cmake/WinampArtworkSdk.cmake`. Vorhandene Zielordner werden nicht überschrieben. Quellen, Hashes und ABI-Vertrag stehen in [winamp-sdk.md](winamp-sdk.md).
+Verify your own 7-Zip path. The script downloads `WA5.55_SDK.exe` over HTTPS, checks SHA-256 and extracts `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `Winamp/ipc_pe.h`, `gen_tray/WINAMPCMD.H` and the Wasabi/Agave album-art headers into `.local/sdk`. It separately downloads the unchanged 2016 skin header into `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. Existing target directories are rejected. CMake checks each required header, including the list in `cmake/WinampArtworkSdk.cmake`. Sources, checksums and ABI details are in [winamp-sdk.md](winamp-sdk.md).
 
-Ein manuell entpacktes SDK kann mit `-DWINAMP_SDK_ROOT=C:/Pfad/zum/SDK` angegeben werden. Der getrennte Skin-Header wird mit `-DWINAMP_SKIN_SDK_ROOT=C:/Pfad/zum/SkinSDK` angegeben. Die Prüfsummen müssen zu den untersuchten Fassungen passen. Andere Fassungen erfordern eine gesonderte ABI-Prüfung und bewusste Änderung des Buildvertrags.
+For manually extracted files, use `-DWINAMP_SDK_ROOT=C:/path/to/SDK` and `-DWINAMP_SKIN_SDK_ROOT=C:/path/to/SkinSDK`. Checksums must match the inspected versions. Other revisions require separate ABI review and an explicit build-contract change.
 
-## Konfiguration und Build
+## Configure, build and test
 
-In einer Entwickler-PowerShell oder mit verfügbarem `cmake`:
+In a developer PowerShell, or with CMake on PATH:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
@@ -33,67 +33,77 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Debug und Release wurden mit MSVC x86 gebaut; 13 CTest-Suiten bestehen jeweils in Debug und Release. Der Statusdialog-Test verwendet die originale Dialogprozedur mit kontrollierten Transportzuständen. Der Callback-Test hält WinHTTP-Abschlussmeldungen gezielt fest und prüft die sichere Freigabereihenfolge. Der Aufräumtest prüft nicht blockierende Übergabe, begrenzte Warteschlange und kontrolliertes Beenden auf einem eigenen COM-Thread. Die Laufzeittests im echten Winamp verwenden die Release-DLL; ein erfolgreicher Debug-Testhostlauf ist kein eigener Nachweis für jeden Winamp-Skin. Prüfprotokolle: `.local/logs/build-view-reaper-debug.log`, `.local/logs/ctest-view-reaper-debug.log`, `.local/logs/build-view-reaper-current-release.log` und `.local/logs/ctest-view-reaper-release.log`.
+The validated MSVC x86 Debug and Release configurations each pass 13 CTest suites. Tests cover the original dialog procedure, controlled transport failures, WinHTTP callback teardown and bounded background view cleanup on a COM-initialized thread. Native Winamp tests use the Release DLL; a Debug host test does not validate skins.
 
-Das separate Buildverzeichnis unter `.local/repro-build` bestätigt Konfiguration mit erneut geladenem JSON-Archiv, SDK-Prüfsummen, x86-Release-Build und 13 erfolgreiche CTest-Suiten. Es verwendet keine Artefakte des regulären `build`-Verzeichnisses. Nachweise: `.local/logs/repro-configure.log`, `.local/logs/repro-view-reaper-build.log` und `.local/logs/repro-view-reaper-ctest.log`. Das belegt den reproduzierbaren Buildablauf, keine Bitidentität der DLLs.
+A separate `.local/repro-build` directory also passed SDK verification, a freshly fetched JSON dependency, Release compilation and all 13 suites without using regular build artifacts. Evidence includes `repro-configure.log`, `repro-view-reaper-build.log` and `repro-view-reaper-ctest.log` under ignored local logs. This validates the build procedure, not bit-for-bit DLL reproducibility.
 
-Der Konfigurationsschritt lädt nlohmann/json 3.12.0 über CMake FetchContent. Die Archiv-Prüfsumme ist im Projekt festgelegt. Der Build benötigt keine Plex-Zugangsdaten und keinen Plex-Server. Alle automatisierten Fixtures verwenden erfundene Tokens und Loopback.
+CMake FetchContent obtains checksum-pinned nlohmann/json 3.12.0. Builds and automated tests require neither Plex credentials nor a server. Fixtures use invented tokens and loopback.
 
-Die DLL liegt im Release-Build unter `build/Release/ml_plex.dll`, im Debug-Build unter `build/Debug/ml_plex.dll`. Keine nachträgliche Umbenennung ist erforderlich. Testprogramme und `.lib`-Dateien werden nicht in Winamp installiert. CMake enthält keinen Installationsschritt in eine bestehende Winamp-Installation.
+Outputs are `build/Release/ml_plex.dll` and `build/Debug/ml_plex.dll`. Do not install test executables or import libraries into Winamp. CMake does not install into an existing Winamp installation.
 
-Die Release-DLL benötigt die Microsoft-C++-Laufzeit für **x86**, auch unter 64-Bit-Windows. Die tatsächliche PE-Prüfung mit `dumpbin /headers /exports /dependents build/Release/ml_plex.dll` bestätigt x86, den ungeschmückten Export `winampGetMediaLibraryPlugin` und die Importe `MSVCP140.dll` und `VCRUNTIME140.dll` (`.local/logs/plugin-release-pe.log`). Laut [Microsoft](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/) muss das x86-Redistributable mindestens so aktuell wie die verwendeten Build Tools sein. Debug-DLLs sind für die Entwicklungsumgebung vorgesehen. Es erfolgt keine automatische Runtime-Installation.
+The Release DLL requires the current Microsoft C++ runtime for **x86**, including on 64-bit Windows. PE inspection with `dumpbin /headers /exports /dependents build/Release/ml_plex.dll` confirmed x86, the undecorated `winampGetMediaLibraryPlugin` export and imports of `MSVCP140.dll` and `VCRUNTIME140.dll` (`plugin-release-pe.log`). [Microsoft's runtime guidance](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/) requires a redistributable at least as recent as the build tools. Debug DLLs are for development environments. No runtime installer is run automatically.
 
-Unter Linux lässt sich der plattformunabhängige Sicherheitscode mit CMake und CTest prüfen. Die Windows-DLL wird dort nicht mit MSVC gebaut. Ein Linux-Test ersetzt weder den x86-Build noch einen Winamp-Lauf.
+Linux can run the platform-independent security tests through CMake/CTest. It does not build the MSVC Windows DLL or replace native integration testing.
 
-Für separate ADTS-AAC-Dateien benötigt die Laufzeit Windows Media Foundation (`mfplat.dll` und `mfreadwrite.dll`). Bei Windows-N-Ausgaben können diese Medienkomponenten fehlen; die AAC-Vorbereitung meldet dann einen Fehler. Die DLLs werden erst bei diesem Vorgang aus System32 geladen. AAC wird ohne Neucodierung in M4A verpackt. FFmpeg ist keine Plugin-Abhängigkeit; es dient lokal ausschließlich zum Erzeugen und unabhängigen Prüfen synthetischer Testdateien. Bei `BUILD_TESTING=ON` entstehen zusätzlich `aac_remux_tests.exe` und `aac_remux_probe.exe`.
+Separate ADTS-AAC preparation requires Windows Media Foundation, specifically `mfplat.dll` and `mfreadwrite.dll`. Missing components, including on Windows N, produce an error. These DLLs are loaded only for AAC and only from System32. AAC is repackaged without re-encoding. FFmpeg is a local test-data generator and independent validator, not a plugin dependency. With `BUILD_TESTING=ON`, `aac_remux_tests.exe` and `aac_remux_probe.exe` are also built.
 
-## GitHub Actions und Buildpaket
+## GitHub Actions and packages
 
-Der Workflow `.github/workflows/build.yml` läuft bei Pushes auf `main`, Pull Requests und manuell. Zwei getrennte Windows-2022-Jobs beschaffen die Original-SDK-Header mit Hashprüfung und bauen mit Visual Studio 2022 für Win32, jeweils in Debug und Release. Jeder Job führt CTest mit synthetischen Daten aus. Plex-Zugangsdaten, eine Winamp-Installation und persönliche Konfiguration sind dafür nicht erforderlich. Die Actions-Versionen sind an vollständige Commit-SHAs gebunden; der Workflow besitzt ausschließlich `contents: read` und speichert keine Git-Zugangsdaten im Checkout.
+`.github/workflows/build.yml` runs on pushes to main, pull requests and manual dispatch. Separate Windows 2022 jobs obtain checksum-verified headers and build Win32 Debug and Release with Visual Studio 2022, then run CTest. They require no Plex account, personal configuration or Winamp installation. Actions are pinned to full commit SHAs. Build permissions are `contents: read`, and checkout does not persist Git credentials.
 
-Der Release-Job prüft zusätzlich `tests/packaging_tests.ps1` und erstellt mit `scripts/Package-Plugin.ps1` das Artefakt `winamp-plex-library-win32-release`. Es enthält ausschließlich `ml_plex.dll`, `INSTALL.md`, die Projektlizenz, Fremdhinweise und `licenses/nlohmann-json-LICENSE.MIT`. Der Paketprüfer weist fehlende Bestandteile, ungültige PE-Dateien, falsche Architektur und ein vorhandenes Zielverzeichnis ab. SDK-Dateien, MSVC-Runtime, Testprogramme und lokale Einstellungen werden nicht beigepackt. Die Microsoft-x86-Runtime wird nach Installationsanleitung separat bezogen.
+Release validation also runs `tests/packaging_tests.ps1`. `scripts/Package-Plugin.ps1` produces the `winamp-plex-library-win32-release` artifact containing exactly:
 
-Lokal nach einem Release-Build:
+- `ml_plex.dll`
+- `INSTALL.md`
+- `LICENSE`
+- `THIRD-PARTY-NOTICES.md`
+- `licenses/nlohmann-json-LICENSE.MIT`
+
+Packaging rejects missing files, invalid PE data, wrong architecture and existing output directories. SDK files, Microsoft runtimes, test programs and local settings are excluded. Obtain the Microsoft x86 runtime separately.
+
+After a Release build:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/packaging_tests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Package-Plugin.ps1
 ```
 
-Das lokale Standardziel `.local/package` muss neu sein. Für einen weiteren Lauf mit bestehendem Paket einen anderen konkreten `-OutputDirectory` angeben. CI verwendet `build/package`, damit das Artefakt nicht unter einem versteckten Verzeichnis liegt. Actions stellt das Paket als ZIP für 30 Tage und CTest-Protokolle für 14 Tage bereit. Der Release-Workflow verarbeitet ausdrücklich gepushte Tags wie `v0.1.0`: Version und Release-Hinweise müssen passen; erst nach dem wiederverwendeten Buildworkflow veröffentlicht er ZIP und SHA-256-Datei. Dazu gehört ein prüfsummengesicherter Gitleaks-Scan der gesamten Historie mit redigierter Ausgabe. Es gibt keine automatische Installation. Ein erfolgreicher CI-Lauf belegt Build und automatisierte Tests; Winamp-Oberfläche und echte Plex-Wiedergabe bleiben eigenständige Integrationsprüfungen.
+The default `.local/package` destination must not already exist. For another package, specify a distinct explicit `-OutputDirectory`. CI uses `build/package`. Build artifacts are retained for 30 days and CTest logs for 14 days.
 
-## Isolierte Laufzeitprüfung
+The release workflow handles explicitly pushed tags such as `v0.1.0`. Version and release notes must match. It reuses the build workflow and publishes ZIP plus SHA-256 only after validation, including a checksum-pinned, redacted full-history Gitleaks scan. There is no automatic installation. CI validates builds and automated tests; Winamp rendering and real Plex playback remain separate checks.
 
-Die Testinstanz startet minimiert. `scripts/Restart-PlexTest.ps1` beendet ausschließlich die über Pfad und Fensterklasse geprüfte Testkopie regulär, leert deren Playlist, übernimmt die Release-DLL und prüft den minimierten Zustand nach dem Start. Auch die Wiederstarts anderer Prüfscripts verwenden diesen Zustand. Nur für erforderliche Sicht- und Maustests wird die Oberfläche eingeblendet. Die Screenshotfunktion stellt anschließend den vorherigen minimierten Zustand wieder her, auch bei einem Ausgabefehler. Die Einfüge- und Kontextmenütests minimieren im `finally`-Pfad.
+## Isolated runtime tests
 
-Das Skript `scripts/Prepare-WinampTest.ps1` erstellt ausschließlich nach ausdrücklicher Freigabe eine getrennte Testkopie. Die Quellinstallation muss explizit angegeben werden; Version und Dateien werden geprüft. Ein bereits vorhandenes Ziel wird abgewiesen.
+The test instance starts minimized. `scripts/Restart-PlexTest.ps1` checks the exact process path and window class, stops only the isolated copy normally, clears its playlist, copies the Release DLL and verifies minimized startup. Other test restarts use the same behavior. Reveal windows only for required visual or mouse checks; screenshot helpers restore minimization even on capture failure. Context-menu and insertion tests also minimize in their cleanup paths.
+
+`scripts/Prepare-WinampTest.ps1` creates a separate copy only with explicit authorization. Supply the actual source installation; its version and required files are checked, and an existing destination is rejected.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Prepare-WinampTest.ps1 `
-  -WinampDirectory "C:\tatsächlich-geprüfter-Pfad\Winamp"
+  -WinampDirectory "C:\verified-installation-path\Winamp"
 ```
 
-Die Kopie liegt unter `.local/winamp-test`. Ihre `paths.ini` verwendet ein eigenes `settings`-Verzeichnis und die Fensterklasse `WinampPlexTest`. Programmdateien, Systemkomponenten, Audio-Plugins sowie `gen_ff.dll`, `freeform`, vorhandene Skins und Sprachpakete unter `Lang` werden für die Skin- und Sprachprüfung übernommen. Die vorhandene Benutzerkonfiguration wird nicht kopiert. Sprache und Skin ausschließlich in der Testkopie auswählen. Keine Dateizuordnungen einrichten und keinen Test als Administrationsbedarf interpretieren.
+The copy resides in `.local/winamp-test`. Its `paths.ini` selects a separate `settings` directory and window class `WinampPlexTest`. It includes host files, audio plugins, `gen_ff.dll`, freeform components, installed skins and language packs. Existing user configuration is not copied. Change skins and languages only in the test copy; do not create file associations.
 
-Der Testhost setzt ausschließlich für seinen Prozess `WINAMP_PLEX_CONFIG_DIRECTORY` auf einen absoluten temporären Pfad. Dadurch liest er keine echte Plugin-Verbindung und sendet keine echten Plex-Anfragen. Relative Umleitungen werden abgewiesen. Im regulären Betrieb bleibt die DPAPI-Datei unter `%LOCALAPPDATA%/WinampPlexLibrary`.
+The SDK test host sets `WINAMP_PLEX_CONFIG_DIRECTORY` only for its own process to an absolute temporary directory. It neither reads the real connection nor sends real Plex requests. Relative overrides are rejected. Normal configuration remains under `%LOCALAPPDATA%/WinampPlexLibrary`.
 
-## Manuelle Installation
+## Manual installation and removal
 
-1. Die tatsächliche `winamp.exe` lokalisieren und deren Dateiversion prüfen.
-2. Das tatsächlich verwendete Plugin-Verzeichnis prüfen, zum Beispiel anhand der geladenen `gen_ml.dll`. Nicht allein aus einem vermuteten Standardpfad ableiten.
-3. Winamp regulär beenden.
-4. Nur `ml_plex.dll` neben `gen_ml.dll` kopieren. Eine vorhandene gleichnamige Datei nicht ungeprüft überschreiben.
-5. Winamp starten, unter Einstellungen → Plugins → Media Library den Eintrag prüfen und den Plex-Knoten öffnen.
+1. Locate the actual `winamp.exe` and verify its version.
+2. Identify the Plugins directory actually in use, for example through loaded `gen_ml.dll`; do not assume a default path.
+3. Exit Winamp normally.
+4. Preserve an existing DLL, then manually copy only `ml_plex.dll` next to `gen_ml.dll`.
+5. Start Winamp, inspect Preferences → Plug-ins → Media Library, and open Plex.
 
-Im aktuellen Rechner wurde die vorhandene Installation unter `C:\Program Files (x86)\Winamp` mit entsprechendem `Plugins`-Verzeichnis tatsächlich gefunden. Sie wurde nicht verändert. Diese Beobachtung ist keine universelle Installationsvorgabe.
+A local development observation of an installation path is not an installation rule for other systems. Replacing a normal installation requires explicit authorization.
 
-## Deinstallation und Fehlerdiagnose
+To remove the plugin, exit Winamp and delete only its installed DLL. Its DPAPI file can be removed separately. Do not perform broad cleanup of Plugins, AppData or Plex directories.
 
-Winamp regulär beenden und die konkret installierte `ml_plex.dll` entfernen. Die eigene Datei `%LOCALAPPDATA%/WinampPlexLibrary/connection.dpapi` ist vom Benutzer getrennt löschbar. Keine pauschalen Löschungen in `Plugins`, `AppData` oder Plex-Verzeichnissen ausführen.
+## Troubleshooting
 
-- DLL wird nicht angezeigt: x86 prüfen, `gen_ml.dll` prüfen, Exportnamen prüfen, erforderliche VC-Runtime prüfen.
-- Plugin wird nicht geladen: SDK-Prüfsummen und eigene DPAPI-Konfiguration prüfen. Keine fremde Konfigurationsdatei als Zugang übernehmen.
-- HTTPS schlägt fehl: angebotene Plex-Verbindung und Zertifikatsnamen prüfen. Zertifikatsprüfung nicht abschalten.
-- Browseranmeldung läuft ab: Dialog schließen und neue Anmeldung starten.
-- Wiedergabe-URL funktioniert nach Neustart nicht: Grants sind pro Prozess befristet. Eine gespeicherte Loopback-URL ist kein dauerhafter Plex-Link.
-- Streaming antwortet, aber kein Audio: Format und tatsächliches Winamp-Input-Plugin prüfen; keine Decoderkompatibilität aus HTTP 200 ableiten.
+- DLL absent: check x86 architecture, `gen_ml.dll`, export name and required Visual C++ runtime.
+- Initialization failure: check SDK hashes and the plugin's own DPAPI configuration. Do not borrow another configuration as an access method.
+- HTTPS failure: check the advertised Plex connection and certificate hostname. Never disable certificate validation.
+- Browser authorization expired: close the dialog and start a new sign-in.
+- Saved playback URL fails after restart: grants are session-bound; add the track again.
+- HTTP succeeds but no audio plays: verify the format and actual Winamp input decoder. HTTP 200 alone does not establish decoder compatibility.

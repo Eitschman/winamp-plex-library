@@ -1,690 +1,194 @@
-# Winamp Plex Library: Anforderungen und Arbeitsstand
-
-Dieses PRP wird als Arbeitsdokument gepflegt. Der konkrete Prüfstand steht in `docs/testing.md`, Schnittstellen und Quellen in `docs/research.md` und `docs/winamp-sdk.md`.
+# Winamp Plex Library: requirements and development plan
 
-## Verbindliche Projektentscheidungen
+This is a maintained working document, not an immutable copy of the initial prompt. Evidence is recorded in [testing](../docs/testing.md), and contracts/sources in [research](../docs/research.md) and [Winamp interfaces](../docs/winamp-sdk.md). Public project documentation is written in English. German and English remain supported UI languages.
 
-- Unterbrochene vollständige HTTP-Medienantworten werden ausschließlich bytegenau aus derselben Datei fortgesetzt: bekannte Länge, starker identischer ETag, identischer Server und Pfad, geprüfter HTTP-206-Bytebereich und Restlänge. Höchstens drei Folgeabrufe; kein Format-, Decoder- oder Serverwechsel. Initiale Seeking-Antworten mit HTTP 206 benötigen einen eigenen weiteren Nachweis. Numerische Fehlerdaten bleiben nach dem nächsten erfolgreichen Titel erhalten. Ein solcher Wiederanlauf ist am echten Winamp bis zum natürlichen Titelende nachgewiesen; dauerhafte Netzwerkausfälle bleiben Fehler.
-- Die Winamp-Playlist und laufende Titelanzeige enthalten Künstler und Titel. Die Metadatenfelder Titel, Künstler und Albumkünstler bleiben getrennt.
-- Vor Veröffentlichung werden Quellstand, Historie, Logs und Paketinhalt auf Geheimnisexposition geprüft. Der CI-Workflow wiederholt einen redigierten Historien-Scan; Zugangsdaten und lokale Prüfberichte werden nicht veröffentlicht.
-
-- Jeder Titel muss ohne künstliche Zeitbegrenzung bis zu seinem regulären Ende laufen. Ein voller Decoderpuffer und Pause dürfen die Verbindung nicht abbrechen. Native Nachweise beobachten echte MP3-/M4A-Titel ohne Seeking bis zum natürlichen Stop; getrennte Tests prüfen Rückstau, Abbruch beim Beenden und die Frist unvollständiger HTTP-Anfragen.
-- Die Plex-Anmeldung erfolgt wie bei Plexa im Browser über den Plex-PIN-Anmeldevorgang. Der Benutzer gibt sein Passwort ausschließlich bei Plex ein. Eine manuelle Token-Eingabe gehört nicht zum regulären Ablauf.
-- Einstellungen öffnen zunächst ohne Browseranmeldung. Die normale Ansicht enthält Anmeldung, Server und Musikbibliothek; feste Verbindungswege und eine manuelle HTTPS-Adresse stehen unter „Erweitert“. Erreichbare lokale HTTPS-Verbindungen werden vor Fernzugriff und Relay gewählt. Der tatsächliche Zugangsweg wird angezeigt.
-- Die Sprache folgt ausschließlich dem aktiven Winamp-Sprachpaket. Es gibt weder in der Bibliotheksansicht noch in den Einstellungen eine eigene Sprachauswahl. Deutsch und Englisch sind enthalten.
-- Die Bibliothekskopfzeile benennt die Musikbibliothek; eine Dropdownauswahl erscheint nur bei mehreren Bibliotheken. Hauptansichten wiederholen den Baumtitel nicht. Kontextüberschrift und „Zurück“ gehören nur zu Unteransichten; Seitenwechsel heißen „Vorherige Seite“ und „Nächste Seite“.
-- Plexa dient als Referenz für Anmeldung, Serverauswahl und Musikzugriff. Winamp übernimmt die Wiedergabe. Alexa und ein dauerhaft laufender externer Dienst gehören nicht zur Architektur.
-- Plex-Tokens bleiben technisch für API-Zugriffe erforderlich. Sie werden nach der Browserfreigabe vom Plugin bezogen, mit Windows DPAPI gespeichert und ausschließlich als HTTP-Header an den ausgewählten, geprüften Server übertragen.
-- Winamp erhält zeitlich begrenzte Loopback-URLs für MP3 und vorhandene M4A-Dateien. FLAC, OGG und separate ADTS-AAC-Dateien benötigen privaten lokalen Dateizugriff und werden vor der Playlistübergabe im Hintergrund vorbereitet. AAC erhält ohne Neucodierung einen M4A-Container. Beide Wege verwenden TLS-Prüfung und enthalten keine Plex-Tokens in Playlistpfaden.
-- Wartende Streaming-Titel besitzen innerhalb derselben Winamp-Sitzung prozessgebundenen Zugriff auch nach Capability-Ablauf. Die Identität stammt aus der Windows-TCP-Prozesszuordnung, nicht aus HTTP-Headern. Die zweistündige Nutzbarkeit exportierter Links für fremde Prozesse wird dadurch nicht verlängert. Ablaufprüfungen werden kurz provoziert; kein zweistündiger Echtzeitlauf.
-- Laufzeittests erfolgen in einer ausdrücklich freigegebenen, getrennten Winamp-Testkopie. Die vorhandene Installation und ihre Konfiguration werden nicht verändert. Die Installation der VS-2022-Build-Tools ist freigegeben.
-- Die Testkopie startet und bleibt minimiert. Nur erforderliche Sicht- und Maustests blenden sie kurz ein und minimieren danach wieder. Abspieltests erfolgen möglichst stumm und werden anschließend gestoppt.
-- Persönliche Serveradressen, Zugangsdaten und API-Antworten mit privaten Inhalten gehören nicht in dieses Dokument oder das Repository.
-
-## Nachgewiesener Arbeitsstand
-
-- Implementiert und getestet: MSVC-x86-Release-Build, SDK-basierter Plugin-Export, Plex-Knoten und native Ansicht, reguläres Beenden und Neustarten der Testkopie.
-- Implementiert und getestet: Plex-Browseranmeldung mit bestätigter Freigabe, HTTPS-Serverprüfung, Musikbibliotheksabfrage und DPAPI-Speicherung.
-- Implementiert und mit synthetischen Daten getestet: HTTP-Transport, Loopback-Proxy, Bereiche für Seeking, Abbruch, URL-Sicherheitsprüfungen und Fehlerstatus.
-- Ansichtsworker werden nach Abbruch kontrolliert im Hintergrund freigegeben. Der echte Ansichtswechsel bei hängendem TLS benötigt zwei Millisekunden; 100 native Wechsel bestehen die unveränderten Ressourcengrenzen. 100 SDK-Ladezyklen sowie 13 Testsuiten in Debug, Release und separatem Release-Build bestehen. Einzelne noch nicht herstellbare externe Zustände bleiben in `docs/testing.md` offen.
-- Implementiert und in Winamp 5.9.2 Build 10042 getestet: echte Plex-MP3-Wiedergabe über den lokalen Proxy, Seeking auf zehn Sekunden, Länge und Plex-Titel in der tokenfreien Winamp-Playlist. Verwendet werden die dokumentierte `WM_COPYDATA`-Playlistübergabe, der Titel-Hook und der Play-Befehl des SDK. Unbekannte ABI-Felder werden nicht ergänzt.
-- MP3, M4A, FLAC und OGG bestehen Fortschritt, Laufzeit, Seeking und Plex-Titelvergleich mit echten Medien. Synthetisches ADTS-AAC besteht Laufzeit und Seeking über denselben privaten Vorbereitungsweg; dessen Audiobitstream bleibt unverändert. Ein echter Plex-ADTS-Titel und weitere AAC-Profile bleiben offen. Der lokale Dateizugriff ist auf 512 MiB je Datei und 2 GiB insgesamt begrenzt. Ein reguläres Beenden der Testkopie entfernt die vorbereiteten Dateien und ihren Sitzungsordner. Weitere Netzwerkfehler benötigen eigene Prüfungen.
-- Implementiert: typisierte Bibliotheksabfragen, Pagination, Suche, Sortierung, virtuelle Tabellen, Album-/Mehrfachübergabe, Plex-Playlists und begrenzter Metadaten-Cache. Künstler → Alben → Titel → Winamp-Playlist und vier Navigationsansichten sind mit realen Daten geprüft; weitere Nachweise stehen in `docs/testing.md`.
-- Die Darstellung verwendet Winamps Skin-Engine und ist in Classic, Winamp Modern, Bento und Big Bento visuell geprüft. Es gibt keine eigene Player-Steuerleiste. Doppelklick und Kontextmenü übergeben die Auswahl an Winamp, dessen vorhandene Bedienelemente Wiedergabe, Pause, Stop und Seeking übernehmen.
-- Albumcover sind im Hintergrund geladen und am realen Album „Grand Serpent Rising“ mit 13 Titeln visuell geprüft. Titel übernehmen vorhandene Albumcover über `parentThumb`. Fehlende Bilder sind synthetisch und an einem echten Titel einschließlich positiver Bild-Gegenprobe geprüft. Die Titelansicht und beide Coverfelder des Big-Bento-Players zeigen die zugeordneten Bilder; die Darstellung wurde tatsächlich angesehen.
-- Persönliche Titelbewertungen lassen sich über das native Kontextmenü setzen und entfernen. Die Tabelle zeigt den zurückgelesenen Serverwert. Der freigegebene echte Testtitel wurde geändert und wiederhergestellt. Automatische Timeline-Meldungen sind für tatsächliches Abspielen, Pause, Fortsetzen, Seeking und Stop über die Plex-Sitzungsliste nachgewiesen. Ein reguläres Titelende erhöht den Wiedergabezähler und erzeugt einen neuen Verlaufseintrag im geprüften Ablauf. Weitere Format-, Fehler- und Bedienungstests bleiben erforderlich. Die Testplaylist enthält keine alten Versuche oder doppelten Testalben. Abspieltests erfolgen möglichst stumm und werden danach gestoppt.
-- Zusätzliches späteres Kompatibilitätsziel ist WACUP. Die Host-Anbindung bleibt von Plex-Client und Transport getrennt. Die laufende Entwicklung und ihre verbindlichen Integrationsnachweise richten sich zunächst gegen Winamp 5.9.2 Build 10042. WACUP ist ohne eigene Laufzeitprüfung keine zugesicherte Zielversion.
-
-## 1. Projektziel
-
-Entwickle ein natives Media-Library-Plugin für den klassischen Winamp unter Windows.
-
-**Projektname:** Winamp Plex Library  
-**Plugin-DLL:** `ml_plex.dll`  
-**Zielplattform:** Windows 10/11, x86 (32-Bit)  
-**Zielversion:** Winamp 5.9.2 Build 10042 (x86), 26.04.2023  
-**Programmiersprache:** C++17 oder neuer, sofern mit dem SDK kompatibel  
-**Buildsystem:** CMake mit MSVC  
-**Ziel:** Vollständig nutzbare Integration eines Plex Media Servers in die klassische Winamp-Medienbibliothek.
+## Binding project decisions
 
-Die Anwendung soll zunächst ausschließlich privat eingesetzt werden. Eine spätere Open-Source-Veröffentlichung auf GitHub soll ohne größere Umstrukturierung möglich sein.
+- Tracks must play to their natural end without an artificial time limit. Decoder backpressure and pause must not terminate a stream. Native natural-end tests are separate from seeking, backpressure, shutdown and incomplete-request timeout tests.
+- Interrupted full media GETs may resume byte-exactly from the same file, with known length, a strong identical ETag, the same server/path, exact HTTP 206 range and remaining length. At most three follow-up requests are allowed. No alternate format, decoder or server is selected on failure. Initial HTTP 206 seeking responses require separate resumption evidence.
+- Numeric failure history survives recovery and subsequent healthy playback. A real interruption/resumption reached natural end; persistent outages remain errors.
+- The playlist/current display contains artist and title. Title, artist and albumartist metadata stay separate.
+- Plexa is the behavioral reference for browser sign-in, discovery and music access. Use Plex's strong PIN flow; passwords are entered only at Plex. Manual token input is not a normal workflow.
+- Settings open without launching sign-in. Normal settings contain sign-in, server and library selection. Fixed routes and custom HTTPS addresses belong under Advanced. Automatic routing prefers reachable local HTTPS, direct remote access, then relay, and displays the actual route.
+- Language comes only from Winamp's active language pack. There is no plugin language selector or saved language preference.
+- The library header identifies the music library. Only multiple libraries require a dropdown. Root views do not repeat the tree title. Context headings and Back belong to subviews; paging uses Previous page and Next page.
+- Winamp supplies playback controls. No separate player toolbar, Alexa endpoint or permanent external service is included. Home Assistant remote control is optional future work, not an acceptance requirement.
+- Tokens are still technically required for API access. The plugin obtains them after browser approval, encrypts them with Windows DPAPI and sends them only as headers to the selected verified server.
+- MP3 and existing M4A use expiring loopback URLs. FLAC, OGG and separate ADTS-AAC use private files prepared in the background before handoff. AAC changes container to M4A without re-encoding. Neither path exposes tokens in playlists.
+- Queued streaming tracks retain same-process session access after exported capabilities expire, verified through Windows TCP ownership rather than HTTP assertions. Foreign-link validity stays two hours. Provoke expiry with short fixtures; do not run a two-hour waiting test.
+- Source, history, logs and packages must be checked for secret exposure before publication. CI repeats a redacted history scan. Access data, private responses and local audit reports are not published.
+- Runtime tests use the explicitly authorized separate Winamp copy. Build Tools 2022 installation was authorized. The normal installation/configuration is not a test target. The prior DLL replacement was a one-time authorization.
+- Today's automated playback tests must be muted and in the background. Keep the test host minimized; reveal briefly only for necessary visual/mouse checks, then minimize. Stop and clean its playlist afterwards.
+- A bounded streaming buffer is authorized to decouple PMS downloading from decoder consumption. Preserve authentication, TLS, byte identity and resource/cancellation limits. Validate slow reading, pause, interruption, seeking, quotas and shutdown. Do not claim unfinished work as released.
 
-Arbeite möglichst eigenständig und führe die Entwicklung über mehrere zusammenhängende Arbeitspakete durch. Stoppe nicht nach der Erstellung eines Projektgerüsts.
+## Verified baseline
 
-## 2. Grundlegende Anforderungen
+- MSVC x86 builds, original SDK export/descriptor, Plex tree nodes, native views, regular exit/restart and 100 SDK load cycles.
+- Browser sign-in approved by the user, HTTPS identity checks, music library discovery and DPAPI persistence.
+- Synthetic transport, ranges, cancellation, URL security and classified failures.
+- Controlled background view teardown; native stalled-TLS navigation in 2 ms and a 100-switch resource test within stated limits. Debug/Release and an independent Release build pass 13 suites.
+- Real MP3 handoff through documented WM_COPYDATA/M3U8 and SDK title/play commands, with seeking, duration and token-free playlists.
+- Real MP3/M4A/FLAC/OGG progress, duration, seeking and metadata. Synthetic AAC-LC uses the same preparation path with unchanged compressed payload. Real Plex ADTS and other AAC profiles remain unverified.
+- Private media limits of 512 MiB per file and 2 GiB overall; regular exit removes prepared files/session directory.
+- Typed queries, pagination, search, sorting, virtual tables, multiple/album handoff, audio playlists and bounded caches. Real artist → album → track → playlist navigation is tested.
+- Classic, Winamp Modern, Bento and Big Bento inspected visually, without custom player controls.
+- Real “Grand Serpent Rising” artwork and 13 tracks checked. Tracks inherit parentThumb. Real missing-artwork and positive-image counterchecks exist; both Big Bento cover fields display supplied covers.
+- Personal ratings write/readback and restoration, actual timeline states, a history entry and increased play count were verified on an authorized test track.
+- WACUP remains a future target without runtime evidence. Keep host integration separate from Plex and transport code.
 
-Das Plugin muss:
+## 1. Project goal
 
-- Von Winamp 5.9.2 als Media-Library-Plugin erkannt werden.
-- Einen eigenen Eintrag „Plex“ im Navigationsbaum der Medienbibliothek erzeugen.
-- Eine Verbindung zu einem vorhandenen Plex Media Server herstellen.
-- Plex-Musikbibliotheken erkennen und auswählbar machen.
-- Künstler, Alben und Titel anzeigen.
-- Musik direkt über Winamp abspielen.
-- Plex-Playlists unterstützen, sofern technisch zuverlässig umsetzbar.
-- Such- und Filterfunktionen anbieten.
-- Fehler und Verbindungsprobleme sauber behandeln.
-- Die Winamp-Oberfläche jederzeit reaktionsfähig halten.
-- Einstellungen und Zugangsdaten sicher speichern.
-- Deutsch und Englisch unterstützen.
-
-Das Plugin darf keine Änderungen am Plex Media Server voraussetzen.
-
-Es soll keinen dauerhaft laufenden externen Dienst benötigen. Ein optionaler lokaler HTTP-Proxy innerhalb des Plugin-Prozesses ist zulässig, falls er für sichere und zuverlässige Wiedergabe notwendig wird.
-
-## 3. Verbindliche Recherchephase
-
-Bevor mit der eigentlichen Implementierung begonnen wird, recherchiere die technischen Grundlagen anhand möglichst offizieller Quellen und existierender Open-Source-Projekte.
-
-### 3.1 Winamp SDK
-
-Untersuche:
-
-- Verfügbarkeit und Lizenz des klassischen Winamp SDK.
-- Media-Library-Plugin-API.
-- Struktur `winampMediaLibraryPlugin`.
-- Registrierung und Entfernung eigener Navigationsknoten.
-- `ML_MSG_TREE_ONCREATEVIEW` und zugehörige Nachrichten.
-- Erstellung eigener Media-Library-Ansichten.
-- Winamp IPC und Playlist-Integration.
-- Übergabe von URLs und Metadaten.
-- Kompatibilität mit Winamp 5.9.2 Build 10042.
-- Bekannte ABI- und Plugin-Kompatibilitätsprobleme.
-- Plugin-Lifecycle und Thread-Sicherheit.
-
-Suche nach vorhandenen Media-Library-Plugins als Referenzimplementierung.
-
-Verwende keine unbestätigten SDK-Strukturen, Nachrichtenkonstanten oder Funktionssignaturen.
-
-Falls das SDK nicht unmittelbar verfügbar ist, dokumentiere die Bezugsquelle und prüfe die rechtlichen Rahmenbedingungen. Rekonstruiere Schnittstellen nicht durch unbelegte Annahmen.
-
-### 3.2 Plex Media Server API
-
-Untersuche die dokumentierten und tatsächlich verfügbaren Plex-Endpunkte für:
-
-- Serveridentifikation
-- Authentifizierung
-- Musikbibliotheken
-- Künstler
-- Alben
-- Titel
-- Playlists
-- Metadaten
-- Cover-Art
-- Mediendateien
-- Direkte Wiedergabe
-- Transcoding
-- Wiedergabestatus
-- Bewertungen
-- Bibliotheksänderungen
-
-Bevorzuge die direkte Kommunikation mit dem Plex Media Server.
-
-Nutze JSON-Antworten, soweit der jeweilige Endpunkt sie unterstützt. Falls erforderlich, unterstütze XML als Fallback.
-
-Verifiziere Endpunkte und Antwortstrukturen anhand offizieller Dokumentation oder realer, anonymisierter API-Beispiele.
-
-### 3.3 Audio-Wiedergabe
-
-Untersuche besonders gründlich:
-
-1. Kann Winamp authentifizierte Plex-HTTP-URLs direkt abspielen?
-2. Funktioniert HTTPS zuverlässig?
-3. Werden MP3, FLAC, AAC, M4A und OGG korrekt unterstützt?
-4. Funktioniert Seeking?
-5. Werden Dateilänge und Metadaten richtig erkannt?
-6. Was passiert beim Ablauf oder Widerruf eines Plex-Tokens?
-7. Kann ein lokaler Streaming-Proxy die Authentifizierung übernehmen?
-8. Wie können unnötige Transcoding-Vorgänge vermieden werden?
-
-Vergleiche direkte URLs und einen lokalen Proxy hinsichtlich Sicherheit, Zuverlässigkeit und Implementierungsaufwand.
-
-**Wichtig:** Plex-Tokens dürfen nicht ungeschützt in Logdateien, Fehlermeldungen oder exportierten Playlists erscheinen.
-
-## 4. Architektur
-
-Entwickle eine modular aufgebaute Architektur mit klar getrennten Komponenten.
-
-Vorgeschlagene Struktur:
-
-```text
-winamp-plex-library/
-├── CMakeLists.txt
-├── README.md
-├── LICENSE
-├── .gitignore
-├── docs/
-│   ├── research.md
-│   ├── architecture.md
-│   ├── plex-api.md
-│   ├── winamp-sdk.md
-│   ├── build.md
-│   └── testing.md
-├── src/
-│   ├── plugin/
-│   ├── plex/
-│   ├── playback/
-│   ├── ui/
-│   ├── config/
-│   ├── cache/
-│   └── common/
-├── include/
-├── resources/
-│   ├── icons/
-│   └── locales/
-├── tests/
-└── scripts/
-```
-
-Passe die Struktur bei Bedarf begründet an.
-
-### 4.1 Plugin Core
-
-Verantwortlich für:
-
-- Winamp-Plugin-Initialisierung
-- Plugin-Lifecycle
-- Media-Library-Integration
-- Navigation
-- Event-Verarbeitung
-- Fehlerbehandlung
-- Ressourcenfreigabe
+Develop a native Media Library plugin for classic Winamp on Windows:
 
-### 4.2 Plex API Client
+| Property | Requirement |
+| --- | --- |
+| Project | Winamp Plex Library |
+| DLL | `ml_plex.dll` |
+| Platform | Windows 10/11, x86 |
+| Host | Winamp 5.9.2 Build 10042 x86, April 26, 2023 |
+| Language | C++17 or later if SDK-compatible |
+| Build | CMake and MSVC |
+| Outcome | Usable Plex music browsing and playback inside Winamp's Media Library |
 
-Implementiere einen eigenständigen Plex-Client mit:
+The authorized public repository is https://github.com/Eitschman/winamp-plex-library in the owner's personal account. AndreasHT has collaboration access. Do not create other repositories or modify unrelated accounts.
 
-- WinHTTP oder einer begründeten Alternative
-- TLS-Zertifikatsprüfung
-- Token-Authentifizierung
-- Timeouts
-- Abbruch laufender Anfragen
-- Fehlerklassifizierung
-- JSON/XML-Verarbeitung
-- Pagination
-- URL-Encoding
-- Unterstützung großer Bibliotheken
+Work autonomously through coherent, testable packages. A scaffold or feasibility study does not satisfy the goal.
 
-Keine blockierenden Netzwerkoperationen auf dem Winamp-UI-Thread.
+## 2. Core requirements
 
-### 4.3 Datenmodelle
+Winamp must recognize the DLL as a Media Library plugin and show a Plex navigation node. Connect to an existing PMS without requiring server changes. Discover/select music libraries; show artists, albums and tracks; play through Winamp; support audio playlists where reliable; provide search/filtering, responsive operation, explicit failure handling, secure settings and German/English UI.
 
-Definiere typisierte Modelle für:
+No permanent external service is required. The authorized in-process loopback proxy handles authentication safely.
 
-- PlexServer
-- PlexLibrary
-- PlexArtist
-- PlexAlbum
-- PlexTrack
-- PlexPlaylist
-- PlexMediaPart
-- PlexConnectionSettings
+## 3. Research requirements
 
-Nutze stabile Plex-IDs zur Zuordnung.
+Before implementation, verify interfaces using primary documentation and existing open-source references.
 
-Trenne API-Modelle von UI-Modellen.
+### Winamp
 
-### 4.4 Playback Controller
+Investigate SDK availability/license, Media Library API, winampMediaLibraryPlugin, node registration/deletion, ML_MSG_TREE_ONCREATEVIEW and related events, native child views, IPC, playlist URLs/metadata, target-version compatibility, ABI issues, lifecycle and threading. Use reference plugins but do not invent structures, constants or signatures. Record SDK sources and legal limits if unavailable; never reconstruct an interface by assumption.
 
-Verantwortlich für:
+### Plex
 
-- Wiedergabe einzelner Titel
-- Übergabe an die Winamp-Playlist
-- Anhängen mehrerer Titel
-- Albumwiedergabe
-- Playlistwiedergabe
-- Auflösung von Plex-Media-URLs
-- Authentifizierung
-- Fehlerbehandlung
+Verify identity, authentication, libraries, artists, albums, tracks, playlists, metadata, artwork, media files, Direct Play, transcoding, playback status, ratings and library changes. Prefer direct PMS communication. Use JSON where supported; add XML only for a demonstrated compatibility need, with secure parser settings and explicit validation. Verify response structures through official documentation or anonymized real examples.
 
-Verwende nach Möglichkeit Winamps vorhandene Audio-Decoder.
+### Audio
 
-Implementiere keinen eigenen Decoder, solange keine technische Notwendigkeit besteht.
+Investigate authenticated URL handling, HTTPS, MP3/FLAC/AAC/M4A/OGG support, seeking, duration/metadata, revoked/expired tokens, proxy authentication and avoiding unnecessary transcoding. Compare direct URLs with the proxy for security, reliability and implementation cost. Tokens must never reach ordinary logs, error text or exported playlists.
 
-### 4.5 Konfiguration
+## 4. Architecture
 
-Speichere:
+Separate plugin, Plex client, playback, UI, configuration, cache and common validation code, with public headers, resources, tests, scripts and documentation. Explain justified structure changes.
 
-- Serveradresse
-- Port
-- HTTPS-Einstellung
-- ausgewählte Musikbibliothek
-- UI-Präferenzen
-- Cache-Einstellungen
-- Die Sprache aus dem aktiven Winamp-Sprachpaket übernehmen; keine eigene Spracheinstellung speichern.
+### Plugin core
 
-Speichere Zugangsdaten mit Windows DPAPI oder einem gleichwertigen Windows-Mechanismus.
+Own initialization/lifecycle, Media Library integration, navigation/events, errors and cleanup.
 
-Keine fest eingebauten Tokens, Passwörter, Serveradressen oder persönlichen Daten.
+### Plex client
 
-## 5. Benutzeroberfläche
+Use WinHTTP or a justified alternative with TLS validation, token headers, timeouts, cancellation, classified errors, validated parsing, pagination and URL encoding. Handle large libraries. No blocking networking on the UI thread.
 
-Integriere das Plugin möglichst natürlich in die klassische Winamp-Medienbibliothek.
+### Models
 
-Die Oberfläche soll optisch zu Winamp Legacy passen.
+Provide typed server, library, artist, album, track, playlist, media-part and connection-settings models. Identify objects through stable Plex IDs and keep API models separate from UI rows.
 
-### 5.1 Navigation
+### Playback
 
-Geplante Baumstruktur:
+Support individual tracks, album/playlist playback, appending multiple tracks, media resolution, authentication and errors. Use Winamp's decoders unless a demonstrated technical necessity requires otherwise. Preserve correct metadata and seeking. Insertion after the current track must preserve playback state while respecting shuffle/queue-plugin behavior.
 
-```text
-Medienbibliothek
-├── Lokale Medien
-├── ...
-└── Plex
-    ├── Künstler
-    ├── Alben
-    ├── Titel
-    └── Playlists
-```
+### Configuration
 
-Falls mehrere Musikbibliotheken existieren, muss eine sinnvolle Auswahl möglich sein.
+Persist server origin/connection, selected library, cache and relevant UI preferences. Language comes from Winamp and is not persisted separately. Store access using DPAPI or an equivalent Windows mechanism. No hardcoded credentials, personal server addresses or personal data.
 
-### 5.2 Künstleransicht
+## 5. User interface
 
-Zeige Künstler alphabetisch sortiert.
+Integrate functionally and visually with Media Library, including Classic and Modern skins. Use native controls and verified Winamp skin interfaces.
 
-Beim Auswählen eines Künstlers sollen die zugehörigen Alben angezeigt werden.
+The Plex tree contains Artists, Albums, Tracks and Playlists. Offer a meaningful choice when multiple music libraries exist.
 
-### 5.3 Albumansicht
+Artist lists are alphabetical and navigate to associated albums. Albums show title, artist, year, track count and available artwork; double-click prepares album playback.
 
-Zeige:
+Tracks show title, artist, album, duration, track number, year and format when available. Support sorting, multiple selection and context menus.
 
-- Albumtitel
-- Künstler
-- Erscheinungsjahr
-- Anzahl der Titel
-- Cover, falls verfügbar
+Actions include Play now, Insert after current track, Add to playlist, Play album and Play selected tracks. Search artists/albums/tracks asynchronously.
 
-Doppelklick auf ein Album soll dessen Titel zur Wiedergabe bereitstellen.
+Settings provide browser sign-in/status, server and library selection, connection testing, cache clearing and diagnostics. Fixed routing/custom HTTPS belong under Advanced. Opening Settings must not initiate authorization.
 
-### 5.4 Titelansicht
+## 6. Performance and stability
 
-Zeige mindestens:
+Support thousands of albums and tens of thousands of tracks through asynchronous requests, pagination, demand loading, reduced redundant queries, thread-safe state and controlled workers. Release resources and prevent exceptions crossing ABI boundaries. Unreachable PMS must not block or crash Winamp. Shutdown must cancel and join all work.
 
-- Titel
-- Künstler
-- Album
-- Laufzeit
-- Tracknummer
-- Jahr
-- Audioformat, sofern verfügbar
+## 7. Security
 
-Unterstütze Sortierung, Mehrfachauswahl und Kontextmenüs.
+No credentials in source, repository or ordinary logs. Encrypt storage, retain TLS certificate validation, prevent cross-origin credential forwarding and unvalidated authenticated redirects. Bind proxy only to loopback, use bounded temporary capabilities, and open no unnecessary ports. Verify Winamp URL persistence explicitly. Private prepared media must have restricted access and bounded cleanup/storage.
 
-### 5.5 Wiedergabefunktionen
+## 8. Development phases and acceptance
 
-Unterstütze:
+### Phase 1: research and proof of concept
 
-- Jetzt abspielen
-- Nach aktuellem Titel einfügen, ohne den laufenden Titel zu unterbrechen. Die physische Playlist-Reihenfolge wird geändert; Zufallswiedergabe und fremde Warteschlangen behalten ihre Steuerung.
-- Zur Playlist hinzufügen
-- Ganzes Album abspielen
-- Mehrere ausgewählte Titel abspielen
+Build an x86 DLL that the target host recognizes, lists in plugin management, shows as Plex in the tree and opens as a native view. Confirm clean exit, then real Plex-track playback before proceeding. If the environment is unavailable, record open tests without claiming runtime success.
 
-### 5.6 Suche
+### Phase 2: connection
 
-Implementiere eine Suche nach:
+Implement configuration, authentication, testing, discovery and errors. Identify a valid server, list music libraries, explain invalid access and survive networking failures.
 
-- Künstler
-- Album
-- Titel
+### Phase 3: views
 
-Die Suche darf die Benutzeroberfläche nicht blockieren.
+Implement artist/album/track views, sorting, search, navigation and context menus. Data must display correctly; large results stay usable; navigation avoids reloading everything.
 
-### 5.7 Einstellungen
+### Phase 4: playback
 
-Stelle einen Einstellungsdialog bereit mit:
+Implement tracks, albums, multiple-track handoff, correct metadata, seeking and interruption handling. Test distinct formats. Prefer Direct Play.
 
-- Server auswählen; feste Verbindung und Plex-HTTPS-Adresse unter „Erweitert“.
-- Anmeldung mit Plex im Browser sowie Verbindungsstatus
-- Verbindung testen
-- Musikbibliothek auswählen
-- Cache leeren
-- Diagnoseinformationen
+### Phase 5: extensions
 
-Nutze native Windows-Steuerelemente oder die vorhandenen Winamp-Schnittstellen.
+Implement reliable audio playlists, artwork, metadata caching, library refresh, status, history and ratings. Plex-specific effects count as verified only after API readback demonstrates them.
 
-## 6. Performance und Stabilität
+### Phase 6: quality assurance
 
-Berücksichtige Bibliotheken mit mehreren Tausend Alben und Zehntausenden Titeln.
-
-Anforderungen:
-
-- Asynchrone Netzwerkkommunikation
-- Keine blockierenden UI-Aufrufe
-- Pagination
-- Bedarfsgesteuertes Laden
-- Vermeidung unnötiger API-Abfragen
-- Thread-sichere Datenstrukturen
-- Kontrollierte Hintergrundthreads
-- Saubere Freigabe aller Ressourcen
-- Keine Speicherlecks
-- Keine unkontrollierten Exceptions über Plugin-ABI-Grenzen
-
-Ein nicht erreichbarer Plex-Server darf Winamp weder blockieren noch zum Absturz bringen.
-
-Beim Beenden von Winamp müssen alle Hintergrundaktivitäten zuverlässig beendet werden.
-
-## 7. Sicherheit
-
-Beachte insbesondere:
-
-- Keine Zugangsdaten im Quellcode.
-- Keine Tokens im Repository.
-- Keine Tokens in normalen Logdateien.
-- Sichere lokale Speicherung.
-- TLS-Zertifikatsprüfung nicht deaktivieren.
-- Keine unkontrollierte Weiterleitung authentifizierter URLs.
-- Keine unnötig geöffneten Netzwerkports.
-- Bei lokalem Proxy ausschließlich Loopback-Bindung.
-- Keine Offenlegung von Tokens über lokale Proxy-URLs.
-- Begrenzte Lebensdauer temporärer Wiedergabe-URLs.
-- Keine Weitergabe von Zugangsdaten an fremde Hosts.
-
-Beachte, dass Winamp möglicherweise Wiedergabe-URLs intern speichert. Untersuche dies ausdrücklich.
-
-## 8. Entwicklung in Phasen
-
-### Phase 1 – Recherche und Proof of Concept
-
-Erstelle ein minimales, lauffähiges Media-Library-Plugin.
-
-Akzeptanzkriterien:
-
-- DLL wird erfolgreich als x86 gebaut.
-- Winamp erkennt das Plugin.
-- Plugin erscheint in der Plugin-Verwaltung.
-- Eintrag „Plex“ erscheint im Navigationsbaum.
-- Anklicken erzeugt eine einfache Plugin-Ansicht.
-- Winamp beendet sich ohne Absturz.
-
-Teste anschließend die Wiedergabe eines Plex-Titels.
-
-Erst nach erfolgreicher technischer Validierung mit Phase 2 fortfahren.
-
-Falls kein echter Winamp oder Plex-Server in der Entwicklungsumgebung verfügbar ist, dokumentiere die noch offenen Integrationstests ausdrücklich. Behaupte keine erfolgreiche Laufzeitvalidierung.
-
-### Phase 2 – Plex-Verbindung
-
-Implementiere:
-
-- Konfiguration
-- Authentifizierung
-- Verbindungstest
-- Bibliotheksabfrage
-- Fehlerbehandlung
-
-Akzeptanzkriterien:
-
-- Gültiger Server wird erkannt.
-- Musikbibliotheken werden angezeigt.
-- Ungültige Zugangsdaten werden verständlich gemeldet.
-- Netzwerkfehler führen nicht zu einem Absturz.
-
-### Phase 3 – Bibliotheksansichten
-
-Implementiere:
-
-- Künstler
-- Alben
-- Titel
-- Sortierung
-- Suche
-- Navigation
-- Kontextmenüs
-
-Akzeptanzkriterien:
-
-- Bibliotheksdaten werden korrekt angezeigt.
-- Große Ergebnismengen bleiben bedienbar.
-- Navigation funktioniert ohne vollständiges Neuladen aller Daten.
-
-### Phase 4 – Wiedergabe
-
-Implementiere:
-
-- Einzelne Titel abspielen
-- Album abspielen
-- Mehrere Titel zur Playlist hinzufügen
-- Korrekte Metadaten
-- Seeking
-- Fehlerbehandlung bei Verbindungsabbruch
-
-Teste verschiedene Audioformate.
-
-Bevorzuge Direct Play gegenüber Transcoding.
-
-### Phase 5 – Erweiterungen
-
-Implementiere, soweit technisch zuverlässig möglich:
-
-- Plex-Playlists
-- Albumcover
-- Metadaten-Cache
-- Aktualisierung der Bibliothek
-- Wiedergabestatus
-- Plex-Wiedergabeverlauf
-- Bewertungen
-
-Plex-spezifische Funktionen dürfen nur dann als implementiert gelten, wenn ihre tatsächliche Wirkung über die API nachgewiesen ist.
-
-### Phase 6 – Qualitätssicherung
-
-Prüfe:
-
-- Start und Beenden von Winamp
-- Wiederholtes Laden des Plugins
-- Netzwerkunterbrechungen
-- Ungültige Tokens
-- Leere Bibliotheken
-- Große Bibliotheken
-- Unicode und Sonderzeichen
-- Deutsche und englische Oberfläche
-- Fehlende Mediendateien
-- HTTPS-Verbindungen
-- Fehlerhafte API-Antworten
-- Speicher- und Ressourcenverwaltung
+Check startup/exit, repeated loading, network interruption, invalid access, empty/large libraries, Unicode, both UI languages, missing files, HTTPS, malformed responses and resource management.
 
 ## 9. Tests
 
-Implementiere automatisierte Tests für alle unabhängig von Winamp testbaren Komponenten.
+Automate independent components: API parsing/models, URLs, pagination, errors, configuration, caches and security-sensitive URL processing. Use mock responses and invented credentials only. Maintain a manual checklist for the exact target host. A green build alone does not establish native behavior or visual quality.
 
-Mindestens:
+## 10. Build and installation
 
-- Plex-API-Parsing
-- Datenmodelle
-- URL-Verarbeitung
-- Pagination
-- Fehlerbehandlung
-- Konfigurationsverwaltung
-- Cache-Verhalten
-- Sicherheitsrelevante URL-Verarbeitung
+Support Visual Studio 2022/CMake x86 with output `build/Release/ml_plex.dll`. Document prerequisites, SDK/dependencies, configuration, Debug/Release, installation, removal and troubleshooting. Validate the actual target Plugins directory rather than assuming one. Do not automatically install into an existing Winamp without explicit authorization.
 
-Verwende Mock-Responses für API-Tests.
+## 11. Documentation
 
-Echte Plex-Zugangsdaten dürfen niemals Bestandteil automatisierter Tests sein.
+Maintain English README, research, architecture, API, SDK, build and testing documents. Cover purpose, support scope, features, prerequisites, setup, known limits, build instructions, evidence and unverified cases. Keep diagrams, responsibility/threading/error/security/playback descriptions consistent with validated code. Do not describe unfinished buffer changes as released behavior.
 
-Erstelle eine manuelle Testcheckliste für Winamp 5.9.2 Build 10042.
+## 12. Git and publication
 
-## 10. Build und Installation
+Use Git and a suitable C++/Visual Studio/CMake ignore file. Do not commit access data, tokens, personal server addresses, local settings, unapproved binaries or SDK material without redistribution rights.
 
-Das Projekt muss mit Visual Studio 2022 und CMake für x86 baubar sein.
+The public personal repository, README and GitHub Actions are authorized. MIT applies to project code; dependency terms remain separate. SDK/license review is required before adopting/distributing third-party code. Changes and pushes must remain scoped; do not overwrite a release tag.
 
-Erstelle einen reproduzierbaren Buildprozess.
+## 13. Working method
 
-Ergebnis:
+1. Research before implementation and use verified SDK/API definitions.
+2. Build regularly and resolve compiler errors.
+3. Do not represent placeholders or assumptions as tested functionality.
+4. Preserve source comments, document decisions and keep dependencies small.
+5. Prefer maintainable fixes at the cause over hidden alternate behavior.
+6. Preserve unrelated user changes and normal Winamp/Plex configuration.
+7. Obtain explicit authorization for destructive or unrelated external actions.
+8. Maintain coherent local Git checkpoints according to the applicable development instructions.
+9. Continue authorized work without routine permission requests.
+10. Keep documentation current and distinguish tested, untested, planned and blocked work.
 
-```text
-build/Release/ml_plex.dll
-```
+## 14. Reporting
 
-Dokumentiere:
+After substantial work, report implemented behavior, relevant files, build/test results, limits, blockers and next steps briefly. Name actual validation and its scope; do not infer universal stability from a few runs.
 
-- Voraussetzungen
-- SDK-Beschaffung
-- Abhängigkeiten
-- CMake-Konfiguration
-- Debug-Build
-- Release-Build
-- Installation
-- Deinstallation
-- Troubleshooting
+## 15. Acceptance criteria
 
-Das Plugin soll manuell in das Media-Library-Plugin-Verzeichnis von Winamp kopiert werden können.
+The first usable release requires an x86 build that loads in the target host, shows Plex, configures access, discovers libraries, displays artists/albums/tracks, plays tracks and albums to completion, populates the playlist correctly, handles failures, encrypts access and exits without crashing. Build instructions must be reproducible and documentation maintained.
 
-Prüfe den tatsächlichen Plugin-Pfad der Zielinstallation und verwende keine ungeprüften Standardpfade.
+Features lacking a suitable real environment remain explicitly open integration cases. Release acceptance remains with the user.
 
-Führe keine automatische Installation in eine vorhandene Winamp-Installation durch, solange diese nicht ausdrücklich freigegeben wurde.
+## 16. Continuing work
 
-## 11. Dokumentation
-
-Erstelle eine ausführliche Projektdokumentation.
-
-### README.md
-
-Enthält:
-
-- Projektbeschreibung
-- Unterstützte Winamp-Versionen
-- Funktionen
-- Voraussetzungen
-- Installation
-- Konfiguration
-- Bekannte Einschränkungen
-- Build-Anleitung
-- Entwicklungsstatus
-
-### docs/research.md
-
-Dokumentiere:
-
-- Gefundene SDK-Versionen
-- Offizielle Quellen
-- Referenzprojekte
-- Kompatibilitätsprobleme
-- Plex-API-Erkenntnisse
-- Offene technische Fragen
-
-### docs/architecture.md
-
-Dokumentiere:
-
-- Komponenten
-- Verantwortlichkeiten
-- Datenfluss
-- Threading-Modell
-- Fehlerbehandlung
-- Sicherheitskonzept
-- Playback-Architektur
-
-### docs/testing.md
-
-Dokumentiere:
-
-- Automatisierte Tests
-- Manuelle Integrationstests
-- Bekannte Probleme
-- Noch nicht verifizierte Funktionen
-
-## 12. Git und spätere Veröffentlichung
-
-Initialisiere das Projekt als Git-Repository, sofern noch keines vorhanden ist.
-
-Erstelle eine sinnvolle `.gitignore` für C++, Visual Studio und CMake.
-
-Committe keine:
-
-- Zugangsdaten
-- Plex-Tokens
-- persönlichen Serveradressen
-- lokalen Konfigurationsdateien
-- Binärdateien ohne ausdrückliche Freigabe
-- proprietären SDK-Dateien ohne entsprechende Lizenz
-
-Bereite das Projekt auf eine spätere GitHub-Veröffentlichung vor.
-
-Das öffentliche Repository `https://github.com/Eitschman/winamp-plex-library` im persönlichen Konto und dessen Befüllung einschließlich README und GitHub Actions sind ausdrücklich freigegeben. Firmenkonto für die Zusammenarbeit ist AndreasHT. Fremde Repositorys und andere Konten sind davon nicht erfasst.
-
-Prüfe die Lizenzbedingungen des Winamp-SDK und sämtlicher Abhängigkeiten, bevor eine Open-Source-Lizenz festgelegt wird.
-
-## 13. Arbeitsweise
-
-Arbeite eigenständig, systematisch und nachvollziehbar.
-
-Wichtige Regeln:
-
-1. Recherchiere zuerst, implementiere anschließend.
-2. Verwende echte SDK-Definitionen und verifizierte API-Endpunkte.
-3. Erfinde keine Funktionen, Konstanten oder SDK-Strukturen.
-4. Baue regelmäßig und behebe Compilerfehler unmittelbar.
-5. Verwende keine Platzhalterimplementierungen, die als fertig ausgegeben werden.
-6. Trenne getestete Funktionen von ungetesteten Annahmen.
-7. Dokumentiere technische Entscheidungen.
-8. Bevorzuge robuste, wartbare Lösungen gegenüber schnellen Hacks.
-9. Halte Abhängigkeiten möglichst gering.
-10. Ändere keine vorhandenen Winamp- oder Plex-Konfigurationen.
-11. Führe keine destruktiven Aktionen ohne Freigabe durch.
-12. Arbeite nach Möglichkeit bis zu einem funktionsfähigen MVP weiter.
-13. Halte die Dokumentation während der Entwicklung aktuell.
-14. Führe keine automatischen Commits durch, sofern dies nicht ausdrücklich vereinbart wurde.
-
-Bei technischen Problemen sollst du zunächst eigenständig nach Alternativen suchen und diese bewerten.
-
-Frage nur nach, wenn eine Entscheidung nicht sicher oder sinnvoll selbst getroffen werden kann.
-
-## 14. Ergebnisbericht
-
-Liefere nach jedem größeren Arbeitspaket einen kompakten Statusbericht mit:
-
-- Implementierten Funktionen
-- Geänderten Dateien
-- Build-Ergebnis
-- Testergebnissen
-- Bekannten Einschränkungen
-- Offenen Fragen
-- Nächsten Arbeitsschritten
-
-Kennzeichne ausdrücklich, welche Funktionen tatsächlich getestet wurden.
-
-Unterscheide zwischen:
-
-- Implementiert und getestet
-- Implementiert, aber noch nicht getestet
-- Geplant
-- Technisch blockiert
-
-## 15. Definition of Done
-
-Die erste produktiv nutzbare Version gilt als abgeschlossen, wenn:
-
-- `ml_plex.dll` erfolgreich als x86-DLL gebaut wird.
-- Winamp 5.9.2 Build 10042 das Plugin stabil lädt.
-- „Plex“ in der Medienbibliothek erscheint.
-- Eine Plex-Verbindung konfiguriert werden kann.
-- Musikbibliotheken erkannt werden.
-- Künstler, Alben und Titel angezeigt werden.
-- Titel direkt in Winamp abgespielt werden können.
-- Alben vollständig abgespielt werden können.
-- Die Winamp-Playlist korrekt befüllt wird.
-- Netzwerkfehler zuverlässig behandelt werden.
-- Zugangsdaten sicher gespeichert werden.
-- Winamp ohne Absturz beendet werden kann.
-- Die Dokumentation vollständig ist.
-- Ein reproduzierbarer Release-Build existiert.
-
-Funktionen, die mangels realer Testumgebung nicht verifiziert werden können, bleiben ausdrücklich als offene Integrationstests gekennzeichnet.
-
-## 16. Startanweisung
-
-Beginne jetzt mit der technischen Recherche.
-
-Prüfe zunächst das Winamp-SDK, die Media-Library-Plugin-Schnittstellen und die Plex-API.
-
-Erstelle anschließend die Architektur und implementiere einen minimalen Proof of Concept.
-
-Setze die Entwicklung danach eigenständig in möglichst großen, zusammenhängenden und testbaren Arbeitspaketen fort.
-
-Priorisiere einen tatsächlich funktionierenden Plex-Musikplayer innerhalb von Winamp gegenüber optionalen Komfortfunktionen.
-
-**Das Ziel ist ein echtes, benutzbares Winamp-Plex-Plugin – keine reine Machbarkeitsstudie und kein bloßes Projektgerüst.**
+Prioritize reliable end-to-end music playback within Winamp over optional conveniences. Continue from the maintained working state rather than repeating completed research or scaffolding.

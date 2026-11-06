@@ -1,65 +1,65 @@
-# Plex-API-Vertrag
+# Plex API contract
 
-Primärquelle ist die [offizielle PMS-API](https://developer.plex.tv/pms/). Die folgenden Pfade sind dokumentierte Verträge beziehungsweise ausdrücklich markierte Referenzbefunde. Ein Eintrag in dieser Tabelle ist keine Behauptung, dass die zugehörige Produktfunktion schon implementiert oder am realen Server geprüft wurde.
+The primary source is the [official PMS API](https://developer.plex.tv/pms/). Documented contracts and explicitly identified reference findings are distinguished below. Listing an endpoint does not imply that its corresponding product feature is implemented or verified on a real server.
 
-## Authentifizierung
+## Authentication
 
-1. Pro Installation einen zufälligen Client-Identifier anlegen.
-2. `POST https://plex.tv/api/v2/pins?strong=true` mit `Accept: application/json`, `X-Plex-Product` und `X-Plex-Client-Identifier`. Die Antwort enthält unter anderem `id`, `code`, `expiresIn` und zunächst kein Zugriffstoken.
-3. Die Plex-Anmeldeseite `https://app.plex.tv/auth#?...` im Systembrowser öffnen. Die Parameter enthalten Client-ID, PIN-Code und Produktname. Kein Kontopasswort wird vom Plugin verarbeitet.
-4. `GET /api/v2/pins/{id}` bei `plex.tv` etwa einmal pro Sekunde abfragen, bis `authToken` gesetzt ist, die Anforderung abläuft oder der Benutzer abbricht.
-5. Mit dem Account-Token `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0` abfragen.
-6. Nur Ressourcen mit `provides=server` anbieten. Server besitzen `clientIdentifier`, `name`, `accessToken` und `connections[]`. Der Server-Token kann sich vom Account-Token unterscheiden.
-7. Die von Plex gelieferten HTTPS-Verbindungen im Hintergrund auf Erreichbarkeit prüfen, lokal vor direktem Fernzugriff und Relay. `/identity` wird ohne Token abgefragt; `machineIdentifier` muss zur ausgewählten Serverressource passen. Erst danach wird der Ressourcen-Token für `/library/sections` verwendet. Eine manuelle Origin wird mit demselben Verfahren geprüft.
-8. Serverprofile, Verbindungen, ausgewählten Zugang und Musikbibliothek mit Windows DPAPI speichern. Der Account-Token wird nach der Ressourcenermittlung nicht dauerhaft benötigt. Eine erneute Browseranmeldung erfolgt ausschließlich über den Anmeldebutton.
+1. Generate a random installation client identifier.
+2. Send `POST https://plex.tv/api/v2/pins?strong=true` with `Accept: application/json`, `X-Plex-Product` and `X-Plex-Client-Identifier`. The response includes `id`, `code`, `expiresIn` and initially no access token.
+3. Open `https://app.plex.tv/auth#?...` in the system browser with the client ID, PIN code and product name. The plugin does not process account passwords.
+4. Poll `GET /api/v2/pins/{id}` at plex.tv about once per second until `authToken` appears, the request expires or the user cancels.
+5. Use the account token for `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0`.
+6. Offer only resources providing `server`. Resources contain `clientIdentifier`, `name`, `accessToken` and `connections[]`. Resource tokens may differ from the account token.
+7. Probe advertised HTTPS connections in the background, preferring local, direct remote and relay in that order. Query `/identity` without authentication and require `machineIdentifier` to match the selected resource. Only then send its token to `/library/sections`. Custom origins use the same identity check.
+8. Store profiles, connections, selected access and library using Windows DPAPI. The account token is not needed persistently after discovery. Only the sign-in button starts another browser authorization.
 
-Plex dokumentiert zusätzlich JWT-basierte Verfahren mit Geräteschlüsseln und Token-Erneuerung. Der Prototyp verwendet den ebenfalls offiziell beschriebenen starken PIN-Ablauf. Abgelaufene oder widerrufene Serverzugänge erfordern eine sichtbare erneute Anmeldung, keinen stillen Wechsel auf andere Tokens.
+Plex also documents JWT/device-key authentication and renewal. This plugin uses the officially documented strong PIN flow. Expired or revoked server access requires a visible sign-in action rather than silently trying other tokens.
 
-## Server und Musik
+## Server and music
 
-| Zweck | Pfad / Struktur | Umsetzung |
+| Purpose | Endpoint or response structure | Usage |
 | --- | --- | --- |
-| Serveridentifikation | `GET /identity`, `MediaContainer.machineIdentifier` | Anmeldung vergleicht die Identität. |
-| Fähigkeiten und Versionsdaten | `GET /` | Recherchiert; kein umfassendes Capability-Modell. |
-| Bibliotheken | `GET /library/sections`, `MediaContainer.Directory[]` mit `key`, `title`, `type` | Musikbibliotheken haben `type=artist`. |
-| Künstler | `/library/sections/{id}/all?type=8` | Native paginierte Ansicht, Suche und Sortierung. |
-| Alben | `/library/sections/{id}/all?type=9` | Native paginierte Ansicht, Suche und Sortierung. |
-| Titel | `/library/sections/{id}/all?type=10` | Native paginierte Ansicht und Playlistübergabe. |
-| Metadaten | `/library/metadata/{ratingKey}`, `MediaContainer.Metadata[]` | Grundlage für die gezielte Medienauflösung. |
-| Kinder | `/library/metadata/{ratingKey}/children` | Künstler → Alben, Album → Titel. |
-| Audio-Playlists | `/playlists?playlistType=audio`, `/playlists/{id}` und `/playlists/{id}/items` | Übersicht, aktuelle Detailwerte und Titel in Plex-Reihenfolge; leere sowie gefüllte Playlist nativ geprüft. |
-| Bilder | Relativer `thumb`-Schlüssel unter `/library/metadata/{id}/thumb`, optional numerischer Versionspfad. | Authentifizierter Originalbildtransport und WIC-Miniatur. Titel verweisen über `parentThumb` auf das Albumcover. Kein Foto-Transcoding erforderlich. |
-| Direkte Medienbytes | `Media[].Part[].key`, zum Beispiel `/library/parts/46618/1389985872/file.flac` | WinHTTP für Proxy oder private FLAC-/OGG-/ADTS-AAC-Vorbereitung; nie das lokale Serverdateifeld `file` verwenden. |
-| Suche und Sortierung | Typisierte `all`-Abfrage mit dokumentierten Bibliotheksfiltern und `sort` | Serverfähigkeiten prüfen; keine SQL-ähnliche Syntax erfinden. |
+| Identity | `GET /identity`, `MediaContainer.machineIdentifier` | Compared before authenticated access. |
+| Capabilities/version | `GET /` | Researched; no comprehensive capability model. |
+| Libraries | `GET /library/sections`, `MediaContainer.Directory[]`: key, title, type | Music libraries have `type=artist`. |
+| Artists | `/library/sections/{id}/all?type=8` | Native paginated search/sort view. |
+| Albums | `/library/sections/{id}/all?type=9` | Native paginated search/sort view. |
+| Tracks | `/library/sections/{id}/all?type=10` | Native paginated view and playlist handoff. |
+| Metadata | `/library/metadata/{ratingKey}`, `MediaContainer.Metadata[]` | Targeted media resolution. |
+| Children | `/library/metadata/{ratingKey}/children` | Artist albums and album tracks. |
+| Audio playlists | `/playlists?playlistType=audio`, `/playlists/{id}`, `/playlists/{id}/items` | Overview, current detail counts and Plex order; empty/populated cases tested. |
+| Artwork | Relative `thumb` under `/library/metadata/{id}/thumb`, optionally with numeric revision | Authenticated original image plus WIC thumbnail; inherited `parentThumb` for tracks. |
+| Media bytes | `Media[].Part[].key`, e.g. `/library/parts/46618/1389985872/file.flac` | WinHTTP proxy/private preparation; never use the server-local `file` field. |
+| Search/sort | Typed `all` queries with supported filters and `sort` | Check capabilities rather than inventing query syntax. |
 
-Ein Titel kann mehrere `Media`-Varianten und mehrere `Part`-Einträge besitzen. Eine allgemeine Implementierung muss diese Auswahl sichtbar und reproduzierbar behandeln. Der Prototyp darf nicht beliebige zusätzliche Parts durch Zusammenhängen von URLs simulieren. Laufzeiten sind API-seitig Millisekunden; Winamp erwartet im Playlist-IPC Sekunden.
+Tracks may contain multiple Media variants and Parts. Selection must be reproducible; concatenating arbitrary part URLs is not an implementation. API durations use milliseconds; playlist IPC uses seconds.
 
-Bei Titeln enthält `grandparentTitle` den Albumkünstler; ein abweichender Titelkünstler steht in `originalTitle`. Die [PlexAPI-Track-Implementierung](https://github.com/pkkid/python-plexapi/blob/master/plexapi/audio.py) beschreibt und liest beide Felder getrennt. Das Modell erhält `album_artist` unabhängig vom angezeigten Titelkünstler. Ohne abweichenden, nichtleeren Titelkünstler gehört der Titel zum Albumkünstler. Winamps Metadaten-Hook liefert `artist` und `albumartist` entsprechend getrennt. Die native Sampler-Probe vergleicht beide Werte mit den echten API-Feldern, ohne Servermetadaten zu ändern.
+For tracks, `grandparentTitle` supplies album artist and nonempty `originalTitle` supplies a differing track artist. The [PlexAPI track reference](https://github.com/pkkid/python-plexapi/blob/master/plexapi/audio.py) reads them separately. The model retains `album_artist`; absent a nonempty track override, the album artist is used. Winamp hooks return separate `artist` and `albumartist`. A real compilation-track test compares these against API fields without editing metadata.
 
-Die Titelspalte „Künstler“ verwendet den Plex-Sortierschlüssel `originalTitle`; die Albumansicht verwendet für ihren Albumkünstler `artist.titleSort`. Die Fähigkeiten werden im Integrationsprüfer über `all?includeMeta=1&includeAdvanced=1&X-Plex-Container-Start=0&X-Plex-Container-Size=0` gelesen. Der echte Server liefert `originalTitle` unter `MediaContainer.Meta.Type[].Sort[].key`. Die [PlexAPI-Bibliotheksimplementierung](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/library.html#LibrarySection.listSorts) liest dieselbe Metadatenstruktur für angebotene Sortierungen. Der Prüfmodus `catalog_probe --sorts` gibt ausschließlich technische Schlüssel aus; zusammengesetzte Schlüssel können Kommas enthalten. Nachweis: `.local/logs/plex-sort-capabilities.log`.
+Track-artist sorting uses `originalTitle`; album-artist sorting uses `artist.titleSort`. The probe reads `all?includeMeta=1&includeAdvanced=1&X-Plex-Container-Start=0&X-Plex-Container-Size=0`. The real server advertises `originalTitle` under `MediaContainer.Meta.Type[].Sort[].key`, matching the [PlexAPI listSorts implementation](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/library.html#LibrarySection.listSorts). `catalog_probe --sorts` prints technical keys only, including possible comma-separated compound keys. Evidence: `plex-sort-capabilities.log`.
 
 ## Pagination
 
-`X-Plex-Container-Start` und `X-Plex-Container-Size` werden gemeinsam gesendet. Die Antwort kann eine andere Seitengröße als angefordert besitzen. Maßgeblich sind tatsächliches `offset`, `size`, optional `totalSize` sowie gegebenenfalls die entsprechenden Antwortheader. Ein leeres Ergebnis darf keine Endlosschleife erzeugen. Eine nicht paginierte Antwort darf nicht wiederholt als neue Seite angehängt werden. Eine allgemeine Sammlung aller Datensätze ist kein Ersatz für bedarfsgesteuerte Ansichten.
+Send `X-Plex-Container-Start` and `X-Plex-Container-Size` together. Actual page size may differ from the request. Use returned offset, size, optional totalSize and applicable response headers. Empty results must terminate iteration. An unpaginated response must not be repeatedly appended. Loading every record is not a substitute for demand-driven views.
 
-## JSON und XML
+## JSON and XML
 
-Der Client fordert JSON explizit an. Fehlende oder falsch typisierte Felder sind Fehler. Der Prototyp enthält noch keinen XML-Verarbeitungspfad. Ein zusätzlicher XML-Pfad darf nur bei einem nachgewiesenen Serverbedarf ergänzt werden und muss mit DTD-/Entitätsauflösung abgeschaltet getestet werden. XML darf keinen HTTP-, Authentifizierungs- oder Parserfehler verdecken. Die [Plex-Supportseite](https://support.plex.tv/articles/201638786-plex-media-server-url-commands/) liefert offizielle XML-Beispiele für diesen späteren Kompatibilitätstest.
+The client explicitly requests JSON and rejects missing or incorrectly typed required fields. No XML processing path is implemented. Add one only for a demonstrated server requirement, with DTD and entity resolution disabled and tested. XML must not conceal HTTP, authentication or parser errors. [Official XML examples](https://support.plex.tv/articles/201638786-plex-media-server-url-commands/) are references for such a future compatibility test.
 
-## Wiedergabestatus und schreibende Funktionen
+## Playback feedback and writes
 
-`POST /:/timeline` meldet `key=/library/metadata/{id}`, `ratingKey`, Zustand und Position sowie Dauer in Millisekunden. Die offizielle API verlangt Meldungen bei Zustandswechseln und regelmäßig etwa alle zehn Sekunden. `X-Plex-Client-Identifier` identifiziert den Client. Neben der synthetischen API-Probe sind tatsächliches Abspielen, Pause, Fortsetzen, Seeking und Stop in Winamp über `GET /status/sessions` zurückgelesen. Eine erste Meldung kann Position null enthalten, während Winamp noch puffert; der Fortschrittsnachweis erfolgt separat am Player.
+`POST /:/timeline` sends `key=/library/metadata/{id}`, ratingKey, state, position and duration in milliseconds. The official API calls for state changes and progress approximately every ten seconds. `X-Plex-Client-Identifier` identifies the client. Real Winamp play, pause, resume, seek and stop were read back through `GET /status/sessions`. A first report may show zero while buffering; actual progress is checked independently at the player.
 
-`GET /status/sessions/history/all?metadataItemID={id}&sort=viewedAt%3Adesc` liefert die gefilterte Historie. Die native Probe vergleicht vor und nach einem regulären Titelende den neuesten `historyKey` und zusätzlich `viewCount` aus `GET /library/metadata/{id}`. Beide haben sich am freigegebenen Testtitel geändert. Der Test springt vor das Titelende und lässt Winamp danach regulär auslaufen. Das bestätigt diesen Ablauf am vorhandenen Server, keine allgemeine Zählregel für übersprungene oder kurz angespielte Titel. Es wird kein zusätzlicher Scrobble-Request gesendet. Parameter und Antwortfelder sind in der [offiziellen PMS-API](https://developer.plex.tv/pms/) beschrieben.
+`GET /status/sessions/history/all?metadataItemID={id}&sort=viewedAt%3Adesc` provides filtered history. A native test compares the newest historyKey and metadata viewCount before and after a natural ending; both changed for the authorized test track. That test seeks near the end and then allows a natural stop. It does not establish universal counting rules for skipped or briefly played tracks. No additional scrobble request is sent.
 
-`PUT /:/rate?identifier=com.plexapp.plugins.library&key={ratingKey}&rating={0..10}` setzt die persönliche Bewertung. Ein anschließendes `GET /library/metadata/{ratingKey}` liefert `userRating`. Der echte Schreib-/Rücklesetest hat eine Testbewertung gesetzt und die ursprüngliche Bewertung wiederhergestellt. Der Wert 0 entspricht in der Plugin-Oberfläche keiner Bewertung. Ganze Winamp-Sterne werden mit Faktor zwei auf die Plex-Skala abgebildet; vorhandene Bruchteile werden ohne Rundung im Modell gehalten. Die native Titelansicht verwendet diesen Ablauf für genau einen ausgewählten Titel. Fehler oder ausbleibende Bestätigung werden sichtbar gemeldet. Playlists und Bibliotheksinhalte werden darüber nicht bearbeitet.
+`PUT /:/rate?identifier=com.plexapp.plugins.library&key={ratingKey}&rating={0..10}` sets a personal rating. Subsequent metadata must confirm userRating. A real test set and restored the initial rating. Zero means unrated in the plugin; whole stars map to Plex values by multiplying by two, while existing fractions remain unrounded in the model. The native action operates on one track and exposes errors or missing confirmation. It does not modify playlists or library content.
 
-Plexas Audio-Transcoding unter `/music/:/transcode/universal/start.mp3` ist zusätzlich im Referenzadapter belegt. Noch nicht belegt ist die erforderliche Parameterkombination für diesen Winamp-Client. Es gibt deshalb keinen automatischen Transcoding-Versuch.
+Plexa references `/music/:/transcode/universal/start.mp3`. Required parameters for this Winamp client are not verified, so no automatic transcoding attempt exists.
 
-`GET /status/sessions` ist der offizielle Endpunkt für aktive Wiedergaben. Die [PlexAPI-Referenzimplementierung](https://github.com/pkkid/python-plexapi/blob/master/plexapi/base.py) liest `TranscodeSession` unmittelbar unter dem jeweiligen Medienobjekt; fehlt dieses Element, meldet die Sitzung keine Transcodierung. Der Integrationsprüfer ordnet die Sitzung zuerst anhand von `Player.machineIdentifier` dem eigenen Client zu und verlangt einen aktiven Player. Ein fehlender Player ist kein Nachweis für Direct Play. Eine vorhandene `TranscodeSession` wird als Fehler behandelt. Der echte MP3-Lauf prüft dies während Abspielen, Pause, Fortsetzen und nach Seeking; eine synthetische Gegenprobe erkennt die eingefügte Transcoding-Sitzung. Nachweis: `.local/logs/timeline-no-transcode-native.log`. Diese Beobachtung ist auf die geprüfte Sitzung und die Abfragezeitpunkte begrenzt.
+`GET /status/sessions` lists active playback. The [PlexAPI reference](https://github.com/pkkid/python-plexapi/blob/master/plexapi/base.py) reads TranscodeSession directly under each media object. The integration probe first identifies its own active Player.machineIdentifier, then requires no TranscodeSession. A missing player is not Direct Play evidence. Native MP3 play/pause/resume/seek checks pass, and synthetic counterchecks reject an injected transcode session and a missing player. Evidence: `timeline-no-transcode-native.log`, limited to the tested session and sampling times.
 
-## Fehler und Sicherheitsgrenzen
+## Errors and security boundaries
 
-401/403: Zugriff verweigert; 404: Datei oder Metadaten fehlen; 416: Byte-Range nicht erfüllbar. Redirects werden nicht gefolgt. Andere Upstream-Fehler ergeben am lokalen Proxy einen leeren HTTP-502-Fehler. Antworttexte, Cookies und Location-Header gehen nicht an Winamp. Die UI zeigt nur klassifizierte Codes, nie Tokens oder rohe API-Antworten.
+401/403 mean denied access; 404 means absent media/metadata; 416 means an unsatisfiable range. Redirects are not followed. Other upstream failures become an empty local HTTP 502. Response bodies, cookies and Location headers do not reach Winamp. UI messages use classified codes rather than tokens or raw API responses.
 
-Der Client bindet jeden Request an eine vorab ausgewählte Origin. Medienpfade müssen relative, geprüfte Plex-Part-Pfade sein. Absolute URLs, Netzwerkpfade, eingebettete Zugangsdaten, Query-Tokens und Header-Injection werden abgewiesen. Der Proxy sendet keine vom lokalen HTTP-Client gelieferten Authentifizierungsheader an Plex.
+Each request is bound to a preselected origin. Media paths must be validated relative Plex Part paths. Absolute URLs, network paths, embedded credentials, query tokens and header injection are rejected. Authentication supplied by the local HTTP client is never forwarded to Plex.

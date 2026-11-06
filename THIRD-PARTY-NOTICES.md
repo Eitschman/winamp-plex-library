@@ -1,42 +1,42 @@
-# Fremde Komponenten und Quellen
+# Third-party components and sources
 
 ## Winamp SDK 5.55
 
-Bezugsquelle: https://download.nullsoft.com/winamp/plugin-dev/WA5.55_SDK.exe
+Source: https://download.nullsoft.com/winamp/plugin-dev/WA5.55_SDK.exe
 
-SHA-256 des geprüften Installationsarchivs:
+SHA-256 of the inspected installer archive:
 `d88abbb9882add625e6286dc68fb7598645862a191d63577be84b72ef0870370`
 
-Verwendet werden die unveränderten Dateien `gen_ml/ml.h` und `Winamp/wa_ipc.h`. Beide enthalten die Nullsoft-Lizenz mit freier Nutzung, Änderung und Weitergabe unter Erhalt des Lizenztextes, korrekter Herkunftsangabe und Kennzeichnung veränderter Fassungen. Die Lizenz wird als zlib-artige Lizenz eingeordnet. Maßgeblich ist der jeweilige Originaltext im Header. Die Header werden lokal beschafft und nicht im Repository mitgeliefert. Die MIT-Lizenz des Projekts ersetzt diese Lizenz nicht.
+The unchanged `gen_ml/ml.h` and `Winamp/wa_ipc.h` headers contain Nullsoft terms permitting use, modification and redistribution subject to retaining the notice, accurate attribution and marking altered versions. These terms are commonly classified as zlib-style. The original notice in each header is authoritative. Headers are obtained locally and are not distributed in this repository. The project's MIT License does not replace their terms.
 
-Das gesamte SDK enthält weitere Beispiele und Komponenten mit eigenen Bedingungen. Aus der Header-Lizenz wird keine pauschale Freigabe aller SDK-Dateien abgeleitet. Insbesondere wird kein Material aus dem 2024 veröffentlichten Winamp-Quellbaum verwendet.
+Other SDK examples and components have their own terms; the header license does not imply permission to redistribute the whole SDK. No material from the Winamp source tree published in 2024 is used.
 
-`gen_tray/WINAMPCMD.H` liefert die ursprünglichen numerischen Befehlsdefinitionen, insbesondere `WINAMP_BUTTON2`. Dieser reine Definitionsheader enthält keinen eigenen Lizenztext und wird ebenfalls ausschließlich lokal aus dem originalen SDK beschafft. Der Header und die SDK-Beispiele werden nicht mit dem Projekt weitergegeben; es wird kein Beispielprogramm übernommen.
+`gen_tray/WINAMPCMD.H` supplies original numeric commands, particularly `WINAMP_BUTTON2`. This definitions-only header has no separate license notice. It is obtained locally from the original SDK and is not redistributed. No SDK example program is incorporated.
 
-Die Album-Art-Schnittstelle verwendet außerdem die unveränderten Wasabi-/Agave-Header aus dem SDK-5.55-Archiv. Die konkrete Liste mit Prüfsummen steht in `cmake/WinampArtworkSdk.cmake`. Diese Header enthalten keinen einheitlichen eigenen Lizenztext und werden ausschließlich lokal beschafft. Es wird keine pauschale Erlaubnis zur Weitergabe dieser Dateien behauptet. Das Beispiel `coverdirectory` wird als Schnittstellenreferenz gelesen, nicht in das Projekt kopiert.
+Album-art integration also uses unchanged Wasabi/Agave headers from SDK 5.55, listed with checksums in `cmake/WinampArtworkSdk.cmake`. These headers do not share a uniform separate license notice and are obtained locally only. No general redistribution permission is asserted. The `coverdirectory` example is read as an interface reference and is not copied into the project.
 
-`Winamp/ipc_pe.h` liefert die originale Playlisteditor-Schnittstelle für das Einfügen einer M3U8-Datei. Der reine Schnittstellenheader enthält keinen eigenen Lizenztext. Er wird ausschließlich unverändert aus demselben geprüften SDK-Archiv lokal extrahiert, mit SHA-256 geprüft und nicht mit dem Projekt weitergegeben. Es wird daraus keine eigenständige Weitergabelizenz abgeleitet.
+`Winamp/ipc_pe.h` provides the original playlist editor interface for inserting M3U8 files. This interface-only header has no separate license notice. It is extracted unchanged from the same verified SDK archive, checked by SHA-256 and not redistributed. No independent redistribution license is inferred.
 
-## Veröffentlichter Skin-Schnittstellenheader von 2016
+## Published 2016 skin interface header
 
-Quelle: https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h
+Source: https://getwacup.com/sdk/gen_ml/ml_ipc_0313.h
 
 SHA-256: `922e6d21b0b8f2e9fe536456c87e51e05bba82b579ec6eaa77264cbdb25c4e42`
 
-Dieser unveränderte Header liefert die Skin-Schnittstellen und deren ursprüngliche Strukturen, insbesondere den 48-Byte-Vertrag für `MLSKINNEDPOPUP`. Er wird ausschließlich lokal beschafft und nicht weitergegeben. Er enthält keinen eigenen Lizenztext; eine freie Weitergabelizenz wird daraus nicht abgeleitet. Die Skin-Engine gehört zum Host und wird durch Schnittstellenaufrufe verwendet; SDK-Beispielcode wird nicht in das Projekt übernommen.
+This unchanged header supplies skin interfaces and original structures, including the 48-byte `MLSKINNEDPOPUP` contract. It is obtained locally and not redistributed. It has no separate license notice; no redistribution permission is inferred. The plugin calls the host's skin engine through its interfaces without incorporating SDK example code.
 
 ## nlohmann/json 3.12.0
 
-Quelle: https://github.com/nlohmann/json/releases/tag/v3.12.0
+Source: https://github.com/nlohmann/json/releases/tag/v3.12.0
 
-Lizenz: MIT, siehe https://json.nlohmann.me/home/license/ und den Lizenztext im heruntergeladenen Paket. CMake prüft die SHA-256 des Release-Archivs. Bei einer Binärweitergabe ist der Lizenztext aus dem Paket beizulegen. Es wird keine zusätzliche JSON-Laufzeit-DLL benötigt.
+License: MIT, see https://json.nlohmann.me/home/license/ and the notice in the downloaded package. CMake checks the release archive's SHA-256. Binary distributions must include its license notice. No separate JSON runtime DLL is required.
 
-## Windows und Buildwerkzeuge
+## Windows and build tools
 
-WinHTTP, Winsock, BCrypt und DPAPI sind Windows-Systemschnittstellen. Die Microsoft-Werkzeuge und Windows-SDK-Dateien werden nicht mit dem Quellprojekt weitergegeben. Eine Binärweitergabe muss die gegebenenfalls erforderlichen Microsoft-VC-Runtime-Bedingungen berücksichtigen.
+WinHTTP, Winsock, BCrypt and DPAPI are Windows system interfaces. Microsoft tools and Windows SDK files are not redistributed with the source project. Binary redistribution must respect any applicable Microsoft Visual C++ runtime terms.
 
-## Referenzprojekte
+## Reference projects
 
-- SDK-Beispiel `ml_xmlex`: Untersuchung von Initialisierung, Unicode-Baumknoten und `CreateDialog` im Lifecycle. Keine Beispielimplementierung wurde als Produktcode kopiert.
-- [Plexa](https://github.com/rupisaini123/plexa): Verhaltensreferenz für Browseranmeldung, Serverauswahl, Bibliotheksnavigation und Mediengateway. Im untersuchten Dateibaum wurde keine projektweite LICENSE-Datei gefunden. Deshalb kein Quellcode übernehmen oder als MIT-Code ausgeben. Die Schnittstellen werden anhand der offiziellen Plex-Dokumentation eigenständig implementiert.
-- [Python PlexAPI](https://github.com/pushingkarmaorg/python-plexapi): Gegenprüfung von API-Pfaden und Medienpart-Schlüsseln. Keine Laufzeitabhängigkeit und kein übernommener Quellcode.
+- SDK `ml_xmlex`: initialization, Unicode tree nodes and dialog lifecycle reference. No example implementation was copied into product code.
+- [Plexa](https://github.com/rupisaini123/plexa): behavioral reference for browser sign-in, server selection, library navigation and media gateway design. No project-wide LICENSE file was found in the inspected tree. Its source is not copied or represented as MIT-licensed project code; interfaces are implemented independently using official Plex documentation.
+- [Python PlexAPI](https://github.com/pushingkarmaorg/python-plexapi): cross-check of API paths and media-part keys. Neither a runtime dependency nor a source-code incorporation.

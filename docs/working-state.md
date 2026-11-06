@@ -1,83 +1,86 @@
-# Arbeitsstand und Wiedereinstieg
+# Working state and continuation
 
-## Nächster Auftrag bei „weiter“
+## Active task
 
-Der Benutzer hat einen begrenzten Medienpuffer nach dem Vorbild des Plexamp-Caches beauftragt und die Umsetzung ausdrücklich auf morgen verschoben. Dafür wurde bisher ausschließlich vorhandener Code gelesen; es gibt noch keine Pufferimplementierung und keine entsprechende Änderung der installierten DLL. Morgen bedeutet „weiter“: diesen Auftrag aufnehmen, ohne erneut nach dem Arbeitsziel zu fragen.
+The user resumed work on November 6, 2026. Implement a bounded media buffer that decouples upstream Plex downloading from Winamp's consumption rate, while preserving authentication, TLS validation, byte-exact resumption, seeking and controlled teardown.
 
-Ziel ist, den Plex-Abruf von Winamps Lesegeschwindigkeit zu entkoppeln. Zuerst den bestehenden Proxy und den privaten Medienspeicher prüfen, dann einen begrenzten Puffer mit kontrolliertem Ressourcenverbrauch umsetzen. Speicherort und genaue Grenzen sind noch keine festgelegte Architekturentscheidung. Bestehende Authentifizierung, TLS-Prüfung, bytegenaue Fortsetzung und native Decoder bleiben maßgeblich. Langsames Lesen, Pause, Verbindungsunterbrechung, Seeking, Ressourcenbegrenzung und Abbruch beim Plugin-Ende müssen gezielt geprüft werden. Keine automatische weitere Installation in der normalen Winamp-Installation aus der einmaligen Austauschfreigabe ableiten.
+Implementation is in progress in the regular transport/private-store code. The initial Release build and focused transport run pass 159 checks, including complete upstream retrieval while the decoder temporarily does not read. Full Debug/Release validation, targeted negative counterchecks and native playback validation of this new buffer remain pending. Do not treat these changes as part of v0.1.0 or install them into the normal Winamp automatically.
 
-Die Recherche zu Plexamp belegt Hintergrundpufferung und Wiederholungsversuche bei Verbindungsabbrüchen sowie einen Festplattencache und Vorausladen. Quellen: `https://forums.plex.tv/t/plexamp-constantly-pausing/675610`, `https://forums.plex.tv/t/plexamp-macos-always-re-caches-tracks-even-when-downloaded/910747`, `https://forums.plex.tv/t/plexamp-pre-caching-speed-limit-causes-playback-to-buffer/897623`. Exakte aktuelle Wiederholungsgrenzen und ETag-Logik von Plexamp sind öffentlich nicht nachgewiesen. Die Recherche ist keine Freigabe für unkontrollierte Ausweichpfade.
+The selected implementation is a progressive private disk buffer per active response, with a 128 KiB startup threshold and shared private-media quotas of 512 MiB per file and 2 GiB overall. Producer lifetime is bounded by active proxy workers. Validate cancellation, cleanup, slow consumers, errors and seeking before claiming the behavior tested.
 
-Benutzernachweis nach dem ausdrücklich freigegebenen DLL-Austausch: Zwei Titel sind in seiner normalen Winamp-Installation ohne vorzeitigen Abbruch durchgelaufen. Titel und Laufzeiten dieser beiden Durchläufe wurden nicht genannt. Das sind zusätzliche Beobachtungen, keine allgemeine Stabilitätsgarantie. Die eigene Testkopie bleibt beendet. Den tatsächlichen Ausgang des unten verlinkten ersten Release-Laufs beim Wiedereinstieg prüfen; dessen Veröffentlichung wurde vor der Arbeitsgrenze noch nicht bestätigt.
+The user additionally requested all public project documentation in English and an immediate documentation-only push. Keep that commit separate from unfinished buffer code. The application continues to offer German/English based on Winamp's language pack.
 
-Prüfstand: 05.11.2026. Der ursprüngliche Plugin-Auftrag bleibt maßgeblich; das PRP unter `prp/prp.md` ist ein veränderbares Arbeitsdokument. Die detaillierten Nachweise stehen in `docs/testing.md`.
+**Today's tests must be muted and run in the background.** Keep the isolated Winamp minimized, revealing only briefly for necessary visual checks. Stop and clear its playlist afterwards. There is no new daily cutoff specified. Prior one-day cutoffs do not apply automatically.
 
-Feierabend am 05.11.2026: nach ausdrücklicher Verlängerung spätestens gegen 18:10 Uhr. Die eigene Testkopie ist gestoppt, ihre gespeicherte Playlist geleert und der Prozess regulär beendet (`release-day-shutdown.log`). Anschließend wurde auf ausdrücklichen neuen Auftrag ausschließlich die normale `Plugins/ml_plex.dll` bei beendetem Winamp ersetzt. Der installierte SHA-256 entspricht dem getesteten Build `080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`. Die vorherige DLL ist unter `.local/installation-rollback-20261105/ml_plex.dll` gesichert; ihre SHA-256 lautet `f37b12279e11fa4eb220ca1c70a47f195a6f9d563a2d7ab26490ec1834230f81`. Windows hat den Austausch nach Administratorfreigabe zugelassen; die Zieldatei wurde anschließend unabhängig erneut geprüft. Winamp wurde nicht gestartet. Diese Freigabe betrifft nur diesen Austausch.
+## Release and repository
 
-Tag `v0.1.0` ist auf Quellstand `3644c12` veröffentlicht. Der Release-Lauf [42071402195](https://github.com/Eitschman/winamp-plex-library/actions/runs/42071402195) führt Debug, Release und Geheimnisprüfung aus und veröffentlicht anschließend ZIP und SHA-256-Datei. Beim nächsten Einstieg zuerst dessen tatsächliches Ergebnis und das Release unter `https://github.com/Eitschman/winamp-plex-library/releases/tag/v0.1.0` prüfen. Der vorangegangene Lauf 42070363161 besteht bereits. Der Tag selbst ist kein Nachweis einer erfolgreichen Veröffentlichung. Das heruntergeladene Releasepaket und dessen Prüfsumme gesondert nachprüfen, falls dies bis zur Arbeitsgrenze offen bleibt.
+Public repository: https://github.com/Eitschman/winamp-plex-library. Publishing its contents and GitHub Actions is explicitly authorized. AndreasHT has collaboration access; administrative account settings remain with the owner. Use scoped local checkpoints and preserve the original repository history. Do not create branches or rewrite release tags without instruction.
 
-## Öffentliches Repository und CI
+[v0.1.0](https://github.com/Eitschman/winamp-plex-library/releases/tag/v0.1.0) is published at source `3644c12c1649a03d130d71c2a20ff848e969d744`. Its release workflow is [42071402195](https://github.com/Eitschman/winamp-plex-library/actions/runs/42071402195). Publication and downloaded asset verification are now confirmed, rather than pending.
 
-Aktuelle Priorität ist der wiederholt gemeldete vorzeitige Titelabbruch. „The Puppeteer“ ist nach 129,8 statt 273 Sekunden mit fehlenden Medienbytes reproduziert. Die bytegenaue Fortsetzung derselben Datei mit starkem ETag besteht synthetische Gegenproben und einen echten Titelendetest einschließlich tatsächlich unterbrochener Upstream-Verbindung. „Until Dawn“ besteht den zweiten hörbaren Titelendetest. Künstler und Titel erscheinen zusammen in Winamps Playlist und Anzeige. Debug und Release bestehen jeweils 13 CTest-Suiten mit 137 Transportprüfungen. Ein sporadischer Handle-Anstieg im Lifecycle-Test bleibt als eigener Befund offen.
+The 276,607-byte ZIP matches the published SHA-256:
+`b0e92f4eb86a00474871603e39c6152d714c7c85061f7fe09d97fb3d66ed6fe7`.
+Its five files are the x86 DLL, INSTALL.md, LICENSE, THIRD-PARTY-NOTICES.md and the nlohmann/json MIT license. The DLL is 564,224 bytes.
 
-Die Geheimnisprüfung umfasst Git-Historie, veröffentlichten Quellstand, aktuelle Änderungen, CI-Logs und das vorhandene Buildpaket. Keine Funde; künstliche positive und gültige negative Gegenprobe bestehen. Einzelheiten und Grenzen stehen in `SECURITY.md`. Der Release-Workflow veröffentlicht explizite Versionstags nach bestandenen Prüfungen. Für das erste Release ist `v0.1.0` vorgesehen; den tatsächlichen Workflow- und Veröffentlichungsstatus auf GitHub prüfen. Keine normale Winamp-Installation automatisch ersetzen.
+CI builds MSVC x86 Debug and Release, runs 13 suites in each and seven package checks for Release. It also performs a redacted, checksum-pinned Gitleaks full-history scan. Source, history, current changes, CI logs and package content were scanned without findings; synthetic positive and clean negative cases were checked. Scope and limitations are in [SECURITY.md](../SECURITY.md).
 
-Das Repository liegt unter `https://github.com/Eitschman/winamp-plex-library`; `origin/main` ist mit der lokalen Historie verbunden. Der ursprüngliche GitHub-Lizenzcommit bleibt erhalten. Die Veröffentlichung und GitHub Actions sind freigegeben. Der Workflow baut MSVC-x86-Debug und Release auf Windows 2022 und besteht für Quellstand `d85e25a` jeweils 13 CTest-Suiten. Release besteht zusätzlich sieben Paketprüfungen. Nachweis: [Actions-Lauf 42061725581](https://github.com/Eitschman/winamp-plex-library/actions/runs/42061725581).
+The downloaded earlier CI DLL passed native progress, duration, seeking, metadata and no-TranscodeSession checks in a repeat. The first run failed to locate its own Plex session despite passing playback; that cause remains unresolved.
 
-Das heruntergeladene Artefakt `winamp-plex-library-win32-release` enthält exakt die x86-DLL, `INSTALL.md`, `LICENSE`, `THIRD-PARTY-NOTICES.md` und die MIT-Lizenz von nlohmann/json. SDK-Dateien und lokale Einstellungen sind nicht enthalten. CI ersetzt keinen nativen Winamp-/Plex-Nachweis. Der Release-Workflow veröffentlicht nach einem expliziten Versionstag und bestandenen Prüfungen; eine automatische Installation in der normalen Winamp-Installation gibt es nicht.
+## Playback stability baseline
 
-Die heruntergeladene CI-DLL ist zusätzlich in der getrennten Zielversion geprüft: 30 Sekunden MP3 ohne Seeking, Länge, Seeking, Plex-Sitzung ohne TranscodeSession und Titelmetadaten bestehen im Wiederholungslauf. Der erste Lauf findet nach bestandener Wiedergabeprüfung die eigene Plex-Sitzung nicht; dessen Ursache ist offen, siehe `docs/testing.md`. Die Testkopie erhält danach wieder den lokalen Build und bleibt gestoppt, leer und minimiert.
+Premature completion was reproduced on “The Puppeteer”: 129.8 seconds instead of 273, with incomplete source bytes. Full GET responses now support at most three guarded byte-exact continuations, requiring known length, a strong identical ETag, same origin/path/token and an exact HTTP 206 range. Initial HTTP 206 seeking responses are excluded. Numeric failure history survives recovery.
 
-## Aktueller Produktstand
+A real Puppeteer run reached natural end after an actual upstream interruption. “Until Dawn” also reached natural end at a decoder duration of 369 seconds, observed elapsed time 368.3 seconds. Artist/title formatting is present in playlists and scrolling display while raw metadata fields remain separate.
 
-Zusätzlicher Nachweis: „Until Dawn“ besteht den hörbaren Titelendetest mit 369 Sekunden Decoderlänge und natürlichem Stop nach 368,3 Sekunden. Release-Build und Testkopie enthalten dieselbe DLL mit SHA-256 `080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`. Der neue GitHub-Lauf 42070363161 besteht Geheimnisprüfung sowie Debug und Release. Dessen Buildlogs wurden ebenfalls ohne Gitleaks-Fund geprüft. Die Einstellungsprüfung aus minimiertem Zustand besteht nach explizitem Wiederherstellen ihres Eigentümerfensters.
+The explicitly authorized one-time replacement into the normal installation was performed with Winamp closed. Installed DLL SHA-256:
+`080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`.
+Its previous DLL is preserved under `.local/installation-rollback-20261105/ml_plex.dll`, SHA-256:
+`f37b12279e11fa4eb220ca1c70a47f195a6f9d563a2d7ab26490ec1834230f81`.
+The user subsequently reported two uninterrupted songs. **That permission was for one replacement only. Do not infer permission for another installation.**
 
-- Natives x86-Media-Library-Plugin für Winamp 5.9.2 Build 10042, vier Bibliotheksknoten, native virtuelle Tabellen, Suche, Sortierung, Paging, Mehrfachauswahl, Künstler-/Album-/Titelnavigation und Plex-Playlists.
-- Plex-Browseranmeldung erst nach Klick auf „Mit Plex anmelden“. Einstellungen, automatische HTTPS-Verbindungswahl, Server und Musikbibliothek, manuelle Adresse unter „Erweitert“. Die Sprache folgt Winamps Sprachpaket. Zugriff ausschließlich benutzergebunden mit DPAPI; keine Klartext-Tokens.
-- Classic, Winamp Modern, Bento und Big Bento sind visuell geprüft. Keine zusätzliche Player-Steuerleiste. Einfügen hinter dem aktuellen Titel ist mit exakter Reihenfolge, Metadaten und erhaltenem Wiedergabe-/Pausenzustand geprüft. Kontextmenüs sind in allen vier Skins sowie auf Deutsch und Englisch geprüft.
-- Albumcover und geerbte Trackcover, beide Big-Bento-Playerfelder, reales Referenzalbum „Grand Serpent Rising“ mit 13 Titeln sowie ein echter Titel ohne Bild sind geprüft.
-- MP3 und M4A verwenden authentifizierte Loopback-Streams; FLAC und OGG private vorbereitete Dateien. Synthetisches AAC-LC wird ohne Neucodierung als M4A vorbereitet. Echte MP3-/M4A-/FLAC-/OGG-Titel bestehen Fortschritt, Länge, Seeking und Metadaten ohne TranscodeSession. Der aktuelle Wiederholungslauf steht unter `formats-view-reaper-native.log`.
-- Timeline für Abspielen, Pause, Fortsetzen, Seeking und Stop, regulärer Verlaufseintrag und Wiedergabezähler sowie persönliche Bewertung mit Rücksetzen sind am echten Server zurückgelesen.
-- Gemeinsamer begrenzter Bibliotheks- und Covercache; Leeren, deaktivierter Cache, Revisionen, Ablauf und gezählte Wiederverwendung sind geprüft. Rasche Suchaufträge liefern zuletzt das aktuelle Ergebnis.
+Plexamp reference research supports background buffering, retry behavior, disk caching and preloading:
+- https://forums.plex.tv/t/plexamp-constantly-pausing/675610
+- https://forums.plex.tv/t/plexamp-macos-always-re-caches-tracks-even-when-downloaded/910747
+- https://forums.plex.tv/t/plexamp-pre-caching-speed-limit-causes-playback-to-buffer/897623
 
-## Lebensdauer, lange Playlists und Ressourcen
+Exact current Plexamp retry limits and ETag handling are not established by those public sources. They do not justify copying undocumented behavior or hiding errors.
 
-Volle Decoderpuffer dürfen keinen Medienabbruch verursachen. Der Proxy wartet mit nicht blockierenden Sockets auf Empfangsbereitschaft und prüft dabei das Stop-Event. Bytegenaue Rückstauübertragung, abbrechbarer Stillstand und die separate Drei-Sekunden-Headerfrist besitzen Regressionstests samt erkannten Gegenproben. MP3 und M4A bestehen jeweils 30 Sekunden ohne Seeking und danach die Seeking-Prüfung (`stream-continuous-fixed.log`). Der Titelendetest `Test-PlexFormats.ps1 -ToEnd` besteht ohne Seeking für einen echten M4A-Titel mit 251 Sekunden und einen MP3-Titel mit 209 Sekunden bis zum natürlichen Stop (`stream-natural-end-fixed.log`). Jeweils 13 Testsuiten bestehen im aktuellen Debug- und Release-Build; die Transportsuite enthält 115 Einzelprüfungen. Eine Prüfung aller Bibliothekstitel ist damit nicht behauptet.
+## Validated product scope
 
-Streaming-Capabilities sind für fremde Prozesse zwei Stunden gültig. Wartende Titel bleiben innerhalb derselben Winamp-Sitzung über kernelbestätigte TCP-Client-PID nutzbar; die Frist fremder Links wird nicht verlängert. Der native Test mit zehn Sekunden Laufzeit bestätigt Fortschritt und Seeking nach Ablauf bei gleichzeitigem HTTP 410 für einen fremden Prozess (`host-session-native-short.log`). Die normale zweistündige Laufzeit ist wiederhergestellt. Keinen zweistündigen Echtzeitlauf starten.
+- Native target-version Media Library nodes, virtual paginated tables, search/sort, multiple selection, artist/album/track navigation and Plex audio playlists.
+- Browser sign-in only after explicit action; secure automatic routing, server/library selection and Advanced manual HTTPS settings.
+- Language inherited from Winamp; user-bound DPAPI persistence without plaintext tokens.
+- Classic, Modern, Bento and Big Bento visually inspected; no extra player toolbar.
+- Insert-after-current checked for order, metadata and preserved playback/pause in both languages and all four skins.
+- List/player artwork, inherited track covers, a real missing-image track, and “Grand Serpent Rising” with 13 tracks verified.
+- Real MP3/M4A streams and prepared FLAC/OGG files pass progress, duration, seeking and metadata. Synthetic AAC-LC is repackaged losslessly; real ADTS and more profiles remain open.
+- Timeline play/pause/resume/seek/stop, history/play count and restored personal rating are confirmed through the real API.
+- Bounded shared library/artwork caches; clear, disable, revisions, TTL and counted reuse tested.
+- Home Assistant displays player metadata, cover and progress through Plex timeline. Remote control is explicitly optional future work.
 
-Der HTTP-Transport wartet auf die tatsächliche Rückkehr aller WinHTTP-Sitzungs-Callbacks. Ein deterministisch angehaltener Callback samt negativer Gegenprobe bestätigt die Freigabereihenfolge. Kein Callback darf nach Freigabe des Plugin-Codes weiterlaufen.
+## Lifecycle and resources
 
-`ViewReaper` übernimmt bereits abgebrochene Ansichtsworker im Hintergrund. Fenster-, Skin- und Bildlistenressourcen werden vorher auf dem UI-Thread getrennt. Ein eigener COM-initialisierter Thread verbindet die Worker und leert die Warteschlange vor DLL-Ende. Höchstens acht ausstehende Ansichten einschließlich laufendem Abbau sind zugelassen. Der SDK-Testhost besteht 100 Ladezyklen. Fünf gezielte Prüfungen bestätigen nicht blockierende Übergabe, Kapazitätsgrenze, Abschluss, MTA-Apartment und FIFO-Abbau; Gegenproben für jeden dieser Fälle werden erkannt und sind entfernt.
+The proxy waits through full decoder buffers using nonblocking sockets and checks stop while waiting. Backpressure, stoppable shutdown and the separate three-second incomplete-header deadline have positive/negative tests.
 
-Die aktuelle native Ressourcenprüfung besteht nach 100 Wechseln und gleichen 60-Sekunden-Ruhephasen in 319,4 Sekunden: Handles 584 → 586, GDI 1479 → 1479, USER 232 → 232, Threads 19 → 19, private Bytes 87932928 → 86704128, TCP/UDP null. Unveränderte Grenzen; kein allgemeiner Speicherlecknachweis. Nachweise: `view-resources-reaper-100.log`, `view-resources-reaper-100-summary.json`. Die anderen protokollierten Ressourcenläufe erklären keine vollständigen Allokationsursachen. Eine reine Cookie-Lösung mit `CoIncrementMTAUsage` ist verworfen und aus dem Produktcode entfernt.
+Expired exported capabilities remain denied to foreign processes. Same-session Winamp access requires kernel-confirmed TCP ownership. Shortened expiry tests verify native playback/seeking without a two-hour waiting run.
 
-Die native Prüfung einer hängenden TLS-Anfrage bestätigt drei Millisekunden UI-Abfrage, zwei Millisekunden Ansichtswechsel und 849 Millisekunden reguläres Beenden nach dem Wechsel. Die ursprüngliche DPAPI-Datei bleibt hashgleich (`connection-navigation-reaper-native.log`). Eigenständige Prüfungen bestätigen außerdem Beenden während echter FLAC-Vorbereitung und ausstehender Browserfreigabe sowie das Ende lokaler Streaming-URLs nach Plugin-Beendigung.
+WinHTTP teardown waits until all callbacks return, validated with a deliberately blocked callback and countercheck. ViewReaper transfers cancelled worker state to its COM MTA thread, with a maximum of eight pending views and controlled queue drain before unload.
 
-## Build und aktuelle Prüfung
+The latest native 100-switch resource run passes fixed limits: handles 584 → 586, GDI 1479 unchanged, USER 232 unchanged, threads 19 unchanged, private bytes 87,932,928 → 86,704,128 and TCP/UDP zero. Earlier unexplained handle/USER growth and a sporadic lifecycle observation remain documented in [testing.md](testing.md), rather than erased by later passing runs.
 
-MSVC-x86-Debug und Release bestehen jeweils 13 CTest-Suiten (`ctest-view-reaper-debug.log`, `ctest-view-reaper-release.log`). Das separate Buildverzeichnis `.local/repro-build` besteht ebenfalls 13 Suiten (`repro-view-reaper-build.log`, `repro-view-reaper-ctest.log`). Compilerwerkzeuge und Befehle stehen in `docs/build.md`.
+A stalled TLS navigation check measured 3 ms UI query, 2 ms view change and 849 ms regular shutdown. Exit during real FLAC preparation and pending browser approval also passed with the original DPAPI file unchanged.
 
-Der Coverlauf `artwork-view-reaper-native.log` besteht; die tatsächliche Albumaufnahme wurde mit Cover und 13 Titeln angesehen. Die PE-Prüfung bestätigt x86 und den ungeschmückten SDK-Export (`plugin-view-reaper-pe.log`). Die regulär neu gestartete Testkopie verwendet die hashgleiche Release-DLL. Wiedergabe gestoppt, gespeicherte Playlist leer, Testkopie minimiert; beide geänderten Prüfscripts bestehen die Syntaxprüfung (`view-reaper-handoff-verification.log`). Sämtliche Gegenproben und Cookie-Diagnosen sind entfernt. Die verbleibenden Aufgaben sind die unten benannten externen Integrationsnachweise; nicht mit ungetesteten Behauptungen schließen.
+## Environment and access rules
 
-## Verbleibende externe Integrationsnachweise
+- Separate test copy: `.local/winamp-test`, class WinampPlexTest, private settings directory. Validate its exact executable path before interacting.
+- MSVC/CMake/CTest come from the authorized Build Tools 2022 installation. Header acquisition and hashes are documented in [build.md](build.md).
+- Access uses only the application's documented user-bound DPAPI workflow. Do not search for, print or log credentials.
+- Existing authorization covers creation of the test copy, Build Tools installation and one existing test track for restored ratings and a retained history entry.
+- Do not modify normal Winamp, Plex/router configuration or real access credentials for tests.
+- Use explicit paths for Git staging/checkpoints. Keep SDK files, local reports, API responses, settings and build artifacts out of Git.
 
-- Echtes widerrufenes Token und erneute Anmeldung, echtes Konto ohne Server sowie leere Musikbibliothek.
-- Positive lokale HTTPS-Auswahl im Heimnetz; derzeit wird vom Büro über Fernzugriff geprüft.
-- Echter Ausfall des Heimservers während Wiedergabe. Synthetische Netzwerk-, Authentifizierungs-, Redirect-, TLS- und Decoderfehler sind getrennt geprüft.
-- Echte separate Plex-ADTS-Datei und weitere AAC-Profile. Die Inventur fand keinen passenden ADTS-Titel; synthetisches AAC-LC ist nachgewiesen.
-- WACUP ist ein späteres Ziel ohne Laufzeitnachweis. Weitere fremde Skins und DPI-Stufen besitzen keine pauschale Freigabe.
+## Remaining external integration cases
 
-Diese offenen Nachweise erfordern passende externe Zustände beziehungsweise eine zusätzliche Laufzeitumgebung. Keine Plex-Konfiguration, Routereinstellungen, echten Zugangsdaten oder normale Winamp-Installation eigenständig dafür verändern.
+Real token revocation and sign-in recovery; serverless account and empty library; positive local HTTPS selection at home; actual home-server outage during playback; real Plex ADTS and additional AAC profiles; WACUP and additional skins/DPI settings.
 
-## Lokale Umgebung und Freigaben
-
-- Workspace: `C:\Users\andreasht\Documents\Winamp`.
-- Build Tools: `C:\BuildTools2022`; CMake/CTest unter `Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin`.
-- Unveränderte SDK-Header unter `.local/sdk` und `.local/skin-sdk`; Beschaffung und Hashprüfung dokumentiert.
-- Getrennte Testkopie: `.local/winamp-test`, Klasse `WinampPlexTest`, eigene Einstellungen unter `settings`. Nur ihren tatsächlichen Prozesspfad verwenden.
-- Die Testkopie startet und bleibt minimiert. Nur notwendige Sicht-/Maustests blenden kurz ein und minimieren danach wieder. `scripts/Restart-PlexTest.ps1` prüft den regulären Neustart. Wiedergabetests möglichst stumm; danach stoppen und gespeicherte Playlist leeren.
-- Browserfreigabe ist bestätigt. Zugriff ausschließlich über den dokumentierten Anwendungsweg auf `%LOCALAPPDATA%\WinampPlexLibrary\connection.dpapi`. Keine Zugangsdaten suchen, ausgeben oder in Logs übernehmen.
-- Build-Tools-Installation und getrennte Testkopie sind freigegeben. Ein existierender Titel darf für eine zurückgesetzte Bewertung und einen verbleibenden Testeintrag im Verlauf verwendet werden; diese Prüfung ist erfolgt.
-- Keine automatische Installation im normalen Winamp und keine fremden Konfigurationsänderungen. Das öffentliche Repository `https://github.com/Eitschman/winamp-plex-library`, dessen Befüllung und GitHub Actions sind ausdrücklich freigegeben. AndreasHT besitzt laut GitHub Schreibzugriff; administrative Einstellungen bleiben beim Eigentümer. Lokale Git-Checkpoints mit expliziten Dateipfaden.
-- Die feste Arbeitsgrenze um 13 Uhr galt für den 04.11.2026. Sie ist keine tägliche Stopbedingung.
+These require suitable external states or another runtime. Keep them explicit and do not manufacture them through unauthorized configuration changes.

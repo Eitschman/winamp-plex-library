@@ -1,127 +1,145 @@
-# Architektur
+# Architecture
 
-## Aktuelle Komponenten
+## Components
 
-Die Liste der Musikbibliotheken liegt bei aktiviertem Cache für fünf Minuten gemeinsam im Prozess vor. `LibraryCache` hält höchstens eine Liste; Schlüssel aus Serverkennung, Verbindungsrevision und Cache-Gültigkeitsbereich verhindern die Übernahme in eine andere Sitzung. Ein neuer Ansichts-Worker muss diese unveränderte Liste nicht erneut abfragen. Die erste Verbindungsprüfung einschließlich TLS und Serveridentität bleibt erforderlich. Ausschalten umgeht den Cache, Verbindungsänderung und Cache-Leeren verwerfen ihn. „Aktualisieren“ fragt auch die Bibliotheksliste neu ab. Ein abgelaufener Eintrag verdeckt keinen Netzwerkfehler; Netzwerkzugriffe laufen außerhalb der Cache-Sperre.
-
-Auch die Miniaturen und ergänzenden Album-/Playlist-Zähler werden zwischen Ansichts-Workern geteilt. Der Cache besitzt höchstens 64 Einträge mit fünf Minuten Lebensdauer; eine Miniatur enthält höchstens 48 × 48 BGRA-Pixel. Schlüssel trennen Server, Gültigkeitsbereich und Medienkennung. Die gemeinsame Sperre schützt ausschließlich Zugriff und LRU-Verwaltung, keine Netzwerkoperation. Leeren erhöht eine Generation, damit ein zuvor gestarteter Abruf keine alten Daten wieder einträgt. Cache-Leeren, Verbindungsänderung und Plugin-Beendigung geben die Einträge frei. Die Worker bleiben kontrolliert an ihre jeweilige Ansicht gebunden.
-
-Der begrenzte Cover-Worker aktualisiert auch Titelanzahl und Laufzeit sichtbarer Plex-Playlists. Dafür verwendet er deren Detailendpunkt, da Übersichtswerte dynamischer Playlists veraltet sein können. Die Antworten sind an die angefragte Audio-Playlist gebunden, fünf Minuten gecacht und durch Navigationsgenerationen gegen verspätete Übernahme geschützt. Playlistzeilen erhalten dabei keine Cover-Bildliste.
-
-| Bereich | Verantwortung |
+| Area | Responsibility |
 | --- | --- |
-| `src/plugin` | SDK-Descriptor, Export, Knotenregistrierung, Lifecycle, Winamp-Playlist-IPC und Besitz des Wiedergabe-Proxys |
-| `src/ui` | Native Unicode-Dialoge, virtuelle Tabellen, getrennte UI-Zeilen, Hintergrundaufträge, Anmeldung und Skin-Anbindung |
-| `src/plex/http_stream.cpp` | Asynchrone WinHTTP-Requests, TLS, Timeouts, Abbruch, Header- und Bytezugriff |
-| `src/plex/auth.cpp` | Starker PIN, Browser-Anmelde-URL, Ressourcen, Serveridentität und Musikbibliotheken |
-| `src/plex/catalog.cpp` | Typisierte Modelle, Künstler, Alben, Titel, Playlists, Query-Prüfung und Pagination |
-| `src/plex/feedback.cpp` | Geprüfte Bewertungs- und Timeline-Anfragen, TLS, Millisekunden und begrenzte Antwortverarbeitung |
-| `src/plex/artwork.cpp` | Geprüfte relative Coverpfade, authentifizierter Bildtransport und begrenzte WIC-Decodierung |
-| `src/ui/artwork_loader.cpp` | Bedarfsgesteuerte Cover-/Titelanzahlaufträge, Generationsprüfung und begrenzter Bildcache |
-| `src/plugin/artwork_provider.cpp` | Cache-basierter Album-Art-Dienst für eigene Wiedergabepfade, ohne Netzwerkzugriff im Hostcallback |
-| `src/cache` | Thread-sicherer LRU-Metadaten-Cache mit 32 Seiten und fünf Minuten Gültigkeit |
-| `src/playback/proxy.cpp` | Loopback-Listener, begrenzte Worker, befristeter Grant und Range-Streaming |
-| `src/playback/local_media.cpp` | Abbrechbare Vorbereitung von FLAC, OGG und ADTS-AAC, private Sitzungsdateien, Größenlimits und Bereinigung |
-| `src/playback/aac_remux.cpp` | Verlustfreier ADTS-/M4A-Containerwechsel mit Windows Media Foundation, ohne Decoder oder Encoder |
-| `src/playback/playback_reporter.cpp` | Zustandsvergleich, begrenzte Timeline-Warteschlange, Hintergrundversand und Abbruch |
-| `src/config` | Benutzergebundene DPAPI-Datei und atomarer Austausch |
-| `src/common` | Origin-, Token-, Pfad-, Request- und Range-Prüfung sowie Query-Encoding |
-| `tests` | SDK-Host, synthetischer PMS-Transport und Tests unabhängiger Komponenten |
+| `src/plugin` | SDK descriptor/export, navigation nodes, lifecycle, playlist IPC and playback ownership |
+| `src/ui` | Native Unicode dialogs, virtual tables, separate presentation models, workers, sign-in and skin integration |
+| `src/plex/http_stream.cpp` | Asynchronous WinHTTP, TLS, timeouts, cancellation, headers and bytes |
+| `src/plex/auth.cpp` | Strong PIN flow, browser URL, resources, server identity and music libraries |
+| `src/plex/catalog.cpp` | Typed models, artists/albums/tracks/playlists, validated queries and pagination |
+| `src/plex/feedback.cpp` | Rating/timeline requests, TLS, time units and bounded responses |
+| `src/plex/artwork.cpp` | Validated relative artwork paths, authenticated image transport and bounded WIC decoding |
+| `src/ui/artwork_loader.cpp` | Demand-driven artwork/count jobs, generation checks and shared bounded cache |
+| `src/plugin/artwork_provider.cpp` | Prepared-data album-art service for owned playback paths, without callback networking |
+| `src/cache` | Thread-safe LRU metadata pages, library lists and artwork caching |
+| `src/playback/proxy.cpp` | Loopback listener, bounded workers, expiring grants and range streaming |
+| `src/playback/local_media.cpp` | Cancellable FLAC/OGG/ADTS-AAC preparation, private files, quotas and cleanup |
+| `src/playback/aac_remux.cpp` | Lossless ADTS-to-M4A repackaging using Media Foundation, without an encoder/decoder |
+| `src/playback/playback_reporter.cpp` | State comparison, bounded timeline queue and cancellable background delivery |
+| `src/config` | User-bound DPAPI configuration and atomic replacement |
+| `src/common` | Origin, token, path, request and range validation; query encoding |
+| `tests` | SDK host, synthetic PMS transport and independent component tests |
 
-Die Ansicht verwendet `LVS_OWNERDATA` und lädt bis zu 250 Einträge je Seite. Suche wird verzögert ausgelöst. Ein neuer Auftrag bricht den alten ab; eine Generationsnummer verhindert die Veröffentlichung überholter Ergebnisse. Album- und Playlistwiedergabe lösen Titel im Worker auf, bevor der UI-Thread sie an Winamp übergibt.
+This document describes the validated baseline. Bounded progressive streaming-buffer work is in progress; see [working-state.md](working-state.md). Unverified work is not included in the release claims.
 
-Persönliche Titelbewertungen sind optionale Zahlen von 0 bis 10 im API-Modell. Die Ansicht zeigt sie geteilt durch zwei und bietet ein skiniertes Bewertungsuntermenü für einen einzelnen Titel. Ein Worker schreibt den Wert und liest die Metadaten zur Bestätigung zurück. Bereits nach dem erfolgreichen Schreibrequest wird der Seiten-Cache geleert, damit auch ein abgebrochenes Rücklesen keine alten Bewertungen konserviert. Ein Fehler bestätigt keine Änderung; die Oberfläche fordert dann eine erneute Prüfung durch Aktualisieren an.
+## Library views and caches
 
-Ein unsichtbares Nachrichtenfenster fragt Winamp alle 500 Millisekunden ausschließlich auf dem UI-Thread ab. Nur eigene Wiedergabepfade erhalten eine Zuordnung zu Plex-ID und Laufzeit. Titelwechsel beenden die vorige Sitzung vor dem nächsten Start; fremde Dateien und Stop beenden die eigene Sitzung. Zustandswechsel und Sprünge über zwei Sekunden werden unmittelbar, normale Fortschritte alle zehn Sekunden gemeldet. Ein separater Worker verarbeitet höchstens 64 wartende Meldungen in Reihenfolge. HTTP 401/403 beendet den automatischen Versand ohne andere Zugangsdaten auszuprobieren. Die Oberfläche zeigt klassifizierte Fehler; ein Audiofehler hat Vorrang vor einem Statusfehler. Beim Abbau erhält die letzte Stopmeldung bis zu 500 Millisekunden, danach wird eine ausstehende Anfrage abgebrochen und der Thread verbunden. Es entstehen keine zusätzlichen Player-Steuerelemente.
+Views use `LVS_OWNERDATA` and pages of up to 250 items. Search is debounced. A new request cancels its predecessor, and generation IDs reject stale results. Album and playlist jobs resolve tracks in workers before the UI hands them to Winamp. Stable Plex IDs identify entities; row positions do not.
 
-Mehrteilige Titel verwenden bekannte Teillaufzeiten als Positionsversatz. Sind diese nicht zuverlässig vorhanden, wird die Statusmeldung als nicht unterstützt ausgewiesen, ohne eine falsche Gesamtposition zu senden. Dieser Sonderfall ist durch Codeprüfung erfasst, nicht mit einem echten mehrteiligen Titel nachgewiesen. Ein echtes reguläres Titelende hat mit Timeline-Meldungen den Plex-Verlauf und Wiedergabezähler aktualisiert; ein zusätzlicher Scrobble-Schreibpfad ist nicht eingebaut.
+The metadata LRU holds 32 pages for five minutes. Keys include server identity, connection generation and validated query/library/sort fields, never tokens. Connection changes and explicit clearing invalidate it.
 
-Die Kopfzeile benennt die Musikbibliothek. Bei einer einzelnen Bibliothek zeigt sie deren Namen; nur mehrere Bibliotheken erhalten eine Auswahl. Der Navigationsbaum benennt die Hauptansicht. Eine zusätzliche Überschrift und „Zurück“ erscheinen erst bei Künstler- oder Album-Unteransichten. Seitenwechsel verwenden getrennte, eindeutig beschriftete Aktionen. Bei schmalen Ansichten stehen Bibliotheksname, Suchaktionen und Seitenwechsel in eigenen Zeilen.
+With caching enabled, `LibraryCache` shares one library list across view workers for five minutes. Server identity, connection revision and cache scope separate sessions. The initial TLS/identity validation is still required. Disabled caching bypasses storage; refresh reloads libraries; expiration does not hide request failures. Network calls run outside cache locks.
 
-Für sichtbare Album- und Titelzeilen arbeitet ein zusätzlicher Bild-Worker. Er lädt Originalcover über geprüfte `/library/metadata/{id}/thumb`-Pfade und skaliert sie mit Windows Imaging Component auf höchstens 48 × 48 Pixel. Download, Quelldimensionen und Pixelzahl sind begrenzt. Die Ansicht besitzt die Bildliste; GDI-Bitmaps werden nach der Übergabe freigegeben. Fehlender `thumb` oder HTTP 404 bedeutet kein Bild. Andere HTTP- oder Bildfehler werden sichtbar gemeldet. Eine fehlende Albumtitelanzahl wird über eine Kinderseite mit Größe 1 und deren Gesamtzahl ermittelt. Bis zu 64 Ergebnisse bleiben fünf Minuten im Cache.
+Artwork and supplementary album/playlist counts share up to 64 entries with a five-minute TTL. Thumbnails are at most 48 × 48 BGRA pixels. Keys separate server, scope and media ID; the lock protects lookup and LRU state only. Clearing advances a generation so in-flight work cannot repopulate stale data. Connection changes and shutdown release entries. Workers remain bound to their views.
 
-Ein Titel verwendet seinen eigenen `thumb` oder das geerbte Albumcover aus `parentThumb`. Vor der Playlistübergabe lädt der Katalog-Worker jedes benötigte Cover einmal pro Auftrag mit maximal 256 Pixeln Kantenlänge. Der registrierte `svc_albumArtProvider` liefert ausschließlich diese vorbereiteten PNG-Daten für eigene URLs. Bilder und Dateityptexte werden über Winamps `api_memmgr` allokiert. Die Dateitypkennung lautet gemäß SDK-Providervertrag `png`, nicht `image/png`. Für Streaming-URLs verwendet der Host die Kategorie `ALBUMARTPROVIDER_TYPE_EMBEDDED`; das Plugin ordnet das Bild separat zu und verändert keine Medienbytes oder Tags. Mehrere Titel teilen dasselbe Bild; der Prozesscache ist auf 64 MiB und 10000 Zuordnungen begrenzt. Widerruf und Plugin-Beendigung entfernen Zuordnungen und registrierten Dienst. Fehlende Hostdienste werden als Initialisierungsfehler behandelt.
+Playlist count/duration enrichment uses the audio-playlist detail endpoint because dynamic-playlist overview values may be stale. Results are bound to the requested playlist and view generation. Playlist rows have no cover image list.
 
-`ML_IPC_SKINWINDOW` bindet Dialog und direkte Steuerelemente an die Skin-Engine der Medienbibliothek. Schrift, Farben und Cursor gehören Winamp; eigene Farbpaletten werden nicht eingebaut. Kontextmenüs verwenden `ML_IPC_TRACKSKINNEDPOPUPEX`. Die Skin-Unterklassen entfernen sich bei `WM_NCDESTROY`. Die Ansicht enthält keine eigene Wiedergabesteuerung.
+The library header names the music library, using a selector only when more than one exists. The tree identifies root views; context headings and Back appear only in artist/album subviews. Paging actions are explicit. Narrow layouts place library identification, search actions and paging on separate rows.
 
-## Datenfluss
+## Ratings and timeline
+
+Personal track ratings are optional API values from zero to ten. The UI divides by two and offers a skinned submenu for one selected track. A worker writes and reads back the value. Successful writes invalidate page cache even if readback is cancelled. A failed confirmation does not claim success; the UI asks for refresh.
+
+An invisible message window polls Winamp on its UI thread every 500 ms. Only owned paths map to Plex IDs and durations. Track changes stop the previous session before starting another; foreign files and stop end the owned session. State changes and position jumps over two seconds are reported immediately, ordinary progress every ten seconds.
+
+A worker processes at most 64 queued timeline messages in order. HTTP 401/403 stops automatic reporting without trying other credentials. Classified audio failures take priority over reporting failures. Teardown gives the final stop message up to 500 ms, then cancels and joins. There are no additional player controls.
+
+Multipart positions use known part durations as offsets. Missing reliable offsets produce an unsupported-state report instead of a false total position. This case has code review coverage, not a real multipart integration test. A real natural ending updated history and play count using timeline alone; no separate scrobble path exists.
+
+## Artwork and skin integration
+
+Visible album/track rows use a dedicated artwork worker. Original images come through validated `/library/metadata/{id}/thumb` paths and are scaled by WIC. Download size, source dimensions and pixel count are bounded. The view owns its image list; temporary GDI bitmaps are freed after insertion. Missing paths or HTTP 404 leave an empty image slot. Other image/transport errors are exposed. Missing album counts use a one-item children page and its total.
+
+Tracks use their own thumb or inherited parentThumb. Before playlist handoff, the catalog worker loads each required cover once per job, with a maximum dimension of 256 pixels. The registered `svc_albumArtProvider` returns prepared PNG bytes only for owned paths, using Winamp's allocator for image/type buffers and SDK type string `png`. HTTP tracks require `ALBUMARTPROVIDER_TYPE_EMBEDDED`; the mapping is separate from the media bytes. Shared image data is capped at 64 MiB and 10,000 mappings. Revocation/shutdown remove mappings and unregister the service. Missing host services fail initialization.
+
+`ML_IPC_SKINWINDOW` binds dialogs and direct controls to Media Library colors, fonts and cursors. No private color palette is introduced. Context menus use `ML_IPC_TRACKSKINNEDPOPUPEX`. Skin subclasses are released with the documented destruction lifecycle.
+
+## Data flow
 
 ```mermaid
 flowchart LR
-    UI[Native Winamp-Ansicht] --> Auth[Anmelde-Worker]
-    Auth --> Browser[Plex-Seite im Systembrowser]
-    Auth --> Plex[Plex PIN und Ressourcen]
+    UI[Native Winamp view] --> Auth[Sign-in worker]
+    Auth --> Browser[Plex in system browser]
+    Auth --> Plex[Plex PIN and resources]
     Auth --> PMS[Plex Media Server]
-    Auth --> Config[DPAPI-Konfiguration]
-    UI --> IPC[Winamp Playlist-IPC]
-    IPC --> Decoder[Vorhandenes Winamp Input-Plugin]
-    Decoder --> Proxy[Loopback-Proxy]
-    UI --> Prepare[Medienvorbereitung im Worker]
-    Prepare --> Files[Private FLAC-/OGG-/M4A-Dateien]
+    Auth --> Config[DPAPI configuration]
+    UI --> IPC[Winamp playlist IPC]
+    IPC --> Decoder[Existing Winamp input plugin]
+    Decoder --> Proxy[Loopback proxy]
+    UI --> Prepare[Background media preparation]
+    Prepare --> Files[Private FLAC / OGG / M4A files]
     Decoder --> Files
     Prepare --> HTTP
-    Proxy --> HTTP[WinHTTP mit Token-Header]
+    Proxy --> HTTP[WinHTTP with token header]
     HTTP --> PMS
 ```
 
-Plexa ist die Verhaltensreferenz für Anmeldung, Auswahl und Mediengateway. Es wird kein Node-Prozess und kein Alexa-Endpunkt eingebettet. Der Proxy ist ein internes Transportmodul, kein externer Dienst.
+Plexa is a behavioral reference for authentication, selection and media gateway design. No Node process or Alexa endpoint is embedded. The proxy is an internal transport module.
 
-FLAC und OGG verwenden deterministisch lokale Dateien, da der FLAC-Decoder HTTP ablehnt und der OGG-Decoder dort keine Länge und kein Seeking liefert. Es handelt sich um denselben unveränderten Plex-Part, ohne Transcoding. Der Katalog-Worker lädt die ausgewählten Parts mit dem vorhandenen WinHTTP-Transport vollständig herunter. HTTP-Fehler, fehlende oder widersprüchliche Dateilängen, Abbruch und Limits beenden den Auftrag vor der Playlistübergabe. MP3 und vorhandene M4A-Dateien bleiben beim Proxy; ein Fehler löst keinen Wechsel des Wiedergabepfades aus.
+## Private media preparation
 
-Separate ADTS-AAC-Dateien erhalten ebenfalls vor der Playlistübergabe einen lokalen Dateipfad. Winamps HTTP-AAC-Decoder verweigert Seeking; dessen Dateipfad schätzt die Laufzeit der synthetischen Probe falsch. Media Foundation liest deshalb ausschließlich komprimierte ADTS-Samples mit abgeschalteten Konvertern. Der Worker entfernt die ADTS-Rahmung und schreibt die unveränderten AAC-Nutzdaten als `MEDIASUBTYPE_RAW_AAC1` in einen M4A-Container. Zeitstempel stammen aus den 1024 Samples je ADTS-Frame und der Abtastrate. Ein Encoder oder Decoder wird nicht angelegt. Die Bytebilanz erkennt übersprungene oder abgeschnittene Frames; bekannte ID3-Metadaten werden separat berücksichtigt. Program Config Elements, mehrere Rohdatenblöcke je Frame und mehr als zwei Millionen Frames werden abgewiesen. Eingang und Ausgang zählen während der Vorbereitung gemeinsam gegen das Speicherlimit. Fehler entfernen den angelegten Ausgang; bestehende Dateien werden nicht überschrieben. Die benötigten Windows-DLLs werden ausschließlich aus System32 und erst für AAC geladen.
+FLAC and OGG always use local files because their target decoders lack the necessary HTTP behavior. The selected Plex Part is unchanged, without transcoding. A catalog worker downloads it fully before handoff. HTTP errors, absent or inconsistent lengths, cancellation and quota violations fail the job. MP3 and existing M4A use the proxy; errors do not switch playback paths.
 
-Der Speicher legt Sitzungen mit 192 Bit Zufall unter dem eigenen Anwendungsordner an. Eine geschützte DACL erlaubt ausschließlich dem aktuellen Windows-Benutzer und SYSTEM Zugriff. Mediennamen enthalten ebenfalls 192 Bit Zufall und nur die geprüfte Dateiendung. Pro Datei gelten 512 MiB, insgesamt 2 GiB. Ein Lesehandle verhindert Änderungen, solange das Plugin die Datei hält. Noch geöffnete Decoderdateien bleiben beim Speicherverbrauch berücksichtigt und werden nach Freigabe erneut bereinigt. Aktuelle Titel werden vor dem Freigeben des Speichers gestoppt. Bei Prozessabbruch verbleibende Sitzungen werden nur mit passendem Marker, ausschließlich eigenen Dateinamen und ohne Reparse Points bereinigt; ein exklusiver Markerzugriff schützt parallele aktive Instanzen. Unbekannte Ordner bleiben unberührt.
+ADTS-AAC is also prepared before handoff. HTTP AAC seeking fails in the target decoder, and raw local ADTS duration is inaccurate for the synthetic fixture. Media Foundation therefore reads compressed ADTS samples with converters disabled; the worker strips framing and writes unchanged AAC payloads as `MEDIASUBTYPE_RAW_AAC1` in M4A. Timestamps derive from 1024 samples per frame and sample rate. No encoder or decoder is created.
 
-Die Playlistübergabe akzeptiert lokale Dateien nur aus dem tatsächlich vom Speicher angelegten Sitzungsordner und mit exakt zufälligem FLAC-/OGG-/M4A-Namen. Metadaten und vorbereitete Cover werden dem Unicode-Dateipfad zugeordnet. Der private Dateispeicher bleibt bis Verbindungswechsel oder Plugin-Ende bestehen; die zweistündige HTTP-Grant-Laufzeit gilt für diese Dateien nicht.
+Byte accounting detects skipped/truncated frames and accounts separately for known ID3 metadata. Program Config Elements, multiple raw blocks per frame and more than two million frames are rejected. Input/output both count toward quota during preparation. Failed outputs are removed; existing files are never overwritten. Required Windows DLLs load only from System32 and only for AAC.
 
-## Threading und Besitz
+Session directory and media names each use 192 random bits. A protected DACL grants only the current user and SYSTEM access. Limits are 512 MiB per file and 2 GiB total. A retained read handle prevents modification. Files still held by decoders remain accounted for and are retried for deletion. Owned current playback is stopped before releasing storage.
 
-Winamp ruft Plugin-Core und Dialogprozeduren auf seinem UI-Thread auf. Nur dieser Thread sendet Playlist-IPC und verändert Steuerelemente. Der Anmeldedialog besitzt einen Worker und ein Stop-Event. Ergebnisdaten werden unter einem Mutex veröffentlicht; `PostMessage` überträgt nur eine Benachrichtigung, keine frei schwebenden Ergebnis-Pointer.
+Crash cleanup accepts only marked sessions containing recognized owned filenames, rejects reparse points and uses exclusive marker access to protect active instances. Unknown directories remain untouched.
 
-Beim Ansichtswechsel trennt der UI-Thread Bildliste und Skin-Ressourcen und setzt die Stop-Events der Katalog- und Coverworker. `ViewReaper` übernimmt ihren noch lebenden Zustand über eine intrusive Warteschlange ohne weitere Allokation. Sein eigener Thread verbindet die Worker und gibt ihren Zustand frei; der Navigationsaufruf wartet darauf nicht. Höchstens acht ausstehende Ansichten einschließlich laufendem Abbau sind zugelassen. Bei ausgeschöpfter Grenze wird die zusätzliche Ansichtserzeugung als Fehler behandelt. Ein auf diesem Thread mit `CoInitializeEx` initialisiertes MTA-Apartment lebt für die Plugin-Sitzung und endet auf demselben Thread. Die Plugin-Beendigung zerstört zuerst sämtliche Fenster und leert danach die Aufräumwarteschlange samt Thread, bevor die DLL entladen wird. Es gibt keine detached Worker. Ein Cookie mit asynchronem MTA-Abbau wird nicht verwendet.
+Playlist handoff accepts local files only from the actual session directory with the exact random FLAC/OGG/M4A naming contract. Metadata and covers map to the Unicode path. Prepared files live until connection change or plugin shutdown; HTTP grant expiry does not apply.
 
-Der Proxy besitzt vier begrenzte Worker. Sie bedienen einen nicht blockierenden Loopback-Listener und pro Worker höchstens einen Client. Die Headergröße ist auf 16 KiB beschränkt; ein Client darf seine Header nicht unbegrenzt langsam senden. Medienbytes werden in 64-KiB-Blöcken weitergegeben, nicht vollständig im Speicher gepuffert.
+## Threading and ownership
 
-WinHTTP verwendet asynchrone Handles. Ein Worker wartet auf Abschluss oder Abbruch, während die Winamp-Oberfläche weiterarbeitet. Ein WinHTTP-Callback greift nur auf seinen Request-Kontext zu. Nach `HANDLE_CLOSING` werden Verbindung und Sitzung geschlossen. Anschließend wartet der Transport auf `WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT`: Erst dieses Ereignis bestätigt die Rückkehr sämtlicher Sitzungs-Callbacks, sodass deren Kontext und Plugin-Code freigegeben werden dürfen. Die bloße Zustellung von `HANDLE_CLOSING` genügt dafür nicht. [Microsoft dokumentiert das Abschlussereignis](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags#winhttp_option_unload_notify_event). Beim Beenden werden Stop-Events gesetzt, ausstehende Requests abgebrochen und Threads verbunden. Ein eigener Thread wird nicht detached weiterlaufen gelassen.
+Only Winamp's UI thread changes controls and sends playlist IPC. The sign-in dialog owns a worker and stop event. Results publish under a mutex; PostMessage carries a notification, not an unmanaged result pointer.
 
-Die Wiedergabe gehört dem Plugin-Core und überlebt das Zerstören einer Bibliotheksansicht. Ein Listener mit vier Workern verwaltet bis zu 10000 unabhängige Grants. Neue Titel widerrufen keine bereits angehängten Titel. Bei fehlgeschlagener Playlistübergabe werden nur die dabei neu ausgegebenen Grants zurückgenommen. Das Ende der Verbindung beendet alle Grants.
+On view destruction, the UI detaches image-list and skin resources and sets catalog/artwork stop events. `ViewReaper` takes their live state through an intrusive queue without further allocation. Its own thread joins workers and frees state; navigation does not wait. At most eight pending views, including active teardown, are allowed. Exhaustion fails additional view creation explicitly.
 
-Die UI übergibt den Wiedergabeauftrag als Anhängen, Abspielen oder Einfügen hinter dem aktuellen Titel. `send_playlist_to_winamp` kapselt die synchronen SDK-Aufrufe und prüft den tatsächlichen Playlist-Zuwachs. Beim Einfügen erhält der Playlisteditor die vorbereitete Unicode-M3U8-Datei am gewünschten Index. Diese Aktion sendet keinen Playerbefehl. Der Wiedergabe-Reporter wird vor der Hoständerung angelegt, damit eine dabei fehlgeschlagene Ressourcenallokation keine bereits eingefügten Titel zurücklässt. Ein vom Host nur teilweise importierter Auftrag wird als Fehler gemeldet; eine atomare Rücknahme des Hostimports ist nicht zugesichert.
+The reaper owns a `CoInitializeEx` MTA apartment for its thread lifetime and closes it on that same thread. Plugin shutdown destroys windows, drains the queue and joins the reaper before unload. There are no detached workers or asynchronous MTA-cookie teardown.
 
-## Authentifizierung und Konfiguration
+The baseline proxy has four workers, each serving at most one client. Headers are capped at 16 KiB with a finite header deadline. Media transfers use 64 KiB blocks rather than an unbounded memory buffer.
 
-Ein zufälliger Client-Identifier wird mit der Verbindung gespeichert. Die Einstellungen öffnen ohne Browseranmeldung. Nur der ausdrückliche Anmeldebutton startet eine starke Plex-PIN und den Systembrowser. Das Passwort läuft ausschließlich durch Plex. Der Account-Token dient dem Abruf der Serverressourcen und wird nicht dauerhaft gespeichert. Die Serverprofile enthalten die jeweiligen Ressourcen-Tokens und die von Plex gelieferten HTTPS-Verbindungen.
+WinHTTP uses asynchronous handles. Workers wait for completion or cancellation while the UI remains responsive. Callbacks touch only request context. After HANDLE_CLOSING, connection/session handles close; the transport then waits for [WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags#winhttp_option_unload_notify_event), confirming all callbacks have returned before context and code are freed. HANDLE_CLOSING delivery alone is insufficient.
 
-Die Erreichbarkeitsprüfung untersucht bis zu 32 Verbindungen pro Server mit normalen TLS-Prüfungen und einer unauthentifizierten `/identity`-Abfrage. Lokal hat Vorrang vor direktem Fernzugriff und Relay. Erst eine passende Serveridentität erlaubt die authentifizierte Bibliotheksabfrage. Ein Authentifizierungsfehler startet keine weitere Verbindungssuche. Manuelle Verbindungen stehen unter „Erweitert“ und benötigen ebenfalls eine Identitätsprüfung. Das Öffnen des Dialogs prüft die gespeicherte Verbindung und lädt die Musikbibliotheken im Hintergrund; Abbrechen speichert keine Entwurfsänderungen. Hintergrundjobs werden beim Schließen abgebrochen und beendet.
+Playback belongs to the core and survives view destruction. A shared listener supports up to 10,000 grants. Adding tracks preserves earlier grants; failed handoff revokes only newly issued ones. Connection teardown revokes all.
 
-Der erste Bibliotheksauftrag eines Plugin-Starts verwendet denselben Verbindungshelfer wie die Einstellungen. Nur dieser Auftrag erhält die ausgewählten Verbindungsvarianten, keine Tokens anderer Serverprofile. Weitere Aufträge und Coveranfragen verwenden die für diese Sitzung geprüfte Origin. Eine Profilrevision verhindert, dass ein älteres Worker-Ergebnis eine inzwischen geänderte Einstellung überschreibt. Eine neue Origin beendet vorhandene Wiedergabezuordnungen und leert den Bibliothekscache; die automatische Sitzungsauswahl schreibt keine DPAPI-Datei. Nach Einstellungsänderungen wird die Verbindung erneut geprüft. Vor erfolgreicher Prüfung lässt sich keine neue Wiedergabe übergeben.
+`send_playlist_to_winamp` handles synchronous SDK calls and verifies imported count. Insert-after-current hands M3U8 to the playlist editor without a playback command. The reporter is allocated before modifying the host. Partial imports are errors; atomic host rollback is not promised.
 
-Ein nativer modaler Fensterrahmen enthält eine eingebettete gen_ml-Ansicht. Hintergrund, Beschriftungen, Auswahlfelder und Buttons verwenden dieselbe Skin-Engine wie die Medienbibliothek. Erweiterte Felder sind anfangs verborgen; beim Einblenden werden die übrigen Zeilen und der Rahmen gemeinsam angepasst. Verborgene Eingaben besitzen keine aktive Skin-Unterklasse und keinen Tab-Stopp. Beim erneuten Einblenden werden die dokumentierten Skin-Unterklassen wieder registriert. Es kann nur ein Einstellungsdialog gleichzeitig geöffnet sein. Die Sprache stammt aus `IPC_GETLANGUAGEPACKINSTANCE` mit `MAKEWPARAM(5, LANG_LANG_CODE)` und bleibt an das aktive Winamp-Sprachpaket gebunden.
+## Authentication and configuration
 
-Die Konfiguration ist als Ganzes mit DPAPI `CurrentUser` verschlüsselt. Das Plugin schreibt eine temporäre verschlüsselte Datei und tauscht sie mit `MoveFileExW` aus. Das Format enthält Client-ID, Serveridentität, Origin, Servername, Ressourcen-Token, Bibliotheks-ID, Bibliothekstitel, Cache-Option, manuelle Origin sowie die bekannten Serverprofile und Verbindungen. Es gibt keine eigene gespeicherte Spracheinstellung. Die Konfiguration ist auf ein MiB, 64 Server und jeweils 32 Verbindungen begrenzt. Defekte oder nicht entschlüsselbare Konfiguration ist ein Fehler, kein Anlass, Zugangsdaten aus anderen Dateien zu suchen.
+A random client ID is saved with the connection. Settings open without sign-in; only the explicit button creates a strong PIN and opens the browser. Password handling stays with Plex. The account token is transient; stored profiles contain each resource token and its advertised HTTPS connections.
 
-Es gibt kein Logging von Tokens, Account-Antworten oder Medien-URLs mit Anmeldedaten. Windows-Prozessspeicher bleibt eine systembedingte Grenze: DPAPI schützt gespeicherte Daten, nicht vor Code mit Zugriff auf den laufenden Benutzerprozess. Temporäre eigene Tokenpuffer werden nach Möglichkeit überschrieben; allgemeine JSON- und String-Kopien können keine umfassende Speicherlöschung garantieren.
+Connection validation probes up to 32 connections per server using normal TLS and unauthenticated identity. Local precedes direct remote and relay. Only matching identity allows authenticated library access. Authentication denial does not continue route search. Advanced manual origins require the same identity check.
 
-## Playback und lokale HTTP-Sicherheit
+Opening Settings validates the saved route and loads libraries in the background. Cancel does not save draft changes and stops/joins workers. Only one settings dialog is allowed.
 
-Der Proxy überträgt Medien über nicht blockierende Clientsockets. Ein voller Winamp-Decoderpuffer oder eine Wiedergabepause beendet den Stream nicht. Schreibbereitschaft wird in Abständen von höchstens 100 Millisekunden zusammen mit dem Stop-Event geprüft; Plugin-Ende bricht auch einen dauerhaft nicht lesenden Client ab. Unvollständige HTTP-Anfrageheader behalten ihre getrennte absolute Frist von drei Sekunden. Die Empfangstimeouts gegenüber dem Plex-Server bleiben davon unabhängig.
+The first catalog job after startup uses the same route validator with only the selected profile's connections/token. Later jobs use the validated session origin. Profile revision rejects stale results. Origin changes revoke playback mappings and clear cache; automatic session routing does not write DPAPI. Settings changes require revalidation before playback handoff.
 
-Die Standardarchitektur ist Direct Play. Winamp erhält eine URL der Form `http://127.0.0.1:<port>/stream/<zufall>/audio.<format>`. Die 192-Bit-Capability ist nicht der Plex-Token und enthält keine Serverkennung. Sie gilt höchstens zwei Stunden und nur für die eine zugeordnete Datei. Eine dauerhafte Playlist darf daraus keine dauerhafte Plex-Zugangsmöglichkeit ableiten.
+A native modal frame hosts an embedded gen_ml view. Advanced fields begin hidden; showing them moves subsequent rows and resizes the frame together. Hidden fields have neither active skin subclasses nor tab stops. Showing them registers the documented subclasses again. Language comes from `IPC_GETLANGUAGEPACKINSTANCE` with `MAKEWPARAM(5, LANG_LANG_CODE)`.
 
-Der reguläre Plugin-Listener verwendet `ProxyClientPolicy::host_session`: Nach Ablauf der Capability darf ausschließlich der laufende Hostprozess weiterhin seine zugeordneten Titel abrufen. `getpeername` und `getsockname` bestimmen die konkrete TCP-Verbindung; `GetExtendedTcpTable` bestätigt für genau dieses IPv4-Adress-/Portpaar die Client-PID. Sie muss mit dem laufenden Pluginprozess übereinstimmen. Angaben aus HTTP-Headern begründen keine Prozessidentität. Fehler der Windows-Abfrage werden als Transportfehler gemeldet; es gibt keine Freigabe ohne positiven Nachweis. Fremde Prozesse erhalten weiterhin HTTP 410, auch nach erfolgreichem Hostzugriff. Ablaufzeiten werden nicht verändert. [Microsoft dokumentiert die TCP-Zuordnung samt Prozessnummer](https://learn.microsoft.com/en-us/windows/win32/api/tcpmib/ns-tcpmib-mib_tcprow_owner_pid).
+The entire configuration is encrypted with DPAPI CurrentUser, written to a temporary encrypted file and atomically replaced with `MoveFileExW`. It contains client/server identity, origin/name/token, library ID/title, cache option, custom origin and known profiles/connections. There is no saved language preference. Limits are 1 MiB, 64 servers and 32 connections per server. Corruption/decryption failure is an error, never a reason to search other files for credentials.
 
-Grants für wartende Hosttitel bleiben bis zum expliziten Widerruf, Verbindungswechsel oder Plugin-Ende erhalten. Das feste Limit von 10000 Zuordnungen gilt weiterhin. Die Prozessidentität ersetzt weder Capability-Pfad noch Host-/Origin-/Methodenprüfung und umgeht keinen Widerruf. Werkzeuge und Tests verwenden ohne ausdrückliche Auswahl weiterhin `capability_only` mit absoluter Laufzeit. Damit bleiben exportierte alte Links begrenzt nutzbar, während eine lange Playlist innerhalb derselben Winamp-Sitzung weiterlaufen kann. Der native Kurzzeittest bestätigt nach Ablauf Fortschritt und Seeking im echten Decoder bei gleichzeitigem HTTP 410 für einen fremden Prozess; getrennte Prozess-Gegenproben stehen in `docs/testing.md`.
+Tokens, account responses and authenticated URLs are not logged. DPAPI protects stored bytes, not a process already accessible to the current user. Temporary token buffers are overwritten where practical; JSON/string copies prevent any guarantee of comprehensive memory erasure.
 
-Ein abgelaufener Grant wird lokal mit HTTP 410 und `request_expired` abgewiesen. Die Oberfläche fordert zum erneuten Hinzufügen des Titels auf. Dies ist von einer verweigerten Plex-Authentifizierung getrennt; weder Browseranmeldung noch Serveranfrage werden dadurch ausgelöst. Ein erfolgreicher Zugriff mit neuem Grant entfernt die lokale Ablaufdiagnose.
+## Playback and local HTTP security
 
-Der Listener verwendet ausschließlich Loopback und exklusive Portbindung. Host-Header, Methode, Capability und optionaler einzelner Byte-Range werden geprüft. Browser-Origin, fremder Host, Request-Body, Transfer-Encoding, Mehrfach-Range und abweichender Pfad werden abgewiesen, bevor ein Upstream-Request entsteht. Es gibt keinen allgemeinen URL-Proxy und keine Weiterleitung frei gewählter Ziele.
+Nonblocking client sockets wait through full decoder buffers and pause. Write readiness and stop are checked at intervals no greater than 100 ms, so shutdown interrupts a permanently stalled receiver.
 
-An Plex werden Token und Client-Header serverseitig angefügt. Zertifikatsprüfung bleibt aktiv. Redirects, automatische Windows-Anmeldedaten und HTTP-Kompression werden nicht als Ausweichpfade verwendet. Nur Medienheader werden weitergegeben; Fehlermeldungstexte, Cookies und Location bleiben intern.
+The running Winamp instance may use expired exported capabilities only when Windows `GetExtendedTcpTable` confirms it owns that exact TCP client connection. Lookup failures are transport errors; identity is never trusted from HTTP headers. Foreign processes still receive HTTP 410, and expiry timestamps are not extended. See [Microsoft's TCP owner-PID contract](https://learn.microsoft.com/en-us/windows/win32/api/tcpmib/ns-tcpmib-mib_tcprow_owner_pid).
 
-## Fehlergrenzen und Erweiterungen
+Queued host grants remain until revocation, connection change or shutdown, subject to the 10,000 mapping limit. PID identity does not bypass path, Host, Origin, method or revocation checks. Tools/tests default to capability-only access unless explicitly configured. Short native expiry tests verify progress/seeking while foreign access remains denied.
 
-Eine unterbrochene vollständige Medienantwort darf ab dem ersten noch nicht an Winamp gesendeten Byte höchstens dreimal fortgesetzt werden. Bekannte Gesamtlänge und ein starker ETag sind erforderlich. Der Folgeabruf verwendet dieselbe Origin, dasselbe Token und denselben Medienpfad; HTTP 206, identischer ETag, exakter Content-Range und Restlänge werden vor dem nächsten Byte geprüft. Authentifizierungsfehler oder unpassende Antworten führen zu einem sichtbaren Fehler. Ein initialer Seeking-Abruf mit HTTP 206 ist hiervon ausgenommen. Die numerische Diagnose erhält den letzten Übertragungsfehler auch nach einer erfolgreichen Fortsetzung oder einem nachfolgenden Titel.
+Expired grants return HTTP 410 and request_expired without contacting PMS or opening sign-in. The UI requests re-adding the track. Successful access through a fresh grant clears that local-expiry indication.
 
-Alle ABI-Einstiegspunkte und Thread-Einstiege fangen Ausnahmen ab. JSON-Parserfehler werden vor der UI-Grenze in feste Fehlertypen übersetzt. Die UI zeigt Zustände und Codes, keine fremden Antworttexte. Eine nicht erreichbare Verbindung startet kein Transcoding und wechselt nicht auf unsicheres HTTP.
+The listener uses loopback and exclusive binding. Host, method, capability and a single optional range are validated before upstream access. Browser Origin, foreign Host, request bodies, Transfer-Encoding, multiple ranges and altered paths are rejected. There is no arbitrary destination proxy.
 
-API-Modelle und formatierte Ansichtszeilen sind getrennt. Stabile Plex-IDs werden verwendet; UI-Zeilenpositionen sind keine Identität. Pagination verwendet tatsächliche Offsets und Ergebnismengen. Der Cache-Schlüssel enthält Serveridentität, Verbindungsgeneration und die geprüfte Abfrage mit Bibliothek und Sortierung. Tokens stehen nicht im Schlüssel. Eine neue Verbindung oder explizite Cache-Leerung verwirft den Cache. Noch nicht implementierte Bereiche stehen in [testing.md](testing.md).
+Plex authentication is attached upstream only. TLS verification stays enabled. Redirects, automatic Windows credentials and HTTP compression are not alternate execution paths. Only selected media headers pass through; private error text, cookies and Location remain internal.
+
+## Failure boundaries
+
+An interrupted full response may resume at the next unsent byte at most three times. Known total length and a strong ETag are required. Follow-up requests use the same origin/token/path and must return HTTP 206, the same ETag, exact Content-Range and remaining Content-Length. Authentication failure or mismatch fails visibly. Initial HTTP 206 seeking responses are excluded. Numeric diagnostics retain the latest transfer failure after recovery or a subsequent healthy track.
+
+ABI/thread entry points catch exceptions. JSON failures become classified errors before reaching the UI. Unreachable servers never trigger transcoding or insecure HTTP. Unverified areas are listed in [testing.md](testing.md).

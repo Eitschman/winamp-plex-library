@@ -1,55 +1,67 @@
 # Winamp Plex Library
 
-Plex-Musik direkt in der klassischen Winamp-Medienbibliothek durchsuchen und mit Winamp abspielen. Natives C++17-Plugin für **Windows 10/11 und Winamp 5.9.2 Build 10042, x86**. Die DLL heißt `ml_plex.dll`.
+Browse Plex music directly in the classic Winamp Media Library and play it with Winamp. A native C++17 plugin for **Windows 10/11 and Winamp 5.9.2 Build 10042, x86**. The plugin DLL is `ml_plex.dll`.
 
 [![Windows x86](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml/badge.svg)](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml)
-[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Funktionen
+## Features
 
-- Künstler, Alben, Titel und Plex-Audio-Playlists in eigenen Medienbibliotheksknoten.
-- Suche, Sortierung, Mehrfachauswahl und Navigation vom Künstler bis zum Titel.
-- Titel und Alben abspielen, anhängen oder hinter dem aktuellen Playlisttitel einfügen. Die Player-Steuerung übernimmt Winamp.
-- Plex-Anmeldung im Browser, Server- und Musikbibliotheksauswahl sowie automatische HTTPS-Verbindungsauswahl.
-- Albumcover in den Listen und über Winamps Album-Art-Dienst; Titel übernehmen vorhandene Albumcover.
-- Native Skin-Anbindung und deutsche beziehungsweise englische Texte entsprechend Winamps aktivem Sprachpaket.
-- Asynchrone Netzwerkzugriffe, begrenzte Caches, Plex-Wiedergabestatus und persönliche Titelbewertungen.
+- Artists, albums, tracks and Plex audio playlists in dedicated Media Library nodes.
+- Search, sorting, multiple selection and navigation from artists through albums to tracks.
+- Play tracks or albums, append selections, or insert them after the current playlist entry. Winamp provides the player controls.
+- Plex browser sign-in, server and music library selection, and automatic HTTPS connection selection.
+- Album artwork in library lists and through Winamp's album-art service. Tracks inherit available album covers.
+- Native skin integration and German or English text following Winamp's active language pack.
+- Asynchronous networking, bounded caches, Plex playback status and personal track ratings.
 
-## Voraussetzungen
+## Requirements
 
-Winamp 5.9.2 Build 10042 als 32-Bit-Version mit aktivierter Medienbibliothek (`gen_ml.dll`), Windows 10/11, ein erreichbarer Plex Media Server mit Musikbibliothek und ein berechtigtes Plex-Konto. Für die DLL wird die aktuelle [Microsoft Visual C++ v14 Runtime für x86](https://aka.ms/vc14/vc_redist.x86.exe) benötigt. Es gibt keinen zusätzlichen Hintergrunddienst und keinen eigenen Audiodecoder.
+Winamp 5.9.2 Build 10042, 32-bit, with Media Library enabled (`gen_ml.dll`), Windows 10/11, a reachable Plex Media Server with a music library, and an authorized Plex account. The DLL requires the current [Microsoft Visual C++ v14 Runtime for x86](https://aka.ms/vc14/vc_redist.x86.exe). No external background service or custom audio decoder is required.
 
-WACUP ist ein späteres Kompatibilitätsziel und bisher nicht zur Laufzeit geprüft. Andere Winamp-Versionen sind ebenfalls nicht pauschal freigegeben.
+WACUP is a future compatibility target and has not been tested at runtime. Other Winamp versions are not generally supported without separate validation.
 
 ## Download
 
-Veröffentlichte Versionen stehen unter [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Das ZIP enthält DLL, Installationshinweise und Lizenztexte; eine SHA-256-Datei erlaubt die Downloadprüfung. Unter [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) stehen zusätzlich zeitlich aufbewahrte Entwicklungspakete als **`winamp-plex-library-win32-release`** zur Verfügung. Dafür ist eine GitHub-Anmeldung erforderlich. Alternativ lässt sich das Plugin aus dem Quellcode bauen.
+Published versions are available from [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Each ZIP contains the DLL, installation instructions and license notices, with a separate SHA-256 checksum file. [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) also provides development packages named **`winamp-plex-library-win32-release`** with limited retention; downloading those requires a GitHub account. You can also build from source.
 
-## Entwicklungsstand
+## Installation and setup
 
-Der Streaming-Proxy wartet bei vollen Decoderpuffern ohne kurzen Sendetimeout weiter. Die automatisierten Transportprüfungen vergleichen die gesamte Datei auch bei einem vorübergehend nicht lesenden Empfänger und prüfen das abbrechbare Beenden. Ein echter MP3-Titel mit 3:29 Minuten und ein M4A-Titel mit 4:11 Minuten sind ohne Seeking bis zum natürlichen Ende geprüft. Weitere Nachweise und ihre Grenzen stehen in [docs/testing.md](docs/testing.md).
+Exit Winamp and manually copy `ml_plex.dll` into the **Plugins directory actually used by your Winamp installation**, next to `gen_ml.dll`. The `Plugins/ml` data directory is not the destination. Preserve an existing DLL before replacing it. See [installation instructions](docs/installation.md).
 
-Das Plugin erzeugt den Plex-Navigationsknoten und native Bibliotheksansichten. Die DLL wird in einer getrennten Kopie der Zielversion geprüft. Der SDK-Testhost bestätigt 100 Lade-/Entladezyklen; eine native Prüfung mit 100 Ansichtswechseln besteht die festgelegten Ressourcengrenzen. Ansichtswechsel brechen laufende Anfragen ab und übergeben deren Abbau an einen kontrollierten Hintergrundthread. 13 automatisierte Testsuiten bestehen in Debug und Release. Einzelne Ergebnisse und offene Integrationsnachweise stehen in [docs/testing.md](docs/testing.md).
+Open **Media Library → Plex → Settings → Sign in with Plex** and approve access in your browser. Select your server and music library, then save. Opening Settings does not start browser sign-in. Passwords are entered only on Plex's website; manually copying a token is not part of setup.
 
-Die Anmeldung folgt dem Plexa-Ablauf: **Einstellungen → Mit Plex anmelden**, Freigabe im Systembrowser, Server und Musikbibliothek auswählen. Das Öffnen der Einstellungen startet keine Browseranmeldung. Das Plugin bezieht Tokens intern und speichert den Zugriff benutzergebunden mit Windows DPAPI. Ein Passwort oder eine manuelle Token-Eingabe ist nicht vorgesehen.
+Automatic connection selection prefers a reachable local HTTPS connection, then direct remote access, then Plex Relay. It runs in the background for the first library request after plugin startup and in Settings. Certificates and server identity are checked before authenticated library access. Authentication failures do not trigger searches for other tokens or servers.
 
-Der Wiedergabe-Prototyp übergibt befristete Loopback-URLs für MP3 und M4A an Winamp. FLAC, OGG und separate ADTS-AAC-Dateien werden wegen der Decoderanforderungen vorab im Hintergrund als private lokale Dateien vorbereitet. AAC erhält dabei ohne Neucodierung einen M4A-Container. WinHTTP übernimmt die Plex-Authentifizierung. MP3, M4A, FLAC und OGG sind mit echten Plex-Titeln auf Fortschritt, Seeking, Länge und Titel geprüft. AAC-LC ist mit selbst erzeugter Stille und einem authentifizierten Testserver geprüft. Exportierte Testplaylists enthalten keine Plex-Zugangsdaten. Weitere Fehlerfälle benötigen eigene Integrationsprüfungen.
+**Advanced** provides a fixed connection and a custom HTTPS base address. Changes must pass connection validation before saving; **Automatic** removes the fixed selection. Language follows Winamp's active language pack: German and English are included, and other host languages use English plugin text. There is no separate language selector. Metadata and artwork caches can be disabled or cleared. Diagnostics contain fixed codes and numeric counters.
 
-Die Medienbibliothek enthält eigene Knoten für Künstler, Alben, Titel und Plex-Playlists. Native Tabellen laden Seiten im Hintergrund, unterstützen Suche, Sortierung, Mehrfachauswahl und Kontextmenüs. Künstler → Alben → Titel → Winamp-Playlist wurde mit realen Daten geprüft. Ein begrenzter Metadaten-Cache hält bereits geladene Seiten vor.
+The entire plugin configuration is encrypted with Windows DPAPI for the current user and stored at `%LOCALAPPDATA%/WinampPlexLibrary/connection.dpapi`. Corrupt or undecryptable files are reported as errors. Normal operation does not alter Winamp or Plex configuration.
 
-Die Kontextaktion „Nach aktuellem Titel einfügen“ fügt ausgewählte Titel hinter dem aktuellen Playlist-Eintrag ein und erhält Wiedergabe beziehungsweise Pause. Die tatsächliche nächste Wiedergabe richtet sich weiterhin nach Winamps Zufallswiedergabe und gegebenenfalls dessen Warteschlangen-Plugins. Die Menüaktion ist in Classic, Winamp Modern, Bento und Big Bento sowie auf Deutsch und Englisch geprüft. Wartende Streaming-Titel bleiben innerhalb derselben Winamp-Sitzung auch nach Ablauf ihrer exportierbaren Links abspielbar; fremde Prozesse erhalten dann HTTP 410. Andere abgelaufene lokale Links werden mit einer eigenen Meldung angezeigt.
+To uninstall, exit Winamp and remove only the DLL you installed. The plugin's DPAPI file can be removed separately if desired. Do not remove Winamp databases or Plex files.
 
-Die Titelansicht zeigt persönliche Plex-Bewertungen auf einer Fünf-Sterne-Skala. Das Kontextmenü eines einzelnen Titels setzt ein bis fünf Sterne oder entfernt die Bewertung. Schreiben und Rücklesen laufen im Hintergrund; erst der bestätigte Serverwert aktualisiert die Tabelle. Vorhandene Bruchteile bleiben beim Lesen erhalten. Die Änderung und Wiederherstellung eines Testtitels sind am echten Server nachgewiesen.
+## Development and validation status
 
-Dialog, Tabellen, Menüs und Steuerelemente verwenden die Skin-Engine von `gen_ml`. Classic, Winamp Modern, Bento und Big Bento wurden in der getrennten Testkopie visuell geprüft. Das ist kein Nachweis für jeden fremden Skin oder jede DPI-Einstellung. Es gibt keine zusätzliche Player-Steuerleiste: Doppelklick und Kontextmenü übergeben Medien an Winamp; der Player steuert die Wiedergabe.
+The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 13 automated test suites. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
 
-Albumcover und fehlende Titelanzahlen werden für sichtbare Zeilen im Hintergrund geladen. Titel übernehmen das vorhandene Albumcover, sofern sie kein eigenes Bild besitzen. Ein begrenzter Bildcache hält Miniaturen vor. Das reale Dimmu-Borgir-Album „Grand Serpent Rising“ wurde mit Cover und 13 Titeln geprüft. Fehlende Bilder werden ohne Ersatzbild dargestellt. Winamps Album-Art-Dienst erhält vorbereitete PNG-Bilder für eigene Wiedergabe-URLs. Beide Coverfelder des Big-Bento-Players wurden damit visuell geprüft.
+Artists, albums, tracks and playlists use native paginated tables with background loading. Artist → album → track → Winamp playlist navigation has been tested with real data. A bounded metadata cache retains loaded pages. Audio playlists preserve Plex ordering; empty and populated playlists have native coverage.
 
-Die verbindliche Integrationsschranke für den ersten echten Plex-Titel ist erfüllt. Der lokale Dateizugriff ermöglicht bei den geprüften FLAC-, OGG- und AAC-Dateien Laufzeit und Seeking mit den vorhandenen Winamp-Decodern. Automatische Plex-Statusmeldungen für Abspielen, Pause, Fortsetzen, Seeking und Stop sind am echten Winamp geprüft. Ein reguläres Titelende hat einen neuen Plex-Verlaufseintrag und einen erhöhten Wiedergabezähler erzeugt. Ein echter Plex-ADTS-Titel, weitere AAC-Profile und weitere Fehlerfälle bleiben offen, siehe [docs/testing.md](docs/testing.md). WACUP ist ein späteres Kompatibilitätsziel und bisher nicht als Laufzeit geprüft.
+**Insert after current track** preserves playback or pause and changes the physical playlist order. Winamp shuffle and queue plugins can still choose a different next track. This action has been tested in Classic, Winamp Modern, Bento and Big Bento, in German and English. Queued streaming tracks remain playable within the same Winamp session after their exportable links expire; other processes then receive HTTP 410.
+
+Personal ratings appear on a five-star scale. The context menu for one selected track sets one to five stars or removes the rating. Background writing and readback update the table only after confirmation. Existing fractional ratings are preserved when read. A real test track's rating was changed and restored.
+
+Dialogs, tables, menus and controls use the `gen_ml` skin engine. Classic, Winamp Modern, Bento and Big Bento have been inspected visually. This is not validation of every third-party skin or DPI setting. There is no separate player toolbar; double-click and context actions hand selections to Winamp.
+
+Artwork and missing track counts load for visible rows in the background. The real Dimmu Borgir album “Grand Serpent Rising” was checked with its cover and 13 tracks. Missing images remain blank. Prepared PNG artwork is supplied through Winamp's album-art service for plugin playback paths; both Big Bento player cover fields have been inspected.
+
+MP3 and M4A use authenticated loopback streams. FLAC and OGG are prepared as private local files because the target decoders do not provide the required HTTP behavior. Separate ADTS-AAC files are repackaged into M4A without re-encoding. Real MP3, M4A, FLAC and OGG tracks have been checked for progress, seeking, duration and metadata. AAC-LC uses generated silence and an authenticated test server; real Plex ADTS tracks and additional AAC profiles remain unverified.
+
+The proxy waits through decoder backpressure without a short send timeout. Automated tests compare complete content after a receiver temporarily stops reading and check cancellable shutdown. Natural-end tests include an MP3 track lasting 3:29 and an M4A track lasting 4:11. A later “The Puppeteer” run reached its natural end after a real upstream interruption and guarded byte-range resumption; “Until Dawn” also reached its natural end. These results do not establish uninterrupted playback for every track or network condition.
+
+Plex timeline updates for playback, pause, resume, seeking and stop were read back from the real server. A natural track ending produced a new history entry and increased the play count. Details and unverified cases are recorded in [docs/testing.md](docs/testing.md).
 
 ## Build
 
-Erforderlich sind Visual Studio 2022 oder dessen Build Tools mit C++-x86-Werkzeugen, Windows SDK, CMake ab 3.24 sowie die unveränderten SDK-5.55-Header und der veröffentlichte Skin-Schnittstellenheader von 2016. Die einzige zusätzliche C++-Bibliothek ist nlohmann/json 3.12.0, mit SHA-256 festgelegt. Die Bildverarbeitung verwendet Windows Imaging Component.
+Use Visual Studio 2022 or its Build Tools with C++ x86 tools, Windows SDK, CMake 3.24 or later, the unchanged SDK 5.55 headers and the published 2016 skin interface header. Obtain the headers with `scripts/Fetch-WinampSdk.ps1` first. The only additional C++ library is checksum-pinned nlohmann/json 3.12.0. Image processing uses Windows Imaging Component.
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
@@ -57,44 +69,33 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Ergebnis: `build/Release/ml_plex.dll`. Zuvor die SDK-Header mit `scripts/Fetch-WinampSdk.ps1` beschaffen; Voraussetzungen, genaue Befehle, Debug-Build und Fehlerdiagnose stehen in [docs/build.md](docs/build.md). SDK-Dateien werden lokal mit Prüfsummen geprüft und nicht im Repository mitgeliefert.
+Output: `build/Release/ml_plex.dll`. Prerequisites, exact SDK commands, Debug builds and troubleshooting are covered in [docs/build.md](docs/build.md). SDK headers are checked locally by checksum and are not distributed in this repository.
 
-## Installation und Konfiguration
+## Security and limitations
 
-Winamp beenden und die DLL manuell in das **tatsächlich von dieser Winamp-Installation verwendete Plugins-Verzeichnis** kopieren. `gen_ml.dll` muss vorhanden sein. Das Plugin gehört neben `gen_ml.dll`, nicht in dessen Datenverzeichnis `Plugins/ml`. Keine automatische Installation in die vorhandene Installation ausführen.
+- Playback URLs contain no Plex token, server address or Plex media path.
+- The proxy binds only to `127.0.0.1` on an automatically assigned port. Each grant has 192 random bits and expires for other processes after two hours.
+- Replacement, connection teardown or plugin shutdown revoke the associated grants. Saved Winamp playlists may contain local URLs that cannot be reused later.
+- The running Winamp instance has additional session access, verified by Windows ownership of the exact TCP client connection. This does not extend exported-link validity or bypass revocation and security checks.
+- One listener manages up to 10,000 independent grants; worker count does not grow with playlist length.
+- Prepared FLAC/OGG files and repackaged AAC reside in a private session under `%LOCALAPPDATA%/WinampPlexLibrary/playback`. Only the current user and SYSTEM have access. Random filenames contain no server paths or tokens. Limits are 512 MiB per file and 2 GiB total. Preparation finishes before playlist handoff. Files remain until connection change or plugin shutdown; marked abandoned sessions are cleaned on subsequent preparation. HTTP grant expiry does not apply to these local files.
+- AAC preparation requires Windows Media Foundation. Missing components are reported as errors. Other formats do not require these DLLs. ADTS Program Config Elements and multiple raw data blocks per frame are rejected; HE-AAC has not been tested.
+- Direct Play uses Winamp's existing decoders. There is no automatic transcoding path.
+- External HTTP, invalid TLS certificates, cross-origin redirects and unsupported media paths are rejected. IPv6 origins are not supported.
+- Sign-in and server discovery use Plex services; media bytes come from the selected Plex Media Server.
 
-In der Medienbibliothek **Plex → Einstellungen → Mit Plex anmelden** öffnen und die Anmeldung bei Plex bestätigen. Danach Server und Musikbibliothek auswählen und speichern. Die automatische Erreichbarkeitsprüfung bevorzugt eine passende lokale HTTPS-Verbindung, danach direkten Fernzugriff und schließlich Plex Relay. Sie läuft beim ersten Bibliotheksauftrag jedes Plugin-Starts im Hintergrund und zusätzlich in den Einstellungen. Vor der authentifizierten Bibliotheksabfrage werden Zertifikat und Serveridentität geprüft. Fehlerhafte Authentifizierung startet keine Suche nach anderen Tokens oder Servern.
+## Documentation
 
-Unter **Erweitert** stehen eine feste Verbindung und eine eigene HTTPS-Basisadresse zur Verfügung. Eine Änderung muss vor dem Speichern geprüft werden. **Automatisch** hebt die feste Auswahl auf. Die Sprache folgt dem aktiven Winamp-Sprachpaket; eine eigene Sprachauswahl gibt es nicht. Deutsch und Englisch sind enthalten; weitere Winamp-Sprachen verwenden die englischen Plugin-Texte. Der Metadaten- und Cover-Cache lässt sich abschalten und leeren. Diagnoseinformationen enthalten feste Statuscodes und Zähler.
+- [Research and references](docs/research.md)
+- [Winamp SDK and ABI](docs/winamp-sdk.md)
+- [Plex API](docs/plex-api.md)
+- [Architecture and security](docs/architecture.md)
+- [Build and installation](docs/build.md)
+- [Testing and unverified integration cases](docs/testing.md)
+- [Requirements and development plan](prp/prp.md)
 
-Die eigene Konfiguration liegt unter `%LOCALAPPDATA%/WinampPlexLibrary/connection.dpapi`. Sie enthält keine Klartext-Tokens. Beschädigte oder nicht entschlüsselbare Dateien werden als Fehler behandelt. Die Winamp- und Plex-Konfiguration werden nicht verändert.
+## License and contributions
 
-Zur Deinstallation Winamp beenden und ausschließlich die selbst installierte `ml_plex.dll` entfernen. Die eigene DPAPI-Datei kann bei Bedarf separat entfernt werden. Keine Winamp-Datenbank oder Plex-Dateien löschen.
+Project code uses the **MIT License**, see [LICENSE](LICENSE). Third-party terms are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). SDK files, downloads, build artifacts and local access settings are excluded from Git. Binary packages include project and nlohmann/json license texts. This project is not affiliated with the owners of the Winamp or Plex trademarks.
 
-## Sicherheit und Einschränkungen
-
-- Wiedergabe-URLs enthalten weder Plex-Token noch Serveradresse oder Plex-Medienpfad.
-- Der Proxy bindet ausschließlich an `127.0.0.1` auf einem dynamisch vergebenen Port. Jeder Grant besitzt 192 Bit Zufall. Für andere Prozesse endet seine Gültigkeit nach zwei Stunden.
-- Ein Grant endet bei Austausch, Verbindungsende oder Plugin-Beendigung. Gespeicherte Winamp-Playlists können danach nicht wiederverwendbare lokale URLs enthalten.
-- Die laufende Winamp-Instanz besitzt zusätzlich prozessgebundenen Sitzungszugriff für lange Playlists. Windows muss sie als Eigentümer der konkreten TCP-Clientverbindung bestätigen. Dadurch wird die Frist exportierter Links nicht verlängert. Dieser Zugriff endet mit Verbindung oder Plugin; Widerruf und Sicherheitsprüfungen gelten auch für Winamp.
-- Ein gemeinsamer Listener verwaltet bis zu 10000 unabhängige Wiedergabe-Grants; die Workerzahl steigt nicht mit der Playlistlänge.
-- Vorbereitete FLAC-/OGG-Dateien und aus ADTS erzeugte M4A-Container liegen in einem privaten Sitzungsordner unter `%LOCALAPPDATA%/WinampPlexLibrary/playback`. Nur der aktuelle Benutzer und SYSTEM erhalten Zugriff. Zufällige Namen enthalten weder Serverpfade noch Tokens. Grenzen: 512 MiB je Datei und 2 GiB insgesamt. Der Download muss vor der Playlistübergabe beendet sein; die Dateien bleiben bis zum Verbindungswechsel oder Plugin-Ende erhalten. Verwaiste, eindeutig markierte Sitzungen werden beim nächsten Vorbereiten bereinigt. Diese lokalen Dateipfade besitzen keine HTTP-Grant-Laufzeit.
-- AAC-Vorbereitung benötigt Windows Media Foundation. Fehlende Medienkomponenten werden als Fehler gemeldet; andere Formate benötigen diese DLLs nicht. AAC mit Program Config Element oder mehreren Rohdatenblöcken pro ADTS-Frame wird abgewiesen; HE-AAC ist nicht geprüft.
-- Direct Play wird verwendet. Es gibt weder einen eigenen Decoder noch einen automatischen Transcoding-Pfad.
-- Externes HTTP, ungültige TLS-Zertifikate, fremde Redirects und nicht unterstützte Medienpfade werden abgewiesen. IPv6-Origin-Adressen sind noch nicht unterstützt.
-- Browseranmeldung und Serververzeichnis verwenden Plex-Dienste; Medienbytes kommen direkt vom ausgewählten Plex Media Server.
-
-## Dokumentation
-
-- [Recherche und Referenzen](docs/research.md)
-- [Winamp-SDK und ABI](docs/winamp-sdk.md)
-- [Plex-API](docs/plex-api.md)
-- [Architektur und Sicherheit](docs/architecture.md)
-- [Build und Installation](docs/build.md)
-- [Prüfungen und offene Integrationsnachweise](docs/testing.md)
-
-## Veröffentlichung
-
-Der eigene Quellcode steht unter **MIT**, siehe [LICENSE](LICENSE). Fremde Bedingungen stehen in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). SDK-Dateien, Downloads, Build-Artefakte und lokale Zugänge gehören nicht in Git. Binärpakete enthalten die Lizenztexte des Projekts und von nlohmann/json. Es besteht keine Verbindung zu den Markeninhabern von Winamp oder Plex.
-
-Fehler bitte als [GitHub Issue](https://github.com/Eitschman/winamp-plex-library/issues) mit Winamp-Version, Skin, Windows-Version, Audioformat und reproduzierbaren Schritten melden. Tokens, private Serveradressen und lokale Konfigurationsdateien nicht veröffentlichen. Build- und Testhinweise für Beiträge stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
+Please report bugs through [GitHub Issues](https://github.com/Eitschman/winamp-plex-library/issues), including Winamp version, skin, Windows version, audio format and reproduction steps. Do not publish tokens, private server addresses or local configuration files. Contributor build and validation guidance is in [CONTRIBUTING.md](CONTRIBUTING.md).

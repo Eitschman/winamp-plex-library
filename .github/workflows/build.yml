@@ -16,16 +16,16 @@ concurrency:
 
 jobs:
   secrets:
-    name: Veröffentlichungsprüfung
+    name: Secret exposure check
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Gesamte Historie laden
+      - name: Check out full history
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Prüfsummengesicherten Scanner ausführen
+      - name: Run checksum-verified secret scanner
         shell: bash
         run: |
           archive="$RUNNER_TEMP/gitleaks.tar.gz"
@@ -45,25 +45,25 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Quellcode laden
+      - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Originale SDK-Header beschaffen und prüfen
+      - name: Fetch and verify original SDK headers
         run: ./scripts/Fetch-WinampSdk.ps1 -SevenZip (Get-Command 7z.exe -ErrorAction Stop).Source
-      - name: CMake für Win32 konfigurieren
+      - name: Configure CMake for Win32
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 -DBUILD_TESTING=ON
-      - name: Plugin und Tests bauen
+      - name: Build plugin and tests
         run: cmake --build build --config ${{ matrix.configuration }} --parallel
-      - name: Automatisierte Tests ausführen
+      - name: Run automated tests
         run: ctest --test-dir build -C ${{ matrix.configuration }} --output-on-failure
-      - name: Paketprüfungen ausführen
+      - name: Validate package
         if: matrix.configuration == 'Release'
         run: ./tests/packaging_tests.ps1
-      - name: Release-Paket zusammenstellen
+      - name: Assemble release package
         if: matrix.configuration == 'Release'
         run: ./scripts/Package-Plugin.ps1 -OutputDirectory build/package
-      - name: Release-Buildpaket hochladen
+      - name: Upload release build package
         if: matrix.configuration == 'Release'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -71,7 +71,7 @@ jobs:
           path: build/package/
           if-no-files-found: error
           retention-days: 30
-      - name: Testprotokoll hochladen
+      - name: Upload test log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -1,15 +1,15 @@
-# Beiträge
+# Contributing
 
-Zielplattform ist Windows 10/11 mit Winamp 5.9.2 Build 10042, x86. Technische Bezeichner sind Englisch, Dokumentation und fachliche Kommentare Deutsch. Bitte Änderungen auf ein nachvollziehbares Problem begrenzen und vorhandene Kommentare erhalten.
+The target is Windows 10/11 with Winamp 5.9.2 Build 10042, x86. Use English for public documentation and technical identifiers. Preserve existing source comments and keep each change focused on a specific problem.
 
-## Bauen und prüfen
+## Build and validation
 
-Die unveränderten SDK-Header gemäß [Build-Anleitung](docs/build.md) beschaffen. CMake mit Visual Studio 2022 und `-A Win32` konfigurieren, Debug und Release bauen und jeweils CTest ausführen. GitHub Actions führt diese Prüfungen mit synthetischen Daten aus. Ein grüner CI-Lauf ersetzt keine Prüfung in Winamp und an einem echten Plex Media Server. Manuelle Nachweise und offene Fälle stehen in [docs/testing.md](docs/testing.md).
+Obtain the original SDK headers using the [build instructions](docs/build.md). Configure Visual Studio 2022 with `-A Win32`, build Debug and Release, and run CTest in both configurations. GitHub Actions performs these checks using synthetic data. Passing CI does not replace tests in Winamp against a real Plex Media Server. Integration evidence and unverified cases are listed in [docs/testing.md](docs/testing.md).
 
-Änderungen an sichtbaren Steuerelementen in Classic und einem Modern-Skin tatsächlich ansehen. Änderungen an Netzwerk, Playback oder Lifecycle brauchen passende Regressionstests. Native Tests ausschließlich in einer getrennten Winamp-Kopie ausführen und danach stoppen; die Skripte sind keine Freigabe zum Ändern einer normalen Installation.
+Inspect visible changes in Classic and a Modern skin. Networking, playback and lifecycle changes require relevant regression tests. Run native tests only in a separate Winamp copy and stop playback afterwards. Test scripts do not authorize changes to a normal installation. Keep automated playback muted and the test instance minimized, except briefly for necessary visual checks.
 
-## Pull Requests und Fehlerberichte
+## Pull requests and bug reports
 
-Problem, geändertes Verhalten und ausgeführte Prüfungen knapp beschreiben. Nicht geprüfte Varianten ausdrücklich nennen. Bei Fehlern Winamp-Version, Windows-Version, Skin, Format und reproduzierbare Schritte angeben. Keine Tokens, privaten Serveradressen, DPAPI-Dateien, privaten API-Antworten oder Bildschirmfotos mit persönlichen Inhalten hochladen.
+Describe the problem, resulting behavior and validation briefly. Identify untested variants explicitly. Bug reports should include Winamp version, Windows version, skin, audio format and reproduction steps. Never upload tokens, private server addresses, DPAPI files, private API responses or screenshots containing personal information.
 
-SDK-Header und Winamp-Binärdateien bleiben lokal. Keine Abhängigkeit ohne Prüfung ihrer Lizenz übernehmen. Für Projektcode gilt [MIT](LICENSE), für Fremdkomponenten [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Keep SDK headers and Winamp binaries local. Review dependency licenses before adding dependencies. Project code uses [MIT](LICENSE); third-party terms are documented in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
