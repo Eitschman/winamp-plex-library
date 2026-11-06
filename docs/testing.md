@@ -117,6 +117,8 @@ Release v0.1.0 is published at [GitHub Releases](https://github.com/Eitschman/wi
 `b0e92f4eb86a00474871603e39c6152d714c7c85061f7fe09d97fb3d66ed6fe7`.
 Its exact five files are the x86 DLL, INSTALL.md, LICENSE, THIRD-PARTY-NOTICES.md and the nlohmann/json MIT notice. This download verification is separate from local playback evidence.
 
+[Actions run 42189390597](https://github.com/Eitschman/winamp-plex-library/actions/runs/42189390597), source cf1f4f9, also passes Debug and Release 13/13 suites, Release 7/7 package checks and the secret-exposure job. Both downloaded build logs pass redacted scans. The downloaded development package has exactly five expected files; English INSTALL.md and THIRD-PARTY-NOTICES.md, plus LICENSE, match the current source byte for byte. Its x86 DLL SHA-256 is `328c6c155883d2fc3c858b253d3bbdc6c5118d4fba230c92f57f636e1be05dad`. Package text and extracted ANSI/UTF-16 DLL strings have no scanner findings. Native buffer tests used the local DLL, not this independently built CI DLL.
+
 ## Runtime test discipline
 
 Use only the explicitly authorized isolated target copy, identified by exact process path and WinampPlexTest window class. Today's tests must be muted and minimized, except briefly for necessary visual/mouse checks. Stop playback before restoring volume, clear/save the test playlist and re-minimize afterwards. Never alter the normal instance or infer another DLL-install permission from the prior one-time authorization.

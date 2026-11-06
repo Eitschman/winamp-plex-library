@@ -12,4 +12,6 @@ The published CI package contains only the DLL, installation instructions and li
 
 The November 6 documentation/buffer review also scanned 65 available commits, pending changes and ANSI/UTF-16 strings from the current buffer DLL, with no findings. Relative documentation links, Actions syntax and package checks passed. These checks do not publish local scan reports or access settings.
 
+The subsequent pre-push history scan covers 66 commits without findings. Both build logs and the downloaded development package from Actions run 42189390597 were checked as well, including ANSI/UTF-16 strings extracted from its independently built x86 DLL. These scans report no findings; package contents are restricted to the five documented distribution files.
+
 A scanner cannot recognize every possible confidential value. These results are not an absolute guarantee against all secret formats. CI complements checks before each push: a checksum-pinned scanner checks the entire history with redacted output and fails on findings. Finding reports are not published as artifacts.
