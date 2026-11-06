@@ -231,6 +231,16 @@ LocalMediaStore::LocalMediaStore(std::filesystem::path root, LocalMediaLimits li
     state_ = std::make_shared<LocalMediaState>(std::move(root), limits);
 }
 std::filesystem::path LocalMediaStore::directory() const { std::lock_guard<std::mutex> lock(state_->mutex); return state_->session; }
+// Ein noch nicht geladener Playlist-Eintrag bekommt ausschließlich einen privaten,
+// zufälligen Namen. Erst die angeforderte Wiedergabe erzeugt eine Mediendatei.
+std::filesystem::path LocalMediaStore::deferred_path(const std::string& media_path) {
+    if (!requires_local_media(media_path)) throw HttpError(ERROR_NOT_SUPPORTED);
+    auto extension = media_extension(media_path);
+    if (extension == ".aac") extension = ".m4a";
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    state_->ensure_directory();
+    return state_->session / (random_name() + std::wstring(extension.begin(), extension.end()));
+}
 // UI-Diagnosen dürfen nicht auf laufende Dateibereinigung warten. Änderungen
 // des Budgets bleiben durch den Zustandsmutex gemeinsam mit den Dateien geschützt.
 unsigned long long LocalMediaStore::bytes_used() const { return state_->used.load(); }

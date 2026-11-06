@@ -20,6 +20,7 @@ public:
     void persist(std::vector<ReplayReference> references, std::function<void()> accepted, std::function<void()> rejected);
     void dispatch() noexcept;
     void cancel() noexcept;
+    void prefetch(int position) noexcept;
     unsigned long long diagnostic(unsigned counter) const noexcept;
 private:
     struct State;

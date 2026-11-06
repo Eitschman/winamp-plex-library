@@ -58,6 +58,7 @@ public:
     std::shared_ptr<const LocalMediaFile> stage(const PlaybackSource& source, HANDLE stop);
     std::shared_ptr<LocalMediaBuffer> buffer(unsigned long long expected_bytes = 0);
     std::filesystem::path directory() const;
+    std::filesystem::path deferred_path(const std::string& media_path);
     unsigned long long bytes_used() const;
 private:
     std::shared_ptr<const LocalMediaFile> download(const PlaybackSource& source, HANDLE stop);

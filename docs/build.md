@@ -17,7 +17,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Fetch-WinampSdk.ps1 
   -SevenZip "C:\Program Files\7-Zip\7z.exe"
 ```
 
-Verify your own 7-Zip path. The script downloads `WA5.55_SDK.exe` over HTTPS, checks SHA-256 and extracts `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `Winamp/ipc_pe.h`, `gen_tray/WINAMPCMD.H` and the Wasabi/Agave album-art headers into `.local/sdk`. It separately downloads the unchanged 2016 skin header into `.local/skin-sdk/gen_ml/ml_ipc_0313.h`. Existing target directories are rejected. CMake checks each required header, including the list in `cmake/WinampArtworkSdk.cmake`. Sources, checksums and ABI details are in [winamp-sdk.md](winamp-sdk.md).
+Verify your own 7-Zip path. The script downloads `WA5.55_SDK.exe` over HTTPS, checks SHA-256 and extracts `gen_ml/ml.h`, `Winamp/wa_ipc.h`, `Winamp/ipc_pe.h`, `gen_tray/WINAMPCMD.H` and the Wasabi/Agave album-art headers into `.local/sdk`. It separately downloads the unchanged 2016 skin header into `.local/skin-sdk/gen_ml/ml_ipc_0313.h` and the 2013 Nullsoft IPC header into `.local/playback-sdk/Winamp/wa_ipc.h`. Existing SDK/skin target directories are rejected. CMake checks each required header, including the list in `cmake/WinampArtworkSdk.cmake`. Sources, checksums and ABI details are in [winamp-sdk.md](winamp-sdk.md).
+
+If SDK 5.55 and the skin header are already installed, run `./scripts/Fetch-WinampSdk.ps1 -PlaybackOnly` to obtain only the additional IPC header. An existing playback header is checksum-checked without being overwritten.
 
 For manually extracted files, use `-DWINAMP_SDK_ROOT=C:/path/to/SDK` and `-DWINAMP_SKIN_SDK_ROOT=C:/path/to/SkinSDK`. Checksums must match the inspected versions. Other revisions require separate ABI review and an explicit build-contract change.
 

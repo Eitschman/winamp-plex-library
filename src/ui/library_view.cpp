@@ -551,13 +551,8 @@ struct View : RetiredView {
                         }
                         if (result.tracks.size() > 10000) throw std::invalid_argument("queue_limit");
                     }
-                    for (const auto& track : result.tracks) {
-                        for (const auto& part : direct_parts(track)) {
-                            if (requires_local_media(part.key) && !result.prepared.count(part.key))
-                                result.prepared.emplace(part.key, job.media->stage(
-                                    {parse_server_address(job.settings.server_origin), job.settings.server_token, part.key}, stop));
-                        }
-                    }
+                    // Lokale Decoderdateien werden erst für die tatsächliche
+                    // Wiedergabe vorbereitet, nicht für die gesamte Auswahl.
                     std::size_t artwork_size = 0;
                     for (const auto& track : result.tracks) {
                         const auto& thumb = track_artwork(track);

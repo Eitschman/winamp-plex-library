@@ -59,6 +59,12 @@ void poll_playback() {
     if (!reporter) return;
     std::optional<PlaybackSnapshot> snapshot;
     const auto state = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_ISPLAYING);
+    if (replay) {
+        const auto advance = state && SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_STOP_AFTER_CURRENT) &&
+            !SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_MANUALPLADVANCE);
+        const auto next = advance ? static_cast<int>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETNEXTLISTPOS)) : -1;
+        replay->prefetch(next);
+    }
     if (proxy) {
         std::string current, next;
         if (state == 1 || state == 3) {
@@ -271,21 +277,25 @@ void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept {
     }
 }
 std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection) {
-    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000)
+    // Neben 10000 Playlist-Zuordnungen brauchen aktuelle/nächste Auflösung und
+    // ein abgebrochener Übergang kurzzeitig Platz vor dem Entfernen alter Aliase.
+    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10004)
         throw std::invalid_argument("playback_input");
     std::vector<PlaylistEntry> entries;
     try {
         for (auto& item : items) {
             if (item.title.empty() || item.seconds < -1) throw std::invalid_argument("playback_input");
             std::string local;
+            const bool deferred = !item.file && requires_local_media(item.source.media_path);
             if (item.file) local = utf8(item.file->path().wstring());
+            else if (deferred) local = local_media_store()->deferred_path(item.source.media_path).u8string();
             else if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source), std::chrono::hours(2), ProxyClientPolicy::host_session, local_media_store()); local = proxy->url(); }
             else local = proxy->add(std::move(item.source));
             const auto name = unicode(local);
             const auto existing = playback_bindings.find(name);
             if (existing != playback_bindings.end() && existing->second.identifier != item.binding.identifier)
                 throw std::invalid_argument("playback_identity_collision");
-            entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
+            entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr || deferred});
             // Wiederverwendete vorbereitete Dateien können schon in einer anderen
             // Playlistposition liegen. Ein verworfener Auftrag darf deren Bindung nicht lösen.
             ++playback_claims[name];
@@ -297,7 +307,7 @@ std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<
               playback_titles[unicode(local)] = item.title;
               playback_metadata[unicode(local)] = std::move(item.metadata); }
             if (item.file) playback_files[unicode(local)] = item.file;
-            playback_bindings[unicode(local)] = std::move(item.binding);
+            if (!deferred) playback_bindings[unicode(local)] = std::move(item.binding);
             bind_playback_artwork(unicode(local), std::move(item.artwork));
         }
     // Benötigte Hintergrundressourcen vor der Änderung der Host-Playlist anlegen.
@@ -363,7 +373,6 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
             const auto file = prepared.find(part.key);
-            if (requires_local_media(part.key) && file == prepared.end()) throw std::invalid_argument("local_media_missing");
             items.push_back({{parse_server_address(connection.server_origin), connection.server_token, part.key}, display_title,
                 part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
                 file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known},

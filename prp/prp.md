@@ -40,6 +40,8 @@ This is a maintained working document, not an immutable copy of the initial prom
 - Personal ratings write/readback and restoration, actual timeline states, a history entry and increased play count were verified on an authorized test track.
 - WACUP remains a future target without runtime evidence. Keep host integration separate from Plex and transport code.
 
+The playlist resolver prepares only the requested track and one predicted successor. Initial FLAC/OGG/AAC enqueue creates protected deferred aliases without downloading the entire selection. Unused prepared targets are released; revisiting them resolves them again. Native shuffle order must survive filename replacement. Foreground requests cancel speculative downloads. Preserve mixed local/radio/Plex playlists, cancellation, metadata/artwork/timeline and the shared storage limits. See architecture/testing for current evidence and limits.
+
 ## 1. Project goal
 
 Develop a native Media Library plugin for classic Winamp on Windows:

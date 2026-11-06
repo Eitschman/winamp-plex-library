@@ -25,6 +25,14 @@ SHA-256: `922e6d21b0b8f2e9fe536456c87e51e05bba82b579ec6eaa77264cbdb25c4e42`
 
 This unchanged header supplies skin interfaces and original structures, including the 48-byte `MLSKINNEDPOPUP` contract. It is obtained locally and not redistributed. It has no separate license notice; no redistribution permission is inferred. The plugin calls the host's skin engine through its interfaces without incorporating SDK example code.
 
+## Published 2013 Nullsoft IPC header
+
+Source: https://getwacup.com/sdk/Winamp/wa_ipc.h
+
+SHA-256: `cb86f3409cfdd4c578c9ab8cf4b5d37339c2a4ab052f5490f46eb899574171b8`
+
+The unchanged header carries the Nullsoft 1997-2013 permissive notice allowing use and alteration while retaining attribution. It is downloaded locally for the documented playback IPC contracts and is not redistributed. It does not establish WACUP runtime compatibility.
+
 ## nlohmann/json 3.12.0
 
 Source: https://github.com/nlohmann/json/releases/tag/v3.12.0

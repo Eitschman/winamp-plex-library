@@ -142,6 +142,16 @@ public static class PlexNative {
       if(Process!=IntPtr.Zero) { CloseHandle(Process); Process=IntPtr.Zero; }
     }
   }
+  // SDK 5.55: IPC_CHANGECURRENTFILEW liest einen UTF-16-Zeiger im Hostprozess.
+  public static void ChangeCurrentFile(IntPtr window, int processId, string filename) {
+    if(String.IsNullOrEmpty(filename) || filename.Length>1023 || !System.IO.Path.IsPathRooted(filename))
+      throw new ArgumentException("Invalid local fixture filename");
+    byte[] bytes=Encoding.Unicode.GetBytes(filename+"\0");
+    using(var memory=new CatalogMemory(window,processId,bytes.Length)) {
+      memory.Write(bytes);
+      Query(window,1024,memory.Address,(IntPtr)1245);
+    }
+  }
   // SDK 5.55: extendedFileInfoStructW enthält unter x86 vier 32-Bit-Felder.
   public static string ExtendedMetadata(IntPtr window, int processId, string filename, string field) {
     if(String.IsNullOrEmpty(filename) || filename.Length > 1023 ||

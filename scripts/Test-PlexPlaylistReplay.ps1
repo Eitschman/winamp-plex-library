@@ -4,6 +4,9 @@
     [string]$FirstArtist = '',
     [string]$FirstAlbum = '',
     [string]$FirstFormat = '',
+    [string]$SecondArtist = '',
+    [string]$SecondAlbum = '',
+    [string]$SecondFormat = '',
     [switch]$CoreOnly,
     [switch]$Product,
     [switch]$Faults,
@@ -11,7 +14,9 @@
     [switch]$Radio,
     [string]$ProductDll = '',
     [switch]$SkipNegative,
-    [switch]$Prefetch
+    [switch]$Prefetch,
+    [switch]$Demand,
+    [switch]$ConcurrentHandoff
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
@@ -348,10 +353,129 @@ try {
     $main = Start-Test
     if ($Product) {
         Add-ProductTrack $main $FirstTitle $FirstArtist $FirstAlbum $FirstFormat
-        Add-ProductTrack $main $SecondTitle '' '' ''
+        Add-ProductTrack $main $SecondTitle $SecondArtist $SecondAlbum $SecondFormat
     } elseif ([PlexNative]::QueryInt32($main,$operation,[IntPtr]1,[IntPtr]::Zero) -ne 1) { throw 'Testmodul nicht geladen.' }
     Wait-Resolved $main $false
     $original = Export-Current $main
+    if ($ConcurrentHandoff) {
+        if (!$Product -or $FirstFormat -ne 'mp3') { throw 'Concurrent handoff requires MP3 first and local-format second in regular DLL.' }
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]252)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]635)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]121)
+        [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]0)
+        $deadline = [DateTime]::UtcNow.AddSeconds(20)
+        do {
+            $prefetching = (Probe-State $main) -eq 1 -and [PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]104) -eq 1
+            if ($prefetching) { break }
+            Start-Sleep -Milliseconds 20
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if (!$prefetching) { throw 'Concurrent handoff did not overlap active preparation.' }
+        Add-ProductTrack $main $FirstTitle $FirstArtist $FirstAlbum $FirstFormat
+        Add-ProductTrack $main $FirstTitle $FirstArtist $FirstAlbum $FirstFormat
+        if ([PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]124) -ne 4 -or
+            [PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]104) -ne 1 -or
+            [PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]125) -ne 0) { throw 'Prefetch discarded a library handoff or interrupted current playback.' }
+        Write-Output 'two_library_handoffs_during_local_format_prefetch=accepted; current_audio_unchanged=1'
+        return
+    }
+    if ($Demand) {
+        if (!$Product) { throw 'Demand test requires regular product DLL.' }
+        $names = @($original -split '\r?\n' | Where-Object { $_ -and !$_.StartsWith('#') })
+        $mediaRoot = Join-Path $isolatedProfile 'playback'
+        if ((Test-Path -LiteralPath $mediaRoot) -and @(Get-ChildItem -LiteralPath $mediaRoot -Recurse -File | Where-Object Extension -in '.flac','.ogg','.m4a').Count -ne 0) {
+            throw 'Initial enqueue eagerly prepared local files.'
+        }
+        $large = Join-Path $project '.local\replay-demand.m3u8'
+        $local = Join-Path $project '.local\native-selection.wav'
+        $rows = @($local) + @($names[0]) * 200 + @($names[1]) + @($local)
+        # Ein unaufgelöster, nicht angeforderter Eintrag darf keinen anderen sperren.
+        $rows += 'http://127.0.0.1:9/stream/000000000000000000000000000000000000000000000000/audio.mp3'
+        [IO.File]::WriteAllText($large,"#EXTM3U`r`n"+($rows -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($true))
+        Stop-Test; $main = Start-Test
+        [PlexNative]::EnqueuePlaylist($main,$large)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]252)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]253)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]635)
+        [void][PlexNative]::Query($main,1024,[IntPtr]73,[IntPtr]121)
+        [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        $actual = @(Export-Names $main)
+        $changed = @(for ($index=0; $index -lt $rows.Count; $index++) { if ($actual[$index] -cne $rows[$index]) { $index } })
+        if ($changed.Count -gt 2 -or $changed -notcontains 73 -or (Probe-State $main 3) -gt 2) { throw 'Restoration touched unrelated entries.' }
+        Write-Output 'demand_large_playlist_requested_track_only_plus_one_next=1; invalid_unrequested_sibling_does_not_block=1; initial_enqueue_has_no_media_download=1'
+        [void][PlexNative]::Query($main,1024,[IntPtr]201,[IntPtr]121)
+        [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        [void][PlexNative]::Query($main,273,[IntPtr]40044,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        if ([PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]125) -ne 200) { throw 'Previous did not select requested index.' }
+        [void][PlexNative]::Query($main,273,[IntPtr]40048,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        if ([PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]125) -ne 201) { throw 'Next did not select requested index.' }
+        # Nativer EOF statt minutenlanger Wiedergabe: kurz vor das tatsächliche Ende suchen.
+        $duration = [PlexNative]::QueryInt32($main,1024,[IntPtr]1,[IntPtr]105)
+        [void][PlexNative]::Query($main,1024,[IntPtr](($duration-2)*1000),[IntPtr]106)
+        Wait-Index $main 202
+        Start-Sleep -Seconds 2
+        if (@(Get-ChildItem -LiteralPath (Join-Path $isolatedProfile 'playback') -Recurse -File | Where-Object Extension -in '.flac','.ogg','.m4a').Count -ne 0) { throw 'Unused prepared files were not released.' }
+        Write-Output 'demand_previous_next_eof_mixed_local=1; unused_prepared_files_released=1'
+        [void][PlexNative]::Query($main,273,[IntPtr]40047,[IntPtr]::Zero)
+        [void][PlexNative]::Query($main,1024,[IntPtr]200,[IntPtr]121)
+        [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        $clean = @(Export-Names $main); $clean[203] = $local
+        [IO.File]::WriteAllText($large,"#EXTM3U`r`n"+($clean -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($true))
+        [void][PlexNative]::Query($main,273,[IntPtr]40047,[IntPtr]::Zero)
+        [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]101)
+        [PlexNative]::EnqueuePlaylist($main,$large)
+        [void][PlexNative]::Query($main,1024,[IntPtr]1,[IntPtr]252)
+        [void][PlexNative]::Query($main,1024,[IntPtr]1,[IntPtr]253)
+        [void][PlexNative]::Query($main,273,[IntPtr]40154,[IntPtr]::Zero)
+        [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]::Zero)
+        Wait-Resolved $main $true $rows.Count
+        for ($step=0; $step -lt 4; $step++) {
+            $predicted = [PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]136)
+            if ($predicted -lt 0) { throw 'Shuffle fixture has no predicted next item.' }
+            [void][PlexNative]::Query($main,273,[IntPtr]40048,[IntPtr]::Zero)
+            Wait-Resolved $main $true $rows.Count
+            if ([PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]125) -ne $predicted) { throw 'Demand resolution changed native shuffle order.' }
+        }
+        $predicted = [PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]136)
+        [void][PlexNative]::Query($main,1026,[IntPtr]::Zero,[IntPtr]::Zero)
+        Wait-Index $main $predicted
+        Wait-Resolved $main $true $rows.Count
+        Write-Output 'demand_revisit_after_eviction=1; shuffle_native_next_order_preserved=4; simulated_shuffle_eof_order_preserved=1'
+        if ($FirstFormat -eq 'mp3') {
+            $wrap = @($names[0],$names[1],$local,$names[0],$names[1],$local)
+            [IO.File]::WriteAllText($large,"#EXTM3U`r`n"+($wrap -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($true))
+            [void][PlexNative]::Query($main,273,[IntPtr]40047,[IntPtr]0)
+            [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]101)
+            [PlexNative]::EnqueuePlaylist($main,$large)
+            [void][PlexNative]::Query($main,273,[IntPtr]40154,[IntPtr]0)
+            [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]0)
+            Wait-Resolved $main $true 6
+            for ($step=0; $step -lt 18; $step++) {
+                [void][PlexNative]::Query($main,1026,[IntPtr]0,[IntPtr]0)
+                Wait-Resolved $main $true 6
+                $position = [PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]125)
+                if ($position -lt 0 -or $position -ge 6) { throw 'Shuffle wrap selected invalid index.' }
+            }
+            Write-Output 'simulated_shuffle_eof_across_three_cycles=18; stale_targets_start_after_resolution=1'
+            [void][PlexNative]::Query($main,1024,[IntPtr]1,[IntPtr]635)
+            $position = [PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]125)
+            [void][PlexNative]::Query($main,1026,[IntPtr]0,[IntPtr]0)
+            Wait-Resolved $main $true 6
+            if ([PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]125) -ne $position) { throw 'Manual repeat advanced the playlist.' }
+            [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]635)
+            Write-Output 'simulated_manual_repeat_stays_on_current_track=1'
+        }
+        [void][PlexNative]::Query($main,273,[IntPtr]40157,[IntPtr]::Zero)
+        if ([PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]658) -ne 0) { throw 'Stop After Current was not enabled.' }
+        [void][PlexNative]::Query($main,1026,[IntPtr]::Zero,[IntPtr]::Zero)
+        if ([PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]104) -ne 0) { throw 'EOF ignored Stop After Current.' }
+        Write-Output 'simulated_eof_respects_native_stop_after_current=1'
+        return
+    }
     if ($Product) {
         $originalNames = @($original -split '\r?\n' | Where-Object { $_ -and !$_.StartsWith('#') })
         $expectedMetadata = @()
@@ -474,13 +598,14 @@ try {
     }
     [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]::Zero)
     Wait-Resolved $main $true
-    if ((Probe-State $main 3) -ne 2 -or (Probe-State $main 4) -lt 1) { throw 'Auflösung vor Decoderstart fehlt.' }
+    if ((Probe-State $main 3) -lt 1 -or (Probe-State $main 3) -gt 2 -or (Probe-State $main 4) -lt 1) { throw 'Auflösung vor Decoderstart fehlt.' }
     $renewed = Export-Current $main
     if ($renewed -eq $original) { throw 'Temporäre Wiedergabeziele wurden nicht erneuert.' }
-    Write-Output 'restart_saved_playlist=playing; rewritten=2; preplay_gate=observed'
+    Write-Output ('restart_saved_playlist=playing; rewritten=' + (Probe-State $main 3) + '; preplay_gate=observed')
     if ($Product) {
         $renewedNames = @($renewed -split '\r?\n' | Where-Object { $_ -and !$_.StartsWith('#') })
         for ($index = 0; $index -lt 2; ++$index) {
+            if ($renewedNames[$index] -ceq $originalNames[$index]) { continue }
             foreach ($field in @('title','artist','album','albumartist')) {
                 if ([PlexNative]::ExtendedMetadata($main,(Get-PlexTestProcess).Id,$renewedNames[$index],$field) -cne $expectedMetadata[$index][$field]) {
                     throw 'Wiederhergestellte Metadaten stimmen nicht überein.'

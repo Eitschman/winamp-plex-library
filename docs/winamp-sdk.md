@@ -19,6 +19,8 @@ The build uses [SDK 5.55](https://download.nullsoft.com/winamp/plugin-dev/WA5.55
 
 Constants and ABI structures are not reconstructed locally. CMake rejects x64 and Windows compilers other than MSVC.
 
+The plugin additionally uses the unchanged [Nullsoft IPC header published in 2013](https://getwacup.com/sdk/Winamp/wa_ipc.h), downloaded to `.local/playback-sdk/Winamp/wa_ipc.h` and checked by CMake against SHA-256 `cb86f3409cfdd4c578c9ab8cf4b5d37339c2a4ab052f5490f46eb899574171b8`. It supplies `IPC_GETNEXTLISTPOS` (Winamp 5.61+) and `IPC_GET_STOP_AFTER_CURRENT` (5.58+, inverted result). The original Media Library and playlist-editor structures still come from SDK 5.55. No SDK header is redistributed.
+
 ## Plugin ABI
 
 `winampGetMediaLibraryPlugin` is an undecorated C export using the C calling convention; a module-definition file fixes its name. Its returned `winampMediaLibraryPlugin` remains valid for the DLL lifetime.
@@ -50,7 +52,7 @@ After `IPC_SETPLAYLISTPOS`, the plugin sends `WM_COMMAND` with original `WINAMP_
 
 `IPC_GETLISTLENGTH` checks actual import growth. `IPC_GETOUTPUTTIME` measures playback and seeking; `IPC_JUMPTOTIME` performs explicit seek checks. Tests address only the verified isolated window.
 
-Next-track prefetch uses SDK 5.55 `IPC_GETLISTPOS`, `IPC_GETLISTLENGTH`, `IPC_GETPLAYLISTFILEW` and `IPC_GET_SHUFFLE` on the UI thread. Only registered live Plex bindings are considered. Sequential physical next entries can be prepared; shuffle and queue plugins retain control of the actual next choice. No invented shuffle-order query or notification-as-query is used. A wrong speculative candidate merely remains unused and never changes playback order.
+Restored-file prefetch uses documented `IPC_GETNEXTLISTPOS` on the UI thread, including native shuffle. The streaming byte buffer retains its existing sequential selection. Queue overrides are queried only for an actual navigation/EOF action, once, and that answer is retained through deferred playback. Prefetch never consumes queue notifications. Native stopped Previous/Next selects without opening a decoder; `IPC_CHANGECURRENTFILEW` replaces a resolved filename in place without rebuilding the shuffle table. `scripts/Test-PlexNativeSelection.ps1` checks these contracts against the isolated 5.9.2 host with generated PCM silence. Third-party queue plugins are not verified.
 
 The `IPC_WRITEPLAYLIST` SDK comment documents persistence to `winamp.m3u` and additionally `winamp.m3u8` on Unicode systems. Playback URLs must therefore already be token-free; log redaction after handoff is insufficient.
 

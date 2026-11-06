@@ -6,7 +6,8 @@ $sample = @($samples | Where-Object format -eq flac)[0]
 if (-not $sample.title -or -not $sample.artist -or -not $sample.album_artist -or -not $sample.album) { throw 'Eine echte FLAC-Probe aus der Inventur wird benötigt.' }
 $process = Get-PlexTestProcess
 $testExe = $process.Path
-$mediaRoot = Join-Path $env:LOCALAPPDATA 'WinampPlexLibrary\playback'
+$mediaProfile = if ($env:WINAMP_PLEX_CONFIG_DIRECTORY) { $env:WINAMP_PLEX_CONFIG_DIRECTORY } else { Join-Path $env:LOCALAPPDATA 'WinampPlexLibrary' }
+$mediaRoot = Join-Path $mediaProfile 'playback'
 if ((Test-Path -LiteralPath $mediaRoot) -and @(Get-ChildItem -LiteralPath $mediaRoot).Count) {
     throw 'Medienablage muss vor der isolierten Abbruchprüfung leer sein.'
 }
@@ -19,7 +20,13 @@ $tree = [PlexNative]::Children($outer[0].Handle) | Where-Object Class -eq SysTre
 $root = [PlexNative]::Query($tree.Handle, 4362, [IntPtr]::Zero, [IntPtr]::Zero)
 if ([PlexNative]::TreeItemText($tree.Handle, $process.Id, $root) -cne 'Plex') { throw 'Isolierte Plex-Testumgebung wird erwartet.' }
 function Catalog {
-    $script:list = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1050
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $script:list = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1050
+        if ($script:list) { break }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (!$script:list) { throw 'Native catalog did not create its list control.' }
     $script:view = [PlexNative]::GetParent($list.Handle)
     $script:search = [PlexNative]::Children($view) | Where-Object ControlId -eq 1051
 }
@@ -27,7 +34,7 @@ function Wait-Catalog {
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     do {
         $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-        if ($status.Text -match '^1 \.\.\. ') { return }
+        if ($status.Text -match '^\d+ \.\.\. |^No items found|^Keine Einträge') { return }
         if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Katalogabfrage schlägt fehl.' }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
@@ -68,6 +75,12 @@ try {
     if ($selected -lt 0) { throw 'Native FLAC-Zuordnung fehlt.' }
     [PlexNative]::SelectCatalogRows($list.Handle, $process.Id, [int[]]@($selected))
     [void][PlexNative]::PostMessage($view, 273, [IntPtr]1057, [IntPtr]::Zero)
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    while ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]0,[IntPtr]124) -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 50
+    }
+    if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]0,[IntPtr]124) -ne 1) { throw 'Deferred FLAC entry missing.' }
+    [void][PlexNative]::PostMessage($main.Handle,273,[IntPtr]40045,[IntPtr]0)
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     $observed = $null
     do {
@@ -84,12 +97,11 @@ try {
     if (-not $observed) { throw 'Laufende echte Medienvorbereitung wurde nicht beobachtet.' }
     # Die Dateilänge allein belegt keinen offenen Schreibhandle. Dateierzeugung
     # nach HTTP 200 und exklusive Schreibsperre weisen den aktiven regulären
-    # Vorbereitungsweg nach, bevor ein fertiger Titel an Winamp übergeben wird.
+    # Vorbereitungsweg nach, bevor Winamp den Decoder startet.
     if (-not (Test-PlexMediaWriteLock $observed.FullName)) { throw 'Exklusiver Schreibzugriff ist bereits beendet.' }
-    $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-    if ($status.Text -notmatch '^Wird geladen\.\.\.$|^Loading\.\.\.$' -or
-        [PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124) -ne 0) { throw 'Medienvorbereitung ist schon beendet; laufender Abbruch ist nicht nachgewiesen.' }
-    Write-Output 'Aktive FLAC-Vorbereitung nach HTTP 200: exklusive Schreibsperre nachgewiesen, noch keine Playlistübergabe.'
+    if ([PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]0,[IntPtr]104) -ne 0 -or
+        [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]0,[IntPtr]124) -ne 1) { throw 'Medienvorbereitung ist schon beendet; laufender Abbruch ist nicht nachgewiesen.' }
+    Write-Output 'Aktive FLAC-Vorbereitung nach HTTP 200: exklusive Schreibsperre nachgewiesen; Playlist enthält eine Referenz, Decoder noch gestoppt.'
     $pendingFile = $observed.FullName
     $pendingDirectory = Split-Path $pendingFile -Parent
     $watch = [Diagnostics.Stopwatch]::StartNew()

@@ -608,6 +608,16 @@ int main(int count, char** arguments) {
             const auto stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
             check(stop != nullptr, "media_stop_event");
             plex::LocalMediaStore store(root, {1000000, 1000000});
+            const auto deferred = store.deferred_path("/library/parts/1/file.flac");
+            const auto deferred_aac = store.deferred_path("/library/parts/2/file.aac");
+            check(deferred.parent_path() == store.directory() && deferred.filename().wstring().size() == 53 &&
+                deferred.extension() == L".flac" && deferred_aac.extension() == L".m4a", "deferred_alias_uses_private_decoder_compatible_path");
+            check(!std::filesystem::exists(deferred) && !std::filesystem::exists(deferred_aac) && store.bytes_used() == 0,
+                "deferred_alias_has_no_download_or_reservation");
+            check(store.deferred_path("/library/parts/1/file.flac") != deferred, "deferred_alias_is_independent_for_duplicate_entries");
+            bool rejected_alias = false;
+            try { store.deferred_path("/library/parts/1/file.mp3"); } catch (const plex::HttpError&) { rejected_alias = true; }
+            check(rejected_alias && store.bytes_used() == 0, "deferred_alias_rejects_streaming_format_without_reservation");
             auto file = store.stage({server, "synthetic-test-token", "/library/parts/1/file.flac"}, stop);
             check(plex::requires_local_media("/library/parts/1/file.aac"), "adts_aac_requires_local_decoder_access");
             const auto path = file->path();

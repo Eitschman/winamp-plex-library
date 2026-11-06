@@ -10,11 +10,13 @@
 #include <Winamp/ipc_pe.h>
 #include <gen_tray/WINAMPCMD.H>
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace plex::plugin {
@@ -53,24 +55,33 @@ struct PlaylistReplay::State {
     Bind bind;
     std::function<void(const std::vector<PlaylistEntry>&)> release;
     ReplayReferences references{settings_path().parent_path() / L"playlist-references.dpapi"};
-    struct Job { std::function<void(HANDLE)> work; std::function<void(DWORD)> finish; };
+    struct Job { std::function<void(HANDLE)> work; std::function<void(DWORD)> finish; bool handoff = false; };
     std::mutex mutex;
     std::condition_variable changed;
     std::deque<Job> pending;
     std::deque<std::function<void()>> completed;
     HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    bool closing = false, busy = false, changing_playlist = false, reporting = false;
+    HANDLE handoff_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    bool closing = false, busy = false, changing_playlist = false, reporting = false, speculative = false;
+    int prefetch_position = -1;
+    std::wstring prefetch_name;
+    DWORD prefetch_error = 0;
+    std::optional<std::pair<LPARAM, LRESULT>> queue_answer;
     std::thread worker;
-    unsigned long long generation = 0, restored = 0, blocked = 0;
+    std::atomic<unsigned long long> generation{0};
+    std::atomic<unsigned long long> handoff_generation{0};
+    unsigned long long restored = 0, blocked = 0;
     DWORD failure = 0;
     std::map<std::wstring, PlaylistEntry> renewed;
-    struct Action { HWND window = nullptr; UINT event = 0; WPARAM parameter = 0; LPARAM detail = 0; int selection = -1; } action;
+    std::map<std::wstring, PlaylistEntry> owned;
+    struct Action { HWND window = nullptr; UINT event = 0; WPARAM parameter = 0; LPARAM detail = 0; int selection = -1;
+        std::optional<std::pair<LPARAM, LRESULT>> queue; } action;
 
     State(HWND main, HWND target, HINSTANCE module, std::function<bool(const std::wstring&)> current, Bind binding,
           std::function<void(const std::vector<PlaylistEntry>&)> discard)
         : player(main), notification(target), instance(module), active(std::move(current)), bind(std::move(binding)), release(std::move(discard)) {
         try {
-        if (!stop || !diagnostic_message) throw std::runtime_error("replay_initialization");
+        if (!stop || !handoff_stop || !diagnostic_message) throw std::runtime_error("replay_initialization");
         editor = reinterpret_cast<HWND>(ipc(IPC_GETWND_PE, IPC_GETWND));
         if (!SetWindowSubclass(player, procedure, reinterpret_cast<UINT_PTR>(this), reinterpret_cast<DWORD_PTR>(this))) throw std::runtime_error("replay_subclass");
         if (IsWindow(editor) && !SetWindowSubclass(editor, procedure, reinterpret_cast<UINT_PTR>(this), reinterpret_cast<DWORD_PTR>(this))) {
@@ -81,16 +92,18 @@ struct PlaylistReplay::State {
         catch (...) {
             RemoveWindowSubclass(player, procedure, reinterpret_cast<UINT_PTR>(this));
             if (IsWindow(editor)) RemoveWindowSubclass(editor, procedure, reinterpret_cast<UINT_PTR>(this));
-            if (stop) CloseHandle(stop); stop = nullptr; throw;
+            if (stop) CloseHandle(stop); stop = nullptr;
+            if (handoff_stop) CloseHandle(handoff_stop); handoff_stop = nullptr; throw;
         }
     }
     ~State() {
         RemoveWindowSubclass(player, procedure, reinterpret_cast<UINT_PTR>(this));
         if (IsWindow(editor)) RemoveWindowSubclass(editor, procedure, reinterpret_cast<UINT_PTR>(this));
-        { std::lock_guard<std::mutex> lock(mutex); closing = true; SetEvent(stop); pending.clear(); }
+        { std::lock_guard<std::mutex> lock(mutex); closing = true; SetEvent(stop); SetEvent(handoff_stop); pending.clear(); }
         changed.notify_one();
         if (worker.joinable()) worker.join();
         CloseHandle(stop);
+        CloseHandle(handoff_stop);
     }
     LRESULT ipc(WPARAM value, LPARAM operation) const { return SendMessageW(player, WM_WA_IPC, value, operation); }
     void submit(Job job) {
@@ -106,11 +119,11 @@ struct PlaylistReplay::State {
             { std::unique_lock<std::mutex> lock(mutex);
               changed.wait(lock, [this] { return closing || !pending.empty(); });
               if (closing) break;
-              job = std::move(pending.front()); pending.pop_front(); ResetEvent(stop); }
+              job = std::move(pending.front()); pending.pop_front(); ResetEvent(job.handoff ? handoff_stop : stop); }
             DWORD error = 0;
-            try { if (FAILED(apartment)) throw HttpError(ERROR_NOT_SUPPORTED); job.work(stop); }
+            try { if (FAILED(apartment)) throw HttpError(ERROR_NOT_SUPPORTED); job.work(job.handoff ? handoff_stop : stop); }
             catch (const HttpError& problem) { error = problem.code; }
-            catch (...) { error = WaitForSingleObject(stop, 0) == WAIT_OBJECT_0 ? ERROR_CANCELLED : ERROR_INVALID_DATA; }
+            catch (...) { error = WaitForSingleObject(job.handoff ? handoff_stop : stop, 0) == WAIT_OBJECT_0 ? ERROR_CANCELLED : ERROR_INVALID_DATA; }
             { std::lock_guard<std::mutex> lock(mutex);
               if (closing) break;
               completed.push_back([finish = std::move(job.finish), error] { finish(error); }); }
@@ -118,7 +131,11 @@ struct PlaylistReplay::State {
         }
         if (SUCCEEDED(apartment)) CoUninitialize();
     }
-    void cancel() noexcept { ++generation; action = {}; busy = false; SetEvent(stop); }
+    void cancel(bool cancel_handoffs = true) noexcept {
+        ++generation; action = {}; busy = false; speculative = false;
+        if (cancel_handoffs) { ++handoff_generation; SetEvent(handoff_stop); }
+        prefetch_position = -1; prefetch_name.clear(); SetEvent(stop);
+    }
     Snapshot snapshot() const {
         Snapshot result; result.revision = connection_revision();
         result.position = static_cast<int>(ipc(0, IPC_GETLISTPOS));
@@ -136,6 +153,7 @@ struct PlaylistReplay::State {
         return current.revision == original.revision && current.names == original.names && current.position == original.position;
     }
     void report(DWORD error) noexcept {
+        if (speculative) { prefetch_error = error; speculative = false; busy = false; action = {}; return; }
         failure = error; busy = false; action = {};
         if (error == ERROR_CANCELLED || reporting) return;
         reporting = true;
@@ -152,43 +170,30 @@ struct PlaylistReplay::State {
     // synchroner SDK-Aufrufe werden eigene Änderungsnachrichten nicht als Benutzereingriff gewertet.
     void replace(const Snapshot& original, const Batch& batch, const std::vector<PlaylistEntry>& entries) {
         if (!unchanged(original) || entries.size() != batch.positions.size()) throw HttpError(ERROR_CANCELLED);
-        if (!IsWindow(editor)) throw HttpError(ERROR_INVALID_WINDOW_HANDLE);
-        std::vector<std::filesystem::path> paths;
         try {
-            for (const auto& entry : entries) {
-                const auto path = std::filesystem::temp_directory_path() / (L"WinampPlex-" + wide(create_client_identifier()) + L".m3u8");
-                paths.push_back(path);
-                const auto content = make_playlist({entry}, entry.local_file ? std::filesystem::u8path(entry.url).parent_path().u8string() : std::string{});
-                std::ofstream output(path, std::ios::binary | std::ios::trunc);
-                if (!output.write(content.data(), content.size()) || !output.flush()) throw HttpError(ERROR_WRITE_FAULT);
-                output.close();
-                if (!output) throw HttpError(ERROR_WRITE_FAULT);
-                if (path.wstring().size() >= MAX_PATH) throw HttpError(ERROR_FILENAME_EXCED_RANGE);
-            }
             changing_playlist = true;
-            for (std::size_t offset = entries.size(); offset > 0; --offset) {
-                const auto index = offset - 1;
-                fileinfoW info{}; info.index = batch.positions[index];
-                const auto name = paths[index].wstring(); std::copy(name.begin(), name.end(), info.file);
-                COPYDATASTRUCT data{IPC_PE_INSERTFILENAMEW, sizeof(info), &info};
-                const auto count = ipc(0, IPC_GETLISTLENGTH);
-                SendMessageW(editor, WM_COPYDATA, reinterpret_cast<WPARAM>(player), reinterpret_cast<LPARAM>(&data));
-                if (ipc(0, IPC_GETLISTLENGTH) != count + 1) throw HttpError(ERROR_INVALID_DATA);
-                SendMessageW(editor, WM_USER, IPC_PE_DELETEINDEX, info.index + 1);
-                if (ipc(0, IPC_GETLISTLENGTH) != count) throw HttpError(ERROR_INVALID_DATA);
+            for (std::size_t index = 0; index < entries.size(); ++index) {
+                const auto name = wide(entries[index].url);
+                ipc(batch.positions[index], IPC_SETPLAYLISTPOS);
+                // Die SDK-Änderung ersetzt den Dateinamen am Platz. Einfügen und
+                // Löschen würde Winamps Shuffle-Tabelle erneut aufbauen.
+                ipc(reinterpret_cast<WPARAM>(name.c_str()), IPC_CHANGECURRENTFILEW);
+                const auto actual = reinterpret_cast<const wchar_t*>(ipc(batch.positions[index], IPC_GETPLAYLISTFILEW));
+                if (reinterpret_cast<UINT_PTR>(actual) <= 65535 || name != actual) throw HttpError(ERROR_INVALID_DATA);
+                if (!active(original.names[batch.positions[index]]))
+                    release({{utf8(original.names[batch.positions[index]]), {}, -1, false}});
                 ++restored;
             }
             ipc(original.position, IPC_SETPLAYLISTPOS);
             changing_playlist = false;
-            for (const auto& path : paths) DeleteFileW(path.c_str());
-        } catch (...) { changing_playlist = false; for (const auto& path : paths) DeleteFileW(path.c_str()); throw; }
+        } catch (...) { ipc(original.position, IPC_SETPLAYLISTPOS); changing_playlist = false; throw; }
     }
-    void restore(const Snapshot& original) {
+    void restore(const Snapshot& original, int target) {
         auto batch = std::make_shared<Batch>();
         batch->settings = request_connection_settings(true);
         std::vector<std::string> aliases;
         for (int index = 0; index < static_cast<int>(original.names.size()); ++index) {
-            if (candidate(original.names[index]) && !active(original.names[index])) {
+            if (index == target && candidate(original.names[index]) && !active(original.names[index])) {
                 batch->positions.push_back(index); aliases.push_back(utf8(original.names[index]));
             }
         }
@@ -200,11 +205,12 @@ struct PlaylistReplay::State {
             cached.push_back(found->second);
         }
         if (cached.size() == aliases.size()) {
-            replace(original, *batch, cached); busy = false; failure = 0; resume(); return;
+            replace(original, *batch, cached); busy = false; failure = 0; speculative = false; resume(); return;
         }
         const auto media = local_media_store();
         const auto request = ++generation;
-        submit({[this, batch, aliases = std::move(aliases), media](HANDLE cancelled) {
+        submit({[this, request, batch, aliases = std::move(aliases), media](HANDLE cancelled) {
+            if (request != generation.load()) throw HttpError(ERROR_CANCELLED);
             const auto records = references.find(aliases);
             for (const auto& record : records) if (!record) throw HttpError(ERROR_NOT_FOUND);
             auto& settings = batch->settings;
@@ -252,17 +258,21 @@ struct PlaylistReplay::State {
             for (std::size_t index = 0; index < entries->size(); ++index) {
                 auto reference = batch->tracks[index].reference; reference.alias = (*entries)[index].url; aliases.push_back(std::move(reference));
             }
-            try { submit({[this, aliases = std::move(aliases)](HANDLE cancelled) { references.merge(aliases, cancelled); },
+            try { submit({[this, request, aliases = std::move(aliases)](HANDLE cancelled) {
+                if (request != generation.load()) throw HttpError(ERROR_CANCELLED);
+                references.merge(aliases, cancelled);
+            },
                 [this, request, original, batch, entries](DWORD saved) {
                     if (request != generation) { release(*entries); return; }
                     if (saved) { release(*entries); report(saved); return; }
                     try {
                         replace(original, *batch, *entries);
                         for (std::size_t index = 0; index < entries->size(); ++index) {
+                            owned[wide((*entries)[index].url)] = (*entries)[index];
                             if (renewed.size() >= 10000) renewed.clear();
                             renewed[original.names[batch->positions[index]]] = (*entries)[index];
                         }
-                        busy = false; failure = 0; resume();
+                        busy = false; failure = 0; speculative = false; prefetch_error = 0; resume();
                     }
                     catch (const HttpError& problem) { release(*entries); report(problem.code); }
                     catch (...) { release(*entries); report(ERROR_INVALID_DATA); }
@@ -272,9 +282,12 @@ struct PlaylistReplay::State {
     void resume() {
         const auto pending_action = action; action = {};
         if (!pending_action.window) return;
+        changing_playlist = true;
+        queue_answer = pending_action.queue;
         if (pending_action.selection >= 0) ipc(pending_action.selection, IPC_SETPLAYLISTPOS);
-        if (pending_action.window == editor) PostMessageW(player, WM_COMMAND, WINAMP_BUTTON2, 0);
-        else PostMessageW(pending_action.window, pending_action.event, pending_action.parameter, pending_action.detail);
+        if (pending_action.window == editor) SendMessageW(player, WM_COMMAND, WINAMP_BUTTON2, 0);
+        else SendMessageW(pending_action.window, pending_action.event, pending_action.parameter, pending_action.detail);
+        queue_answer.reset(); changing_playlist = false;
     }
     static LRESULT CALLBACK procedure(HWND window, UINT event, WPARAM parameter, LPARAM detail, UINT_PTR, DWORD_PTR data) noexcept {
         auto& current = *reinterpret_cast<State*>(data);
@@ -283,16 +296,19 @@ struct PlaylistReplay::State {
         catch (...) { current.report(ERROR_INVALID_DATA); return 0; }
     }
     LRESULT message(HWND window, UINT event, WPARAM parameter, LPARAM detail) {
+        if (window == player && event == WM_WA_IPC && queue_answer && detail == queue_answer->first) return queue_answer->second;
         if (event == diagnostic_message) {
             if (parameter == 0) return busy ? 1 : failure ? 3 : 2;
             if (parameter == 1) return static_cast<LRESULT>(restored);
             if (parameter == 2) return static_cast<LRESULT>(blocked);
             if (parameter == 3) return failure;
             if (parameter == 4) return reporting;
+            if (parameter == 5) return static_cast<LRESULT>(owned.size());
+            if (parameter == 6) return prefetch_error;
             return 0;
         }
-        if (window == player && event == WM_COMMAND && (LOWORD(parameter) == WINAMP_BUTTON4 || LOWORD(parameter) == WINAMP_BUTTON4_SHIFT)) cancel();
-        if (window == player && event == WM_WA_IPC && detail == IPC_PLAYLIST_MODIFIED && !changing_playlist && busy) cancel();
+        if (!changing_playlist && window == player && event == WM_COMMAND && (LOWORD(parameter) == WINAMP_BUTTON4 || LOWORD(parameter) == WINAMP_BUTTON4_SHIFT)) cancel();
+        if (window == player && event == WM_WA_IPC && detail == IPC_PLAYLIST_MODIFIED && !changing_playlist && busy) cancel(false);
         bool play = false;
         int selection = -1;
         if (window == player) {
@@ -313,6 +329,7 @@ struct PlaylistReplay::State {
             }
         }
         if (!changing_playlist && play) {
+            if (speculative) cancel(false);
             int target = selection;
             const auto count = ipc(0, IPC_GETLISTLENGTH);
             const auto current_position = static_cast<int>(ipc(0, IPC_GETLISTPOS));
@@ -320,32 +337,81 @@ struct PlaylistReplay::State {
             if (window == player && command == WINAMP_BUTTON2) {
                 // Play setzt einen pausierten Decoder fort, auch wenn der Cursor
                 // inzwischen auf einem anderen Playlist-Eintrag steht.
-                if (ipc(0, IPC_ISPLAYING) == 3) { if (busy) cancel(); return DefSubclassProc(window, event, parameter, detail); }
+                if (ipc(0, IPC_ISPLAYING) == 3) { if (busy) cancel(false); return DefSubclassProc(window, event, parameter, detail); }
                 target = current_position;
             }
-            if (window == player && !ipc(0, IPC_GET_SHUFFLE)) {
-                if (event == WM_WA_IPC && (detail == IPC_STARTPLAY || detail == IPC_STARTPLAY_INT)) target = 0;
-                if (command == WINAMP_BUTTON1) target = current_position - 1;
-                if (command == WINAMP_BUTTON5 || event == WM_WA_MPEG_EOF) target = current_position + 1;
-                if ((command == WINAMP_BUTTON1 || command == WINAMP_BUTTON5 || event == WM_WA_MPEG_EOF) &&
-                    (target < 0 || target >= count) && !ipc(0, IPC_GET_REPEAT))
+            Action requested{window, event, parameter, detail, selection};
+            const bool navigation = window == player && (command == WINAMP_BUTTON1 || command == WINAMP_BUTTON5 ||
+                command == WINAMP_BUTTON1_CTRL || command == WINAMP_BUTTON5_CTRL ||
+                (event == WM_WA_IPC && (detail == IPC_STARTPLAY || detail == IPC_STARTPLAY_INT)));
+            if (navigation || event == WM_WA_MPEG_EOF) {
+                // Ohne eigene Einträge bleibt auch die Auswahl vollständig bei Winamp.
+                bool own = false;
+                for (int index = 0; index < count && !own; ++index) {
+                    const auto name = reinterpret_cast<const wchar_t*>(ipc(index, IPC_GETPLAYLISTFILEW));
+                    own = reinterpret_cast<UINT_PTR>(name) > 65535 && candidate(name);
+                }
+                if (!own) return DefSubclassProc(window, event, parameter, detail);
+                if (count > 10000) {
+                    for (int index = 0; index < count; ++index) {
+                        const auto name = reinterpret_cast<const wchar_t*>(ipc(index, IPC_GETPLAYLISTFILEW));
+                        if (reinterpret_cast<UINT_PTR>(name) > 65535 && candidate(name) && !active(name)) throw HttpError(ERROR_BUFFER_OVERFLOW);
+                    }
                     return DefSubclassProc(window, event, parameter, detail);
-                if ((target < 0 || target >= count) && ipc(0, IPC_GET_REPEAT) && count > 0)
-                    target = target < 0 ? static_cast<int>(count) - 1 : 0;
+                }
+                if (busy) cancel(false);
+                std::optional<std::pair<LPARAM, LRESULT>> answer;
+                if (command == WINAMP_BUTTON1 || command == WINAMP_BUTTON5 || event == WM_WA_MPEG_EOF) {
+                    const auto operation = command == WINAMP_BUTTON1 ? IPC_GET_PREVIOUS_PLITEM : IPC_GET_NEXT_PLITEM;
+                    answer = std::make_pair(operation, ipc(0, operation));
+                }
+                const bool eof = event == WM_WA_MPEG_EOF;
+                const bool repeat = ipc(0, IPC_GET_REPEAT) != 0;
+                if (eof && answer->second < 0 && (!ipc(0, IPC_GET_STOP_AFTER_CURRENT) ||
+                    (ipc(0, IPC_GET_MANUALPLADVANCE) && !repeat) ||
+                    (!ipc(0, IPC_GET_SHUFFLE) && !ipc(0, IPC_GET_MANUALPLADVANCE) && current_position + 1 >= count && !repeat))) {
+                    // Reguläres Ende und native Stop-Einstellungen bleiben beim Host.
+                    action = requested; action.queue = answer; resume(); return 0;
+                } else {
+                    const auto playing = ipc(0, IPC_ISPLAYING);
+                    const auto elapsed = playing ? ipc(0, IPC_GETOUTPUTTIME) : 0;
+                    // Winamp wählt im gestoppten Zustand selbst, einschließlich Shuffle.
+                    // Ein Queue-Plugin wird dabei genau einmal nach seinem Ziel gefragt.
+                    changing_playlist = true;
+                    if (playing) SendMessageW(player, WM_COMMAND, WINAMP_BUTTON4, 0);
+                    queue_answer = answer;
+                    if (answer && answer->second >= 0) ipc(answer->second, IPC_SETPLAYLISTPOS);
+                    else if (eof && ipc(0, IPC_GET_MANUALPLADVANCE)) ipc(current_position, IPC_SETPLAYLISTPOS);
+                    else if (eof) SendMessageW(player, WM_COMMAND, WINAMP_BUTTON5, 0);
+                    else if (event == WM_WA_IPC) SendMessageW(player, WM_COMMAND, WINAMP_BUTTON1_CTRL, 0);
+                    else DefSubclassProc(window, event, parameter, detail);
+                    queue_answer.reset(); changing_playlist = false;
+                    target = static_cast<int>(ipc(0, IPC_GETLISTPOS));
+                    if (eof && !repeat && target == current_position && answer->second < 0) return 0;
+                    if (!eof && playing && answer && answer->second < 0 && target == current_position) {
+                        // Ein Rand der nativen Navigation kann ein unveränderter Titel
+                        // sein. Dessen Fortschritt und Pause bleiben erhalten.
+                        changing_playlist = true;
+                        SendMessageW(player, WM_COMMAND, WINAMP_BUTTON2, 0);
+                        if (elapsed > 0) ipc(elapsed, IPC_JUMPTOTIME);
+                        if (playing == 3) SendMessageW(player, WM_COMMAND, WINAMP_BUTTON3, 0);
+                        changing_playlist = false; return 0;
+                    }
+                    if (!eof && !playing && event != WM_WA_IPC && !(answer && answer->second >= 0)) return 0;
+                    requested = {player, WM_COMMAND, WINAMP_BUTTON2, 0, target};
+                }
             }
-            if (command == WINAMP_BUTTON1_CTRL) target = 0;
-            if (command == WINAMP_BUTTON5_CTRL) target = static_cast<int>(count) - 1;
             if (target >= 0 && target < count) {
                 const auto name = reinterpret_cast<const wchar_t*>(ipc(target, IPC_GETPLAYLISTFILEW));
                 if (reinterpret_cast<UINT_PTR>(name) > 65535 && !candidate(name)) {
                     // Fremde Quellen benötigen weder Plex noch dessen Registry.
                     // Die eigentliche Auswahl und Wiedergabe bleibt vollständig bei Winamp.
-                    if (busy) cancel();
-                    return DefSubclassProc(window, event, parameter, detail);
+                    if (busy) cancel(false);
+                    action = requested; resume(); return 0;
                 }
             }
             if (reporting) return 0;
-            if (busy) { ++blocked; return 0; }
+            if (busy) cancel(false);
             // Die eigene Auflösungsgrenze darf große fremde Playlists nicht sperren.
             if (count > 10000) {
                 for (int index = 0; index < count; ++index) {
@@ -355,10 +421,11 @@ struct PlaylistReplay::State {
                 return DefSubclassProc(window, event, parameter, detail);
             }
             const auto original = snapshot();
-            if (std::any_of(original.names.begin(), original.names.end(), [&](const auto& name) { return candidate(name) && !active(name); })) {
-                action = {window, event, parameter, detail, selection}; busy = true; failure = 0; ++blocked;
-                restore(original); return 0;
+            if (target >= 0 && target < count && candidate(original.names[target]) && !active(original.names[target])) {
+                action = requested; busy = true; failure = 0; ++blocked;
+                restore(original, target); return 0;
             }
+            action = requested; resume(); return 0;
         }
         return DefSubclassProc(window, event, parameter, detail);
     }
@@ -369,12 +436,18 @@ PlaylistReplay::PlaylistReplay(HWND player, HWND notification, HINSTANCE instanc
 PlaylistReplay::~PlaylistReplay() = default;
 void PlaylistReplay::persist(std::vector<ReplayReference> references, std::function<void()> accepted, std::function<void()> rejected) {
     auto* current = state_.get();
-    const auto request = current->generation;
-    state_->submit({[current, references = std::move(references)](HANDLE stop) { current->references.merge(references, stop); },
+    if (current->speculative) current->cancel(false);
+    // Vorladen und einzelne Auflösungen dürfen unabhängig eingereichte
+    // Bibliotheksübergaben nicht verwerfen. Stop/Verbindungswechsel tun dies.
+    const auto request = current->handoff_generation.load();
+    state_->submit({[current, request, references = std::move(references)](HANDLE stop) {
+        if (request != current->handoff_generation.load()) throw HttpError(ERROR_CANCELLED);
+        current->references.merge(references, stop);
+    },
         [current, request, accepted = std::move(accepted), rejected = std::move(rejected)](DWORD error) {
-            if (request != current->generation) { rejected(); return; }
-            if (error) { rejected(); current->report(error); } else accepted();
-        }});
+            if (request != current->handoff_generation.load()) { rejected(); return; }
+            if (error) { rejected(); current->cancel(false); current->report(error); } else accepted();
+        }, true});
 }
 void PlaylistReplay::dispatch() noexcept {
     try {
@@ -388,6 +461,38 @@ void PlaylistReplay::dispatch() noexcept {
     } catch (...) { state_->report(ERROR_NOT_ENOUGH_MEMORY); }
 }
 void PlaylistReplay::cancel() noexcept { state_->cancel(); }
+// Nur ein spekulativer Titel läuft neben dem aktuellen Decoder. Ein Benutzerauftrag
+// bricht diesen Download ab und erhält vor dem nächsten Workerauftrag Vorrang.
+void PlaylistReplay::prefetch(int position) noexcept {
+    auto& current = *state_;
+    try {
+        if (current.busy && !current.speculative) return;
+        const auto count = current.ipc(0, IPC_GETLISTLENGTH);
+        const auto read_name = [&](int index) {
+            if (index < 0 || index >= count) return std::wstring{};
+            const auto value = reinterpret_cast<const wchar_t*>(current.ipc(index, IPC_GETPLAYLISTFILEW));
+            return reinterpret_cast<UINT_PTR>(value) > 65535 ? std::wstring(value) : std::wstring{};
+        };
+        const auto name = read_name(position);
+        std::wstring playing;
+        if (current.ipc(0, IPC_ISPLAYING)) {
+            const auto actual = reinterpret_cast<const wchar_t*>(current.ipc(0, IPC_GET_PLAYING_FILENAME));
+            if (reinterpret_cast<UINT_PTR>(actual) > 65535) playing = actual;
+        } else playing = read_name(static_cast<int>(current.ipc(0, IPC_GETLISTPOS)));
+        for (auto entry = current.owned.begin(); entry != current.owned.end();) {
+            if (entry->first != playing && entry->first != name) {
+                current.release({entry->second}); entry = current.owned.erase(entry);
+            } else ++entry;
+        }
+        if (current.prefetch_position == position && current.prefetch_name == name) return;
+        if (current.speculative) current.cancel(false);
+        current.prefetch_position = position; current.prefetch_name = name;
+        if (name.empty() || !candidate(name) || current.active(name)) return;
+        current.busy = true; current.speculative = true;
+        current.restore(current.snapshot(), position);
+    } catch (const HttpError& problem) { current.report(problem.code); }
+    catch (...) { current.report(ERROR_INVALID_DATA); }
+}
 unsigned long long PlaylistReplay::diagnostic(unsigned counter) const noexcept {
     switch (counter) {
     case 0: return state_->busy ? 1 : state_->failure ? 3 : 2;
@@ -395,6 +500,8 @@ unsigned long long PlaylistReplay::diagnostic(unsigned counter) const noexcept {
     case 2: return state_->blocked;
     case 3: return state_->failure;
     case 4: return state_->reporting;
+    case 5: return state_->owned.size();
+    case 6: return state_->prefetch_error;
     default: return 0;
     }
 }
