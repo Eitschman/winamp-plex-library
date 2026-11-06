@@ -1,14 +1,16 @@
 # Working state and continuation
 
-## Active task
+## Current work package
 
 The user resumed work on November 6, 2026. Implement a bounded media buffer that decouples upstream Plex downloading from Winamp's consumption rate, while preserving authentication, TLS validation, byte-exact resumption, seeking and controlled teardown.
 
-Implementation is in progress in the regular transport/private-store code. The initial Release build and focused transport run pass 159 checks, including complete upstream retrieval while the decoder temporarily does not read. Full Debug/Release validation, targeted negative counterchecks and native playback validation of this new buffer remain pending. Do not treat these changes as part of v0.1.0 or install them into the normal Winamp automatically.
+The buffer is implemented in the regular transport/private-store code. Debug and Release each pass 13 suites with 178 transport checks, including complete upstream retrieval while the decoder temporarily does not read, a paused HTTP 206 response, cancellation, cleanup and shared quotas. Deliberately recoupling producer and consumer fails the independence assertion; that countercheck is removed. Muted native MP3 and M4A runs reach their natural endings at 273 and 251 seconds. Both also pass seeking, metadata and no-TranscodeSession checks. The native fault series passes healthy, 401, 403, 404, redirect, truncated, stalled and healthy-again cases. Do not treat these changes as part of v0.1.0 or install them into the normal Winamp automatically.
 
-The selected implementation is a progressive private disk buffer per active response, with a 128 KiB startup threshold and shared private-media quotas of 512 MiB per file and 2 GiB overall. Producer lifetime is bounded by active proxy workers. Validate cancellation, cleanup, slow consumers, errors and seeking before claiming the behavior tested.
+The implementation uses a progressive private disk buffer per active response, with a 128 KiB startup threshold and shared private-media quotas of 512 MiB per file and 2 GiB overall. Producer lifetime is bounded by four active proxy workers. It does not implement persistent offline caching or next-track prefetch. The current test-copy DLL matches the Release build, SHA-256 `616576076668969eda8e2f85ea3ec7fee61f0b5b88bff44d02693276a4f140bd`. Seven package checks pass. The received/expected diagnostic label was inspected in the real skinned dialog.
 
-The user additionally requested all public project documentation in English and an immediate documentation-only push. Keep that commit separate from unfinished buffer code. The application continues to offer German/English based on Winamp's language pack.
+Native evidence: `buffer-puppeteer-natural-end.log`, `buffer-m4a-natural-end.log`, `buffer-seek-faults-native.log` and `buffer-settings-current.log`. Automated evidence: `ctest-buffer-range-release.log`, `ctest-buffer-range-debug.log`, `transport-buffer-coupled-negative.log` and `buffer-packaging-current.log`. Source/history and DLL strings pass redacted scans. Follow-up work must preserve these guards and must not imply a new normal-installation authorization.
+
+All 14 public Markdown documents and visible Actions text are now English, published separately as `9906e3d`. Relative links, Actionlint, seven package checks and redacted history/tree scans pass. [Actions run 42187506113](https://github.com/Eitschman/winamp-plex-library/actions/runs/42187506113) succeeds. Published v0.1.0 release notes match the English source. The application continues to offer German/English based on Winamp's language pack.
 
 **Today's tests must be muted and run in the background.** Keep the isolated Winamp minimized, revealing only briefly for necessary visual checks. Stop and clear its playlist afterwards. There is no new daily cutoff specified. Prior one-day cutoffs do not apply automatically.
 

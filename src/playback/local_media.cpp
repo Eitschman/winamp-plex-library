@@ -8,6 +8,7 @@
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
+#include <atomic>
 
 namespace plex {
 namespace {
@@ -105,7 +106,7 @@ struct LocalMediaState {
     std::filesystem::path root, session;
     LocalMediaLimits limits;
     mutable std::mutex mutex;
-    unsigned long long used = 0;
+    std::atomic<unsigned long long> used{0};
     Handle owner;
     std::vector<std::pair<std::filesystem::path, unsigned long long>> deferred;
     bool cleanup_pending = false;
@@ -230,7 +231,9 @@ LocalMediaStore::LocalMediaStore(std::filesystem::path root, LocalMediaLimits li
     state_ = std::make_shared<LocalMediaState>(std::move(root), limits);
 }
 std::filesystem::path LocalMediaStore::directory() const { std::lock_guard<std::mutex> lock(state_->mutex); return state_->session; }
-unsigned long long LocalMediaStore::bytes_used() const { std::lock_guard<std::mutex> lock(state_->mutex); return state_->used; }
+// UI-Diagnosen dürfen nicht auf laufende Dateibereinigung warten. Änderungen
+// des Budgets bleiben durch den Zustandsmutex gemeinsam mit den Dateien geschützt.
+unsigned long long LocalMediaStore::bytes_used() const { return state_->used.load(); }
 
 std::shared_ptr<const LocalMediaFile> LocalMediaStore::download(const PlaybackSource& source, HANDLE stop) {
     cancelled(stop);

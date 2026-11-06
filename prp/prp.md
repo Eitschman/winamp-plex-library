@@ -19,7 +19,7 @@ This is a maintained working document, not an immutable copy of the initial prom
 - Source, history, logs and packages must be checked for secret exposure before publication. CI repeats a redacted history scan. Access data, private responses and local audit reports are not published.
 - Runtime tests use the explicitly authorized separate Winamp copy. Build Tools 2022 installation was authorized. The normal installation/configuration is not a test target. The prior DLL replacement was a one-time authorization.
 - Today's automated playback tests must be muted and in the background. Keep the test host minimized; reveal briefly only for necessary visual/mouse checks, then minimize. Stop and clean its playlist afterwards.
-- A bounded streaming buffer is authorized to decouple PMS downloading from decoder consumption. Preserve authentication, TLS, byte identity and resource/cancellation limits. Validate slow reading, pause, interruption, seeking, quotas and shutdown. Do not claim unfinished work as released.
+- A bounded streaming buffer decouples PMS downloading from decoder consumption using private progressive response files. Playback starts at 128 KiB or short-response completion. Buffers share prepared-media quotas, and each active worker has at most one producer. Preserve authentication, TLS, byte identity and cancellation. Validate slow reading, pause, interruption, seeking, quotas and shutdown. The local buffer changes are not included in v0.1.0; do not claim them as released.
 
 ## Verified baseline
 

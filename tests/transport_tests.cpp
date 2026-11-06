@@ -212,7 +212,7 @@ void slow_decoder_checks() {
     const auto url = proxy->url();
     const auto path = url.find('/', 7);
     const auto port = std::stoi(url.substr(url.find(':', 7) + 1, path - url.find(':', 7) - 1));
-    const auto connect_decoder = [&](bool complete_headers = true) {
+    const auto connect_decoder = [&](bool complete_headers = true, const std::string& range = std::string{}) {
         const auto client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (client == INVALID_SOCKET) throw std::runtime_error("slow_client_socket");
         const int buffer = 4096;
@@ -224,7 +224,8 @@ void slow_decoder_checks() {
         if (connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address))) {
             closesocket(client); throw std::runtime_error("slow_client_connect");
         }
-        send_text(client, complete_headers ? "GET " + url.substr(path) + " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(port) + "\r\n\r\n" : "GET ");
+        send_text(client, complete_headers ? "GET " + url.substr(path) + " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(port) + "\r\n" +
+            (range.empty() ? std::string{} : "Range: " + range + "\r\n") + "\r\n" : "GET ");
         return client;
     };
     {
@@ -252,6 +253,26 @@ void slow_decoder_checks() {
         while (proxy->status().reserved_media_bytes && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         check(proxy->status().reserved_media_bytes == 0, "completed_decoder_request_releases_buffer_reservation");
+    }
+    {
+        const auto before = proxy->status().bytes_received;
+        LocalSocket client{connect_decoder(true, "bytes=131072-")};
+        std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+        const auto buffered = proxy->status();
+        check(buffered.bytes_received - before == origin.media.size() - 131072 && buffered.active_downloads == 0,
+              "seeking_response_downloads_independently_of_paused_decoder");
+        const int buffer = 256 * 1024;
+        setsockopt(client.value, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&buffer), sizeof(buffer));
+        std::string response;
+        std::array<char, 65536> chunk{};
+        for (;;) {
+            const auto received = recv(client.value, chunk.data(), static_cast<int>(chunk.size()), 0);
+            if (received <= 0) break;
+            response.append(chunk.data(), static_cast<std::size_t>(received));
+        }
+        const auto header = response.find("\r\n\r\n");
+        check(response.rfind("HTTP/1.1 206 ", 0) == 0 && header != response.npos && response.substr(header + 4) == origin.media.substr(131072),
+              "buffered_seeking_response_preserves_status_offset_and_every_byte");
     }
     {
         const auto hits = origin.hits.load();
@@ -481,6 +502,19 @@ int main(int count, char** arguments) {
         slow_decoder_checks();
         Fixture fixture;
         const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
+        {
+            const auto root = std::filesystem::temp_directory_path() / (L"WinampPlexBufferLimit-" + std::to_wstring(GetCurrentProcessId()));
+            auto store = std::make_shared<plex::LocalMediaStore>(root, plex::LocalMediaLimits{16, 16});
+            {
+                plex::PlaybackProxy limited({server, "synthetic-test-token", "/library/parts/1/file.mp3"},
+                    std::chrono::hours(2), plex::ProxyClientPolicy::capability_only, store);
+                const auto response = fetch(limited.url());
+                check(response.status == 502 && response.body.empty() && limited.status().transport_error == ERROR_FILE_TOO_LARGE && store->bytes_used() == 0,
+                      "buffer_quota_failure_is_explicit_without_unbuffered_playback");
+            }
+            store.reset();
+            check(!std::filesystem::exists(root) || std::filesystem::remove(root), "buffer_limit_test_directory_removed");
+        }
         plex::PlexConnectionSettings image_settings;
         image_settings.server_origin = "http://127.0.0.1:" + std::to_string(fixture.port);
         image_settings.server_token = "synthetic-test-token"; image_settings.client_identifier = "synthetic-client";

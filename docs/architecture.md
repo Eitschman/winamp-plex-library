@@ -15,6 +15,7 @@
 | `src/plugin/artwork_provider.cpp` | Prepared-data album-art service for owned playback paths, without callback networking |
 | `src/cache` | Thread-safe LRU metadata pages, library lists and artwork caching |
 | `src/playback/proxy.cpp` | Loopback listener, bounded workers, expiring grants and range streaming |
+| `src/playback/stream_buffer.cpp` | Progressive private-disk buffering, one producer/reader per response, startup threshold and cancellation |
 | `src/playback/local_media.cpp` | Cancellable FLAC/OGG/ADTS-AAC preparation, private files, quotas and cleanup |
 | `src/playback/aac_remux.cpp` | Lossless ADTS-to-M4A repackaging using Media Foundation, without an encoder/decoder |
 | `src/playback/playback_reporter.cpp` | State comparison, bounded timeline queue and cancellable background delivery |
@@ -22,7 +23,7 @@
 | `src/common` | Origin, token, path, request and range validation; query encoding |
 | `tests` | SDK host, synthetic PMS transport and independent component tests |
 
-This document describes the validated baseline. Bounded progressive streaming-buffer work is in progress; see [working-state.md](working-state.md). Unverified work is not included in the release claims.
+The progressive buffer has automated and native integration evidence and is not included in the v0.1.0 release. See [testing.md](testing.md) for the tested conditions and their limits.
 
 ## Library views and caches
 
@@ -72,7 +73,8 @@ flowchart LR
     Prepare --> Files[Private FLAC / OGG / M4A files]
     Decoder --> Files
     Prepare --> HTTP
-    Proxy --> HTTP[WinHTTP with token header]
+    Proxy --> Buffer[Bounded private response buffer]
+    Buffer --> HTTP[WinHTTP with token header]
     HTTP --> PMS
 ```
 
@@ -100,7 +102,13 @@ On view destruction, the UI detaches image-list and skin resources and sets cata
 
 The reaper owns a `CoInitializeEx` MTA apartment for its thread lifetime and closes it on that same thread. Plugin shutdown destroys windows, drains the queue and joins the reaper before unload. There are no detached workers or asynchronous MTA-cookie teardown.
 
-The baseline proxy has four workers, each serving at most one client. Headers are capped at 16 KiB with a finite header deadline. Media transfers use 64 KiB blocks rather than an unbounded memory buffer.
+The proxy has four workers, each serving at most one client. Headers are capped at 16 KiB with a finite header deadline. Each active response owns one producer thread, a cancellation event and a random private .buffer file. No thread is allocated merely for a queued playlist entry.
+
+The producer reads WinHTTP in 64 KiB blocks independently of downstream backpressure. Only written bytes become visible to the consumer. The consumer starts after 128 KiB or producer completion, then reads published bytes by offset. An unfinished buffer wait returns control at most every 100 ms so a closed decoder connection can cancel its upstream request. Global shutdown and per-response cancellation both interrupt WinHTTP waits. Teardown cancels and joins the producer before deleting the file.
+
+Known Content-Length reserves quota before starting the body. Unknown-length responses reserve incrementally. Buffers share the prepared-media budget: 512 MiB per file and 2 GiB overall. Quota exhaustion and disk errors remain explicit failures, without an unbuffered alternative. Completed network downloads release WinHTTP resources even while the consumer is paused. Files remain only for the active response; there is no cross-request reuse, offline cache or next-track prefetch. New range requests receive their own buffer and retain their original HTTP status and byte offsets.
+
+Buffered bytes are drained before a terminal producer error is reported. The last failure remains recorded. Budget changes stay serialized with file ownership; numeric byte-use diagnostics are atomic and do not wait for filesystem cleanup on the UI thread.
 
 WinHTTP uses asynchronous handles. Workers wait for completion or cancellation while the UI remains responsive. Callbacks touch only request context. After HANDLE_CLOSING, connection/session handles close; the transport then waits for [WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags#winhttp_option_unload_notify_event), confirming all callbacks have returned before context and code are freed. HANDLE_CLOSING delivery alone is insufficient.
 
@@ -140,6 +148,6 @@ Plex authentication is attached upstream only. TLS verification stays enabled. R
 
 ## Failure boundaries
 
-An interrupted full response may resume at the next unsent byte at most three times. Known total length and a strong ETag are required. Follow-up requests use the same origin/token/path and must return HTTP 206, the same ETag, exact Content-Range and remaining Content-Length. Authentication failure or mismatch fails visibly. Initial HTTP 206 seeking responses are excluded. Numeric diagnostics retain the latest transfer failure after recovery or a subsequent healthy track.
+An interrupted full response may resume at the next byte not yet downloaded into the buffer, at most three times. The resume offset is independent of how much Winamp has consumed. Known total length and a strong ETag are required. Follow-up requests use the same origin/token/path and must return HTTP 206, the same ETag, exact Content-Range and remaining Content-Length. Authentication failure or mismatch fails visibly. Initial HTTP 206 seeking responses are excluded from resumption. Numeric diagnostics retain the latest transfer failure after recovery or a subsequent healthy track; received/expected counts describe upstream progress.
 
 ABI/thread entry points catch exceptions. JSON failures become classified errors before reaching the UI. Unreachable servers never trigger transcoding or insecure HTTP. Unverified areas are listed in [testing.md](testing.md).

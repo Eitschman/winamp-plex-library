@@ -10,4 +10,6 @@ On November 5, 2026, Gitleaks 8.30.1 scanned the entire available Git history of
 
 The published CI package contains only the DLL, installation instructions and license notices. Its text files and ANSI/UTF-16 strings extracted from the DLL were scanned without findings. Configuration persistence writes only DPAPI output to disk; its JSON representation remains in memory.
 
+The November 6 documentation/buffer review also scanned 65 available commits, pending changes and ANSI/UTF-16 strings from the current buffer DLL, with no findings. Relative documentation links, Actions syntax and package checks passed. These checks do not publish local scan reports or access settings.
+
 A scanner cannot recognize every possible confidential value. These results are not an absolute guarantee against all secret formats. CI complements checks before each push: a checksum-pinned scanner checks the entire history with redacted output and fails on findings. Finding reports are not published as artifacts.

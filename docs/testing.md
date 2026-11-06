@@ -14,7 +14,27 @@ Artist and title are jointly formatted for playlists/current display while metad
 
 Debug and Release each pass 13 suites with 137 transport checks for the guarded-resumption baseline (`ctest-resume-guarded.log`, `ctest-resume-guarded-debug.log`). An intermediate lifecycle run detected handle growth; an unchanged repeat passed. That sporadic observation remains unresolved.
 
-## Natural-end evidence
+## Progressive response buffer validation
+
+The local development implementation adds a private progressive disk buffer between WinHTTP and the decoder. These changes are not included in v0.1.0. Focused transport tests pass 178 checks, including:
+
+- A decoder with a small receive buffer stops reading for 1200 ms. All four MiB are downloaded from the source while downstream delivery is still incomplete; the producer releases its network resources while buffered data remains available. The resumed reader receives every byte unchanged, then the reservation is released.
+- A paused reader of an HTTP 206 seeking response does not hold back its source download. Its final status, offset and every remaining byte match the requested range.
+- A decoder disconnect during a stalled download cancels the producer and releases its buffer within 1500 ms, without recording a source failure. Plugin shutdown while waiting below the startup threshold also completes within that bound.
+- Small deterministic quotas check known-length reservation, unknown-length growth, per-file limits, concurrent buffers, shared prepared-media quota and released reservations. Oversized proxy responses return an explicit empty HTTP 502 rather than starting unbuffered playback.
+- Private session DACL, exact published offsets, partial-file deletion and marked abandoned-buffer cleanup are checked. Buffered bytes are drained before a terminal producer error remains visible.
+
+The countercheck temporarily recouples the producer to downstream consumption. It fails with exit code 1 at complete_upstream_is_buffered_while_decoder_does_not_read (`transport-buffer-coupled-negative.log`). The change is removed; the regular implementation passes (`transport-buffer-range.log`).
+
+With the buffer, a muted native “The Puppeteer” run reaches natural stop at 273 seconds, last position 272,039 ms and elapsed playback 272.6 seconds (`buffer-puppeteer-natural-end.log`). Its active session has no TranscodeSession. The received/expected diagnostic label was inspected in the native skinned dialog, with no clipping (`buffer-settings-diagnostics.png`, `buffer-settings-current.log`).
+
+A muted native M4A run also reaches natural stop at 251 seconds, last position 250,470 ms and elapsed playback 249.8 seconds. Metadata and the active session without TranscodeSession pass (`buffer-m4a-natural-end.log`). Its loaded DLL matches the current Release build by SHA-256.
+
+Debug and Release each pass 13 suites with all 178 transport checks, including the large-range case (`ctest-buffer-range-debug.log`, `ctest-buffer-range-release.log`). Seven packaging checks pass with the current Release DLL (`buffer-packaging-current.log`).
+
+Additional muted native checks pass for MP3 and M4A: 30 seconds uninterrupted playback, duration, seeking, metadata and own active Plex session without TranscodeSession. After seeking, observed positions are 10,380 and 10,560 ms. The decoder fault series then passes healthy, HTTP 401, 403, 404, redirect, truncated, stalled and healthy-again cases. Truncation reports Windows 38; stalled reception reports 12002 after actual progress. Maximum UI-query latency is 9 ms and stop latency 51 ms in this run (`buffer-seek-faults-native.log`). These fixtures do not establish behavior during every real home-network outage.
+
+### Natural endings in the validated playback baseline
 
 | Track/format | Decoder duration | Last observed position | Observed elapsed playback | Evidence |
 | --- | --- | --- | --- | --- |

@@ -11,7 +11,7 @@ Target: Winamp 5.9.2 Build 10042, 32-bit, on Windows 10/11. WACUP and other Wina
 
 The plugin follows Winamp's active language pack. Additional connection options are under **Advanced**. The server must be reachable over HTTPS with a valid certificate. Automatic selection checks advertised local connections, direct remote access and Plex Relay, in that order.
 
-MP3 and M4A use the local streaming proxy. FLAC, OGG and ADTS-AAC are prepared as private local files in the background before being added to Winamp. Limits are 512 MiB per file and 2 GiB overall. AAC is repackaged into M4A without re-encoding and requires Windows Media Foundation. Windows N editions may need additional media components. There is no automatic transcoding.
+MP3 and M4A use the local streaming proxy. Current development builds progressively buffer active responses in private temporary files; v0.1.0 does not include this buffer. FLAC, OGG and ADTS-AAC are prepared as private local files before being added to Winamp. Limits are 512 MiB per file and 2 GiB overall, shared with response buffers. AAC is repackaged into M4A without re-encoding and requires Windows Media Foundation. Windows N editions may need additional media components. There is no automatic transcoding.
 
 Access settings are encrypted for the current Windows user at `%LOCALAPPDATA%/WinampPlexLibrary/connection.dpapi`. Winamp playlists contain no Plex tokens. Saved local playback URLs cannot be reused after a plugin restart; add the tracks from the Plex library again.
 
