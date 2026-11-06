@@ -10,7 +10,7 @@ The implementation uses a progressive private disk buffer per active response, w
 
 Native evidence: `buffer-puppeteer-natural-end.log`, `buffer-m4a-natural-end.log`, `buffer-seek-faults-native.log` and `buffer-settings-current.log`. Automated evidence: `ctest-buffer-range-release.log`, `ctest-buffer-range-debug.log`, `transport-buffer-coupled-negative.log` and `buffer-packaging-current.log`. Source/history and DLL strings pass redacted scans. Follow-up work must preserve these guards and must not imply a new normal-installation authorization.
 
-The buffer code is pushed at cf1f4f9. [Actions run 42189390597](https://github.com/Eitschman/winamp-plex-library/actions/runs/42189390597) passes the exposure scan, Debug/Release 13 suites each, and seven package checks. Its downloaded development package contains exactly the expected files and source-identical English installation/notices. Build logs, package text and DLL strings pass redacted scans. CI DLL SHA-256: `328c6c155883d2fc3c858b253d3bbdc6c5118d4fba230c92f57f636e1be05dad`. No new version tag or normal-installation replacement was performed.
+The buffer code is pushed at cf1f4f9. [Actions run 42189390597](https://github.com/Eitschman/winamp-plex-library/actions/runs/42189390597) passes the exposure scan, Debug/Release 13 suites each, and seven package checks. Its downloaded development package contains exactly the expected files and source-identical English installation/notices. Build logs, package text and DLL strings pass redacted scans. CI DLL SHA-256: `328c6c155883d2fc3c858b253d3bbdc6c5118d4fba230c92f57f636e1be05dad`. No new version tag was created. The separately authorized normal-installation replacement is recorded below.
 
 All 14 public Markdown documents and visible Actions text are now English, published separately as `9906e3d`. Relative links, Actionlint, seven package checks and redacted history/tree scans pass. [Actions run 42187506113](https://github.com/Eitschman/winamp-plex-library/actions/runs/42187506113) succeeds. Published v0.1.0 release notes match the English source. The application continues to offer German/English based on Winamp's language pack.
 
@@ -38,11 +38,11 @@ Premature completion was reproduced on “The Puppeteer”: 129.8 seconds instea
 
 A real Puppeteer run reached natural end after an actual upstream interruption. “Until Dawn” also reached natural end at a decoder duration of 369 seconds, observed elapsed time 368.3 seconds. Artist/title formatting is present in playlists and scrolling display while raw metadata fields remain separate.
 
-The explicitly authorized one-time replacement into the normal installation was performed with Winamp closed. Installed DLL SHA-256:
+The user explicitly authorized installing the tested buffer DLL into the normal Winamp on November 6. The executable version was verified as 5.9.2.10042 and no Winamp process was running. Windows required administrator approval for the protected Plugins directory. The installed DLL independently matches the native-tested local Release build, SHA-256:
+`616576076668969eda8e2f85ea3ec7fee61f0b5b88bff44d02693276a4f140bd`.
+The replaced DLL is preserved under `.local/installation-rollback-20261106/ml_plex.dll`, SHA-256:
 `080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`.
-Its previous DLL is preserved under `.local/installation-rollback-20261105/ml_plex.dll`, SHA-256:
-`f37b12279e11fa4eb220ca1c70a47f195a6f9d563a2d7ab26490ec1834230f81`.
-The user subsequently reported two uninterrupted songs. **That permission was for one replacement only. Do not infer permission for another installation.**
+Winamp was left closed for the user's own testing. Evidence: `buffer-user-installation-admin.log`. The user's two earlier uninterrupted songs apply to the previous DLL, not a listening test of the buffer build. **This authorization covered one replacement only; future replacements require their own authorization.**
 
 Plexamp reference research supports background buffering, retry behavior, disk caching and preloading:
 - https://forums.plex.tv/t/plexamp-constantly-pausing/675610
