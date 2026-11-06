@@ -1,6 +1,6 @@
 # Winamp Plex Library: requirements and development plan
 
-This is a maintained working document, not an immutable copy of the initial prompt. Evidence is recorded in [testing](../docs/testing.md), and contracts/sources in [research](../docs/research.md) and [Winamp interfaces](../docs/winamp-sdk.md). Public project documentation is written in English. German and English remain supported UI languages.
+This is a maintained working document, not an immutable copy of the initial prompt. Evidence is recorded in [testing](../docs/testing.md), and contracts/sources in [research](../docs/research.md) and [Winamp interfaces](../docs/winamp-sdk.md). Public project documentation and all new commit messages are written in English. German and English remain supported UI languages.
 
 ## Binding project decisions
 

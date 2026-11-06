@@ -6,7 +6,7 @@ Baseline evidence date: November 5, 2026. This document distinguishes executed c
 
 A native “The Puppeteer” run stopped after 129,788 ms despite a decoder duration of 273 seconds. Diagnostics recorded HTTP 200, Windows error 38 and 4,521,984 of 9,330,407 expected bytes. This reproduced an incomplete transfer in the common transport path. The exact cause of the upstream termination remains unresolved. A later healthy request's HTTP 200/Windows 0 cannot reconstruct that earlier failure, so numeric failure history is retained.
 
-Interrupted full GETs can resume the same file at the next unsent byte, at most three times. Resumption requires known length, a strong ETag, the same origin/token/path, HTTP 206, identical ETag, exact Content-Range and remaining Content-Length. Changed content and inconsistent responses fail. Initial HTTP 206 seeking responses have no equivalent resumption proof. No alternate server, format or decoder is selected.
+Interrupted full GETs can resume the same file at the next byte not yet downloaded, at most three times. Resumption requires known length, a strong ETag, the same origin/token/path, HTTP 206, identical ETag, exact Content-Range and remaining Content-Length. Changed content and inconsistent responses fail. Initial HTTP 206 seeking responses have no equivalent resumption proof. No alternate server, format or decoder is selected.
 
 Synthetic counterchecks without resumption detect missing content. With resumption all bytes match without duplication; changed ETags are rejected. Removing retained failure history also fails its countercheck. Media receive timeout is 15 seconds while API deadlines remain shorter. A six-second media pause passes; the five-second timeout countercheck fails.
 

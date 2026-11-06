@@ -1,6 +1,6 @@
 # Contributing
 
-The target is Windows 10/11 with Winamp 5.9.2 Build 10042, x86. Use English for public documentation and technical identifiers. Preserve existing source comments and keep each change focused on a specific problem.
+The target is Windows 10/11 with Winamp 5.9.2 Build 10042, x86. Use English for public documentation, commit messages and technical identifiers. Preserve existing source comments and keep each change focused on a specific problem.
 
 ## Build and validation
 

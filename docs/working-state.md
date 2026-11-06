@@ -12,6 +12,8 @@ Native evidence: `buffer-puppeteer-natural-end.log`, `buffer-m4a-natural-end.log
 
 All 14 public Markdown documents and visible Actions text are now English, published separately as `9906e3d`. Relative links, Actionlint, seven package checks and redacted history/tree scans pass. [Actions run 42187506113](https://github.com/Eitschman/winamp-plex-library/actions/runs/42187506113) succeeds. Published v0.1.0 release notes match the English source. The application continues to offer German/English based on Winamp's language pack.
 
+The user requires English for all new commit messages as well. Follow that convention for subsequent checkpoints and public commits. The isolated test copy was stopped, its saved playlist cleared and its process exited normally after the buffer checks (`buffer-native-shutdown.log`).
+
 **Today's tests must be muted and run in the background.** Keep the isolated Winamp minimized, revealing only briefly for necessary visual checks. Stop and clear its playlist afterwards. There is no new daily cutoff specified. Prior one-day cutoffs do not apply automatically.
 
 ## Release and repository
