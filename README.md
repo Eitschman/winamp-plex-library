@@ -28,9 +28,7 @@ WACUP is a future compatibility target and has not been tested at runtime. Other
 
 Published versions are available from [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Each ZIP contains the DLL, installation instructions and license notices, with a separate SHA-256 checksum file. [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) also provides development packages named **`winamp-plex-library-win32-release`** with limited retention; downloading those requires a GitHub account. You can also build from source.
 
-Version **0.2.0** adds progressive playback buffering, live buffer diagnostics and saved Plex playlist restoration across Winamp restarts. See the [release notes](docs/releases/0.2.0.md) for upgrade instructions and limitations.
-
-The source tree additionally includes next-track prefetch, library filters, saved views and navigation-state restoration. These additions are not part of the published 0.2.0 binary.
+Version **0.3.0** adds bounded next-track prefetch, library filters, named saved views and navigation-state restoration. Progressive playback buffering, diagnostics and saved Plex playlist restoration remain included. See the [release notes](docs/releases/0.3.0.md) for upgrade instructions and limitations.
 
 ## Installation and setup
 

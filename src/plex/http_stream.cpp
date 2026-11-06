@@ -129,7 +129,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     auto context = reinterpret_cast<DWORD_PTR>(&state);
     require(WinHttpSetOption(state.request, WINHTTP_OPTION_CONTEXT_VALUE, &context, sizeof(context)));
     state.context_installed = true;
-    auto headers = L"X-Plex-Product: Winamp Plex Library\r\nX-Plex-Version: 0.2.0\r\nX-Plex-Platform: Windows\r\n"
+    auto headers = L"X-Plex-Product: Winamp Plex Library\r\nX-Plex-Version: 0.3.0\r\nX-Plex-Platform: Windows\r\n"
                    L"X-Plex-Client-Identifier: " + widen(client_identifier) + L"\r\nAccept: " + accept + L"\r\nAccept-Encoding: identity\r\n";
     if (!token.empty()) headers += L"X-Plex-Token: " + widen(token) + L"\r\n";
     if (!range.empty()) headers += L"Range: " + widen(range) + L"\r\n";
