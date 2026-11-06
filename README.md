@@ -26,6 +26,8 @@ WACUP is a future compatibility target and has not been tested at runtime. Other
 
 Published versions are available from [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Each ZIP contains the DLL, installation instructions and license notices, with a separate SHA-256 checksum file. [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) also provides development packages named **`winamp-plex-library-win32-release`** with limited retention; downloading those requires a GitHub account. You can also build from source.
 
+Version **0.2.0** adds progressive playback buffering, live buffer diagnostics and saved Plex playlist restoration across Winamp restarts. See the [release notes](docs/releases/0.2.0.md) for upgrade instructions and limitations.
+
 ## Installation and setup
 
 Exit Winamp and manually copy `ml_plex.dll` into the **Plugins directory actually used by your Winamp installation**, next to `gen_ml.dll`. The `Plugins/ml` data directory is not the destination. Preserve an existing DLL before replacing it. See [installation instructions](docs/installation.md).

@@ -2,6 +2,12 @@
 
 Baseline evidence date: November 5, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
 
+## Version 0.2.0 release checks
+
+The local versioned DLL identifies 0.2.0 in its PE resource, plugin description and Plex request header. Its SHA-256 is `fce89737a4bf18a884a9eadb353c28be56bb26276e33d1778bfc120ce3be0260`. The muted native process-restart test confirms renewed playback, exact metadata, artwork bindings, timeline delivery, no TranscodeSession and automatic advancement; the normal installation/profile hashes remain unchanged (`release-020-native.log`). Debug and Release serial runs each pass 15 suites, and seven package checks pass (`release-020-ctest-serial.log`, `release-020-ctest-debug.log`, `release-020-packaging.log`).
+
+The initial local Release run fails the strict handle guard at cycle 34, with 181 handles versus baseline 157 (`release-020-ctest.log`). A comparison run with the preserved preceding diagnostics DLL passes 100 cycles (`release-020-previous-dll-lifecycle.log`). The serial versioned-build runs also pass without weakening the guard. This does not identify the cause of the intermittent increase or establish that parallel execution caused it. Release notes retain that limitation. Tag-triggered publication additionally requires both CI configurations and the exposure scan to pass.
+
 ## Regular DLL: saved-playlist restoration
 
 The user authorized integrating the successful feasibility result into `ml_plex.dll`. Native tests run `scripts/Test-PlexPlaylistReplay.ps1 -Product` with the separate probe absent. They copy the protected connection profile into an ignored test-only directory with a separate client identifier, add two real tracks through the regular library UI, export Winamp's M3U8, close Winamp, start a different process and reload the unchanged file. The normal DLL and original Plex profile hashes remain unchanged. Tests are muted/minimized in Winamp 5.9.2 Build 10042.
