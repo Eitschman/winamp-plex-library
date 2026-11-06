@@ -2,7 +2,7 @@
 
 ## Components
 
-The regular plugin does not yet restore saved playback entries across process restarts. The separately built test-only replay module is described below; its behavior is not part of `ml_plex.dll`.
+The regular plugin restores registered Plex playback entries across process restarts using current authorization and protected server/track/media-part mappings. The separately built feasibility module remains a test artifact and is never packaged.
 
 | Area | Responsibility |
 | --- | --- |
@@ -120,13 +120,29 @@ Playback belongs to the core and survives view destruction. A shared listener su
 
 `send_playlist_to_winamp` handles synchronous SDK calls and verifies imported count. Insert-after-current hands M3U8 to the playlist editor without a playback command. The reporter is allocated before modifying the host. Partial imports are errors; atomic host rollback is not promised.
 
-## Saved-playlist feasibility probe
+## Saved-playlist restoration
+
+`src/config/replay_references.cpp` records each issued playback alias together with Plex server ID, numeric track ID and validated media-part key. The entire registry is protected by CurrentUser DPAPI and atomically replaced. A cancellable exclusive sidecar handle serializes concurrent writers; each merge rereads the current file while holding that handle. Corruption, conflicting alias assignments, decryption failures and limits are errors. There is no TTL or automatic eviction. Bounds are 100000 aliases and 64 MiB. Repeated imports of an old alias reuse its current-session target rather than issuing another grant.
+
+`src/plugin/playlist_replay.cpp` owns one COM-initialized worker and bounded job queues. Normal library handoff first binds temporary targets, then persists their references on this worker, and only then imports them into Winamp. A failed save revokes the new targets. Shared prepared files retain a binding claim for each accepted or pending handoff; rejecting another handoff cannot revoke an existing entry's file or metadata. No network or DPAPI-registry operation runs on Winamp's UI thread.
+
+Before Play, IPC_STARTPLAY, playlist-editor Play/Enter/double-click, Previous/Next or decoder EOF advances to an obsolete owned target, the controller holds that action and snapshots the full playlist. Its worker looks up exact aliases, requires the selected server ID to match, verifies TLS/server identity using the existing connection selector, and retrieves `/library/metadata/{id}`. The recorded part must still exist exactly; no title matching, different credentials, transcoding or substitute media are used. Metadata requests are deduplicated per track, local downloads per part and artwork per thumbnail. Ordinary unrelated sources are retained.
+
+Explicitly selected foreign sources bypass Plex resolution, including a broken Plex registry elsewhere in the list. Sequential Previous/Next/EOF uses Winamp's normal adjacent position when shuffle is disabled. Paused Play resumes the existing decoder without resolving unrelated entries. Own HTTP aliases require the exact loopback grant-path shape, not merely a loopback host or `/stream/` prefix. Local files outside the private playback directory and web radios keep their addresses and positions. These checks leave the actual source selection and decoding to Winamp; third-party queue plugins that override adjacent selection are not verified.
+
+When an owned stale target or an unknown shuffle target requires resolution, all stale owned entries are resolved before the action resumes. Prepared formats use the existing 512 MiB file / 2 GiB shared-media limits; streaming formats keep progressive buffering. Restored entries bind the normal title, separate metadata fields, artwork provider, local-file ownership and timeline reporter. Parts keep their original timeline offsets. Replaying multiple parts is implemented but has no real multipart integration evidence.
+
+The UI verifies connection revision, playlist contents and current position before binding and again before replacement. Stop, connection changes and playlist-modified notifications cancel pending restoration; stale results cannot resume playback. SDK insertion/deletion executes synchronously in descending index order, verifies counts and preserves the requested position. All temporary import files are prepared before replacement. As with normal SDK imports, atomic rollback against another plugin mutating the list reentrantly is not promised. Failures are shown with fixed text and a numeric code, never raw URLs or exceptions. Shutdown cancels and joins the worker before destroying its notification window or playback services.
+
+Restoration is same-user, same-profile and selected-server scoped. Exported files still contain local aliases without PMS URLs, media paths or tokens; those aliases are resolved through the protected registry rather than made permanent HTTP grants. Keep `playlist-references.dpapi` when preserving playlists. Lost mappings from pre-feature sessions cannot be reconstructed. Offline playback, multi-server restoration, demand-loading prepared media and arbitrary startup/autoplay plugins are not verified. Up to 10000 total playlist entries are supported by restoration.
+
+### Isolated feasibility module
 
 `tests/playlist_replay_probe.cpp` builds a separate Media Library test module. It persists old playback-target → Plex server/track-ID mappings with user-bound DPAPI. On restart, it reads those mappings, intercepts a playback request, verifies the selected server's identity/TLS and resolves `/library/metadata/{id}` on a worker. New proxy grants or newly prepared private files replace the stale playlist entries through original playlist-editor IPC. The saved source playlist is not modified. No Plex tokens, server addresses or media paths are added to exported playlists.
 
 Both main-window and playlist-editor subclassing are needed. The editor can call StartPlaying directly, bypassing the main Play command. The probe gates main Play, IPC_STARTPLAY, editor Play selection, Enter and row double-click before the decoder opens an obsolete target. A pending request resumes on the UI thread after replacement. It eagerly resolves all owned entries in the two-track fixture, so normal automatic advancement and shuffle subsequently use valid targets. It does not decode audio or keep a permanent proxy port.
 
-This is a bounded proof: two bootstrap titles, one selected server, one media part per track and at most 100 historical aliases. It is not the production persistence design. Production integration still needs canonical durable references without per-reload alias growth, safe handling of playlist changes during resolution, startup/autoplay coverage, demand-driven preparation within media quotas, and rebinding of ordinary metadata/artwork/timeline services. Existing entries whose ID mapping was already lost cannot be reconstructed reliably from title text. The regular DLL and normal installation remain unaffected by this probe.
+This remains a bounded proof: two bootstrap titles, one selected server, one media part per track and at most 100 historical aliases. The regular implementation above has separate persistence, cancellation and service bindings. Existing entries whose ID mapping was already lost cannot be reconstructed reliably from title text. The normal installation is not a target of either native test.
 
 ## Authentication and configuration
 

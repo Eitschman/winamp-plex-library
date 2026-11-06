@@ -10,6 +10,7 @@ Browse Plex music directly in the classic Winamp Media Library and play it with 
 - Artists, albums, tracks and Plex audio playlists in dedicated Media Library nodes.
 - Search, sorting, multiple selection and navigation from artists through albums to tracks.
 - Play tracks or albums, append selections, or insert them after the current playlist entry. Winamp provides the player controls.
+- Replay saved Winamp playlists after a restart using protected Plex identity references and renewed local playback targets.
 - Plex browser sign-in, server and music library selection, and automatic HTTPS connection selection.
 - Album artwork in library lists and through Winamp's album-art service. Tracks inherit available album covers.
 - Native skin integration and German or English text following Winamp's active language pack.
@@ -41,7 +42,7 @@ To uninstall, exit Winamp and remove only the DLL you installed. The plugin's DP
 
 ## Development and validation status
 
-The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 14 automated test suites, including isolation checks for the separate playlist replay probe. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
+The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 15 automated test suites, including protected playlist references and isolation checks for the separate replay probe. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
 
 Artists, albums, tracks and playlists use native paginated tables with background loading. Artist → album → track → Winamp playlist navigation has been tested with real data. A bounded metadata cache retains loaded pages. Audio playlists preserve Plex ordering; empty and populated playlists have native coverage.
 
@@ -79,8 +80,9 @@ Output: `build/Release/ml_plex.dll`. Prerequisites, exact SDK commands, Debug bu
 
 - Playback URLs contain no Plex token, server address or Plex media path.
 - The proxy binds only to `127.0.0.1` on an automatically assigned port. Each grant has 192 random bits and expires for other processes after two hours.
-- Replacement, connection teardown or plugin shutdown revoke the associated grants. Saved Winamp playlists may contain local URLs that cannot be reused later.
-- An isolated, non-shipping test module demonstrates saved-playlist replay after a process restart using protected Plex-ID mappings and renewed playback targets. MP3 and FLAC/M4A cases pass. This is a feasibility result; durable saved playlists are not implemented in the regular DLL. See [testing](docs/testing.md).
+- Replacement, connection teardown or plugin shutdown revoke the associated grants. Saved local URLs are not permanent HTTP access; the plugin renews registered entries through the protected reference registry.
+- Saved playlists can be replayed after restarting Winamp by the same Windows user with the same plugin profile and selected Plex server. The plugin records server, track and media-part identities in `playlist-references.dpapi` beside its connection profile. It verifies the current server and renews local playback targets in the background before playback. Real MP3 and FLAC/M4A restart checks pass in the regular DLL. Old entries created before reference recording must be added again from the library once; their lost Plex IDs are not guessed from titles. Keep the protected reference file when retaining exported playlists. See [testing](docs/testing.md).
+- Restoration supports playlists of up to 10000 entries and prepares all stale owned entries before resuming, including required local files within the shared media quotas. Large prepared-file lists can therefore need download time or exceed the 2 GiB budget. The protected registry retains up to 100000 playback aliases and 64 MiB; quota errors are explicit, and old mappings are not silently evicted. It is not a portable playlist format or an offline music cache.
 - The running Winamp instance has additional session access, verified by Windows ownership of the exact TCP client connection. This does not extend exported-link validity or bypass revocation and security checks.
 - One listener manages up to 10,000 independent grants; worker count does not grow with playlist length.
 - Active MP3/M4A responses use private temporary disk buffers in the same restricted session store. Each active response has at most one download thread, bounded by four proxy workers. Buffer files are deleted after the response ends or is cancelled. Buffers and prepared media share the 512 MiB per-file and 2 GiB total limits. Quota or disk errors fail explicitly. There is no persistent offline cache or automatic next-track prefetch.

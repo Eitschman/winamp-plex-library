@@ -3,6 +3,7 @@
 #include <gen_tray/WINAMPCMD.H>
 #include "plex/playlist.h"
 #include "plex/http_stream.h"
+#include "plugin/playlist_replay.h"
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>
@@ -18,14 +19,20 @@ void shutdown() noexcept;
 INT_PTR message(int type, INT_PTR first, INT_PTR second, INT_PTR third) noexcept;
 using Metadata = std::unordered_map<std::wstring, std::wstring>;
 struct PlaybackBinding { std::string identifier; long long duration_ms = 0, offset_ms = 0; bool reportable = true; };
-struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; PlaybackBinding binding; };
+struct QueueItem { PlaybackSource source; std::wstring title; int seconds; ArtworkBytes artwork; Metadata metadata; std::shared_ptr<const LocalMediaFile> file; PlaybackBinding binding; ReplayReference reference; };
 void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement placement);
+std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const PlaybackArtwork& artwork, const PreparedMedia& prepared, const PlexConnectionSettings& connection, const std::string& only_part = {});
+std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection);
+std::vector<PlaylistEntry> bind_restored(const std::vector<ReplayTrack>& tracks, const PlexConnectionSettings& connection, const PreparedMedia& prepared, const PlaybackArtwork& artwork);
+void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept;
 char description[] = "Winamp Plex Library 0.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
 bool use_german = false;
 std::unique_ptr<PlaybackProxy> proxy;
+std::unique_ptr<PlaylistReplay> replay;
+unsigned long long playback_epoch = 0;
 std::shared_ptr<LocalMediaStore> media_store;
 std::unordered_map<std::wstring, std::shared_ptr<const LocalMediaFile>> playback_files;
 DWORD ui_thread = 0;
@@ -35,6 +42,7 @@ bool verified_connection = false;
 std::unique_ptr<PlaybackReporter> reporter;
 TimelineTracker timeline;
 std::unordered_map<std::wstring, PlaybackBinding> playback_bindings;
+std::unordered_map<std::wstring, unsigned> playback_claims;
 HWND monitor = nullptr;
 DWORD monitor_error = 0;
 unsigned long long monitor_polls = 0, monitor_matches = 0;
@@ -73,6 +81,10 @@ void poll_playback() {
     monitor_error = 0;
 }
 LRESULT CALLBACK monitor_message(HWND window, UINT message, WPARAM parameter, LPARAM detail) noexcept {
+    if (message == replay_ready_message) {
+        if (replay) replay->dispatch();
+        return 0;
+    }
     if (message == WM_TIMER && parameter == 1) {
         try { poll_playback(); }
         catch (const HttpError& error) { monitor_error = error.code; }
@@ -161,11 +173,14 @@ int initialize() noexcept {
         if (!RegisterClassW(&window_class)) throw std::runtime_error("playback_monitor_class");
         monitor = CreateWindowExW(0, monitor_class, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, plugin.hDllInstance, nullptr);
         if (!monitor || !SetTimer(monitor, 1, 500, nullptr)) throw std::runtime_error("playback_monitor_window");
+        replay = std::make_unique<PlaylistReplay>(plugin.hwndWinampParent, monitor, plugin.hDllInstance,
+            [](const std::wstring& name) { return playback_bindings.count(name) != 0; }, bind_restored, revoke_entries);
         return 0;
     } catch (...) { shutdown(); return 1; }
 }
 
 void shutdown() noexcept {
+    replay.reset();
     if (monitor) { KillTimer(monitor, 1); DestroyWindow(monitor); monitor = nullptr; }
     destroy_views();
     shutdown_library_workers();
@@ -225,12 +240,23 @@ winampMediaLibraryPlugin& descriptor() noexcept { return plugin; }
 bool german() noexcept { return use_german; }
 
 namespace {
-void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement placement) {
-    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000 ||
-        (play && placement != PlaylistPlacement::append))
+void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept {
+    for (const auto& entry : entries) {
+        try {
+            const auto name = unicode(entry.url);
+            const auto claim = playback_claims.find(name);
+            if (claim != playback_claims.end() && claim->second > 1) { --claim->second; continue; }
+            playback_claims.erase(name);
+            if (proxy) proxy->revoke(entry.url);
+            { std::lock_guard<std::mutex> lock(metadata_mutex); playback_titles.erase(name); playback_metadata.erase(name); }
+            playback_files.erase(name); playback_bindings.erase(name); unbind_playback_artwork(name);
+        } catch (...) {}
+    }
+}
+std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection) {
+    if (GetCurrentThreadId() != ui_thread || items.empty() || playback_titles.size() + items.size() > 10000)
         throw std::invalid_argument("playback_input");
     std::vector<PlaylistEntry> entries;
-    std::vector<std::string> issued;
     try {
         for (auto& item : items) {
             if (item.title.empty() || item.seconds < -1) throw std::invalid_argument("playback_input");
@@ -238,7 +264,17 @@ void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement pl
             if (item.file) local = utf8(item.file->path().wstring());
             else if (!proxy) { proxy = std::make_unique<PlaybackProxy>(std::move(item.source), std::chrono::hours(2), ProxyClientPolicy::host_session, local_media_store()); local = proxy->url(); }
             else local = proxy->add(std::move(item.source));
-            issued.push_back(local);
+            const auto name = unicode(local);
+            const auto existing = playback_bindings.find(name);
+            if (existing != playback_bindings.end() && existing->second.identifier != item.binding.identifier)
+                throw std::invalid_argument("playback_identity_collision");
+            entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
+            // Wiederverwendete vorbereitete Dateien können schon in einer anderen
+            // Playlistposition liegen. Ein verworfener Auftrag darf deren Bindung nicht lösen.
+            ++playback_claims[name];
+            item.reference.alias = local;
+            validate_replay_reference(item.reference);
+            references.push_back(std::move(item.reference));
             for (auto& character : item.title) if (character < 32 || character == 127) character = L' ';
             { std::lock_guard<std::mutex> lock(metadata_mutex);
               playback_titles[unicode(local)] = item.title;
@@ -246,29 +282,32 @@ void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement pl
             if (item.file) playback_files[unicode(local)] = item.file;
             playback_bindings[unicode(local)] = std::move(item.binding);
             bind_playback_artwork(unicode(local), std::move(item.artwork));
-            entries.push_back({local, utf8(item.title), item.seconds, item.file != nullptr});
         }
-    const TemporaryPlaylist playlist(make_playlist(entries, media_store ? utf8(media_store->directory().wstring()) : std::string{}));
     // Benötigte Hintergrundressourcen vor der Änderung der Host-Playlist anlegen.
-    if (!reporter) reporter = std::make_unique<PlaybackReporter>(request_connection_settings());
-    const auto position = send_playlist_to_winamp(plugin.hwndWinampParent, playlist.path().wstring(), entries.size(), placement);
-    if (play) {
-        SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
-        // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
-        SendMessageW(plugin.hwndWinampParent, WM_COMMAND, MAKEWPARAM(WINAMP_BUTTON2, 0), 0);
-    }
-    } catch (...) {
-        for (const auto& url : issued) {
-            if (proxy) proxy->revoke(url);
-            { std::lock_guard<std::mutex> lock(metadata_mutex);
-              playback_titles.erase(unicode(url));
-              playback_metadata.erase(unicode(url)); }
-            playback_files.erase(unicode(url));
-            playback_bindings.erase(unicode(url));
-            unbind_playback_artwork(unicode(url));
-        }
-        throw;
-    }
+    if (!reporter) reporter = std::make_unique<PlaybackReporter>(connection);
+    return entries;
+    } catch (...) { revoke_entries(entries); throw; }
+}
+void enqueue_items(std::vector<QueueItem> items, bool play, PlaylistPlacement placement) {
+    if (!replay || (play && placement != PlaylistPlacement::append)) throw std::invalid_argument("playback_input");
+    std::vector<ReplayReference> references;
+    const auto entries = std::make_shared<std::vector<PlaylistEntry>>(bind_items(std::move(items), references, request_connection_settings()));
+    const auto epoch = playback_epoch;
+    const auto revision = settings_revision;
+    try {
+        replay->persist(std::move(references), [entries, epoch, revision, play, placement] {
+            if (epoch != playback_epoch || revision != settings_revision) { revoke_entries(*entries); return; }
+            try {
+                const TemporaryPlaylist playlist(make_playlist(*entries, media_store ? utf8(media_store->directory().wstring()) : std::string{}));
+                const auto position = send_playlist_to_winamp(plugin.hwndWinampParent, playlist.path().wstring(), entries->size(), placement);
+                if (play) {
+                    SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_SETPLAYLISTPOS);
+                    // Der SDK-Kommentar zu IPC_SETPLAYLISTPOS verlangt den Play-Befehl.
+                    SendMessageW(plugin.hwndWinampParent, WM_COMMAND, WINAMP_BUTTON2, 0);
+                }
+            } catch (...) { revoke_entries(*entries); throw; }
+        }, [entries] { revoke_entries(*entries); });
+    } catch (...) { revoke_entries(*entries); throw; }
 }
 }
 
@@ -276,7 +315,8 @@ std::shared_ptr<LocalMediaStore> local_media_store() {
     if (!media_store) media_store = std::make_shared<LocalMediaStore>(settings_path().parent_path() / L"playback");
     return media_store;
 }
-void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork, const PreparedMedia& prepared, PlaylistPlacement placement) {
+namespace {
+std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const PlaybackArtwork& artwork, const PreparedMedia& prepared, const PlexConnectionSettings& connection, const std::string& only_part) {
     std::vector<QueueItem> items;
     for (const auto& track : tracks) {
         const auto parts = direct_parts(track);
@@ -299,20 +339,42 @@ void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const Playb
         }
         const auto timeline_duration = track.duration_ms > 0 ? track.duration_ms : total;
         for (const auto& part : parts) {
+            if (!only_part.empty() && part.key != only_part) {
+                if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;
+                continue;
+            }
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
             const auto file = prepared.find(part.key);
             if (requires_local_media(part.key) && file == prepared.end()) throw std::invalid_argument("local_media_missing");
-            items.push_back({{parse_server_address(settings.server_origin), settings.server_token, part.key}, display_title,
+            items.push_back({{parse_server_address(connection.server_origin), connection.server_token, part.key}, display_title,
                 part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
-                file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known}});
+                file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known},
+                {{}, connection.server_identifier, track.identifier, part.key}});
             if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;
         }
     }
-    enqueue_items(std::move(items), play, placement);
+    return items;
+}
+std::vector<PlaylistEntry> bind_restored(const std::vector<ReplayTrack>& tracks, const PlexConnectionSettings& connection, const PreparedMedia& prepared, const PlaybackArtwork& artwork) {
+    std::vector<QueueItem> selected;
+    for (const auto& entry : tracks) {
+        auto items = track_items({entry.track}, artwork, prepared, connection, entry.reference.part);
+        const auto found = std::find_if(items.begin(), items.end(), [&](const auto& item) { return item.reference.part == entry.reference.part; });
+        if (found == items.end()) throw HttpError(ERROR_FILE_NOT_FOUND);
+        selected.push_back(std::move(*found));
+    }
+    std::vector<ReplayReference> references;
+    return bind_items(std::move(selected), references, connection);
+}
+}
+void enqueue_tracks(const std::vector<PlexTrack>& tracks, bool play, const PlaybackArtwork& artwork, const PreparedMedia& prepared, PlaylistPlacement placement) {
+    enqueue_items(track_items(tracks, artwork, prepared, request_connection_settings()), play, placement);
 }
 
 void stop_playback() noexcept {
+    ++playback_epoch;
+    if (replay) replay->cancel();
     try {
         if ((proxy || !playback_files.empty()) && GetCurrentThreadId() == ui_thread && IsWindow(plugin.hwndWinampParent)) {
             const auto index = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTPOS);
@@ -326,7 +388,7 @@ void stop_playback() noexcept {
     try {
         if (reporter) for (auto& report : timeline.observe(std::nullopt, GetTickCount64())) reporter->submit(std::move(report));
     } catch (...) {}
-    reporter.reset(); timeline.reset(); playback_bindings.clear(); monitor_error = 0;
+    reporter.reset(); timeline.reset(); playback_bindings.clear(); playback_claims.clear(); monitor_error = 0;
     proxy.reset();
     { std::lock_guard<std::mutex> lock(metadata_mutex); playback_titles.clear(); playback_metadata.clear(); }
     clear_playback_artwork();
@@ -384,7 +446,7 @@ void update_connection_settings(PlexConnectionSettings value) {
     if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin ||
         value.server_token != settings.server_token || value.library_identifier != settings.library_identifier ||
         value.cache_enabled != settings.cache_enabled) clear_library_cache();
-    if (value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
+    if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
     ++settings_revision; verified_connection = false;
 }

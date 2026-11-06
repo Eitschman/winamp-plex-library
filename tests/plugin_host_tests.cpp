@@ -2,6 +2,7 @@
 #include <gen_ml/ml.h>
 #include <gen_ml/ml_ipc_0313.h>
 #include <Winamp/wa_ipc.h>
+#include <gen_tray/WINAMPCMD.H>
 #include "wasabi_mock.h"
 #include "winamp_playlist_checks.h"
 #include <iostream>
@@ -22,6 +23,8 @@ bool settings_valid = false;
 bool german_host = true;
 bool deny_language = false;
 bool diagnostics_requested = false, diagnostics_checked = false, diagnostics_valid = false;
+int foreign_playlist_length = 0;
+unsigned foreign_play_commands = 0;
 BOOL CALLBACK inspect_settings(HWND dialog, LPARAM) {
     const auto frame = dialog;
     dialog = GetDlgItem(dialog, 1081);
@@ -68,6 +71,10 @@ VOID CALLBACK inspect_settings_timer(HWND, UINT, UINT_PTR, DWORD) {
     EnumThreadWindows(GetCurrentThreadId(), inspect_settings, 0);
 }
 LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operation) {
+    if (message == WM_WA_IPC && operation == IPC_GETLISTLENGTH) return foreign_playlist_length;
+    if (message == WM_WA_IPC && operation == IPC_GETPLAYLISTFILEW && foreign_playlist_length)
+        return reinterpret_cast<LRESULT>(L"C:\\synthetic\\foreign.mp3");
+    if (message == WM_COMMAND && LOWORD(parameter) == WINAMP_BUTTON2) { ++foreign_play_commands; return 1; }
     if (message == WM_WA_IPC && operation == IPC_GETLANGUAGEPACKINSTANCE && parameter == MAKEWPARAM(5, LANG_LANG_CODE))
         return deny_language ? 0 : reinterpret_cast<LRESULT>(german_host ? L"de" : L"en");
     if (message == WM_WA_IPC && operation == IPC_GET_API_SERVICE) return reinterpret_cast<LRESULT>(&services);
@@ -144,6 +151,13 @@ int wmain(int count, wchar_t** arguments) {
             check(plugin->init() != 0, "failed_navigation_init");
             deny_navigation = false;
             check(plugin->init() == 0, "plugin_init");
+            if (iteration == 0) {
+                // Eine große fremde Playlist darf nicht durch die eigene Auflösungsgrenze gesperrt werden.
+                foreign_playlist_length = 10001;
+                SendMessageW(window, WM_COMMAND, WINAMP_BUTTON2, 0);
+                check(foreign_play_commands == 1, "large_foreign_playlist_play_preserved");
+                foreign_playlist_length = 0;
+            }
             check(child_count == 4, "native_child_navigation");
             check(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41999, reinterpret_cast<INT_PTR>(window), 0) == 0, "unrelated_node");
             const auto view = reinterpret_cast<HWND>(plugin->MessageProc(ML_MSG_TREE_ONCREATEVIEW, 41000, reinterpret_cast<INT_PTR>(window), 0));

@@ -38,11 +38,12 @@ int wmain(int count, wchar_t** arguments) {
     const bool playlist_sample = operation == L"--prepare-playlist";
     const bool sort_samples = operation == L"--prepare-sorts";
     const bool compilation_sample = operation == L"--prepare-compilation";
+    const bool replay_profile = operation == L"--prepare-replay-profile";
     const bool current_session = operation == L"--check-no-transcode";
     const bool media_headers = operation == L"--inspect-media-headers";
     const bool native_check = operation == L"--check-playing" || operation == L"--check-paused" || operation == L"--check-stopped" || operation == L"--check-seek" || operation == L"--check-history" || operation == L"--finish-timeline";
-    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session && !compilation_sample && !media_headers) return 2;
-    if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth || compilation_sample) != (count == 3)) return 2;
+    if (operation != L"--inspect" && operation != L"--rate" && operation != L"--restore" && operation != L"--timeline" && operation != L"--prepare-ui" && operation != L"--check-test" && operation != L"--prepare-timeline" && operation != L"--prepare-library" && !playlist_sample && !sort_samples && !native_check && !invalid_auth && !stalled_connection && !current_session && !compilation_sample && !media_headers && !replay_profile) return 2;
+    if (!stalled_connection && (operation == L"--rate" || operation == L"--restore" || operation == L"--prepare-ui" || operation == L"--check-test" || operation == L"--prepare-timeline" || operation == L"--prepare-library" || playlist_sample || sort_samples || native_check || invalid_auth || compilation_sample || replay_profile) != (count == 3)) return 2;
     struct Stop { HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr); ~Stop() { if (value) CloseHandle(value); } } stop;
     try {
         check(stop.value != nullptr, "stop_event");
@@ -72,6 +73,13 @@ int wmain(int count, wchar_t** arguments) {
             return 0;
         }
         auto settings = plex::load_settings(plex::settings_path());
+        if (replay_profile) {
+            // Ein eigener Client verhindert, dass der Test die laufende Plex-Sitzung
+            // der normalen Winamp-Installation unter derselben Kennung überschreibt.
+            settings.client_identifier = plex::create_client_identifier();
+            write_connection_fixture(settings);
+            return 0;
+        }
         const plex::PlexAuth client(settings.client_identifier, stop.value);
         const auto connection = client.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
         settings.server_origin = connection.origin;
