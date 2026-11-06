@@ -28,7 +28,7 @@ WACUP is a future compatibility target and has not been tested at runtime. Other
 
 Published versions are available from [GitHub Releases](https://github.com/Eitschman/winamp-plex-library/releases). Each ZIP contains the DLL, installation instructions and license notices, with a separate SHA-256 checksum file. [GitHub Actions](https://github.com/Eitschman/winamp-plex-library/actions/workflows/build.yml) also provides development packages named **`winamp-plex-library-win32-release`** with limited retention; downloading those requires a GitHub account. You can also build from source.
 
-Version **0.3.1** fixes clipped diagnostics and vertically centers search text using Winamp's skin engine. Bounded next-track prefetch, library filters, saved views, playback buffering and saved Plex playlist restoration remain included. See the [release notes](docs/releases/0.3.1.md) for upgrade instructions and limitations.
+Version **0.3.2** restores saved Plex playlists on demand: the requested track is prepared first, followed by at most one predicted successor. Large FLAC/OGG/AAC selections no longer download every file when added, and unused prepared files are released. Native shuffle, mixed playlists, filters, saved views and skin integration remain supported. See the [release notes](docs/releases/0.3.2.md) for upgrade instructions and limitations.
 
 ## Installation and setup
 
