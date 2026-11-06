@@ -10,7 +10,7 @@ Both language variants were visually inspected without clipping in the isolated 
 
 Current Debug and Release runs each pass 13 suites (`ctest-diagnostics-debug-current.log`, `ctest-diagnostics-release-current.log`). Two earlier Release attempts failed the existing process-handle guard at 181 versus baseline 157, after cycles 49 and 4. A targeted repeat and the subsequent full run passed; the cause of that intermittent resource observation remains unresolved. The initial broader language test also failed the existing single-library dropdown assertion; the focused `-SettingsOnly` run passes both languages and restores German. Neither observation is evidence for every library layout or resource condition.
 
-After restoring the refresh handler, the Release lifecycle check passes again; seven packaging checks and the redacted change scan also pass (`ctest-diagnostics-refresh-restored.log`, `diagnostics-packaging.log`, `diagnostics-secret-scan.log`). The isolated host stops, clears its playlist and exits normally. The normal Winamp DLL remains unchanged.
+After restoring the refresh handler, the Release lifecycle check passes again; seven packaging checks and the redacted change scan also pass (`ctest-diagnostics-refresh-restored.log`, `diagnostics-packaging.log`, `diagnostics-secret-scan.log`). The isolated host stops, clears its playlist and exits normally. The user separately authorized replacing the normal Winamp DLL; its installed SHA-256 matches the tested Release build (`diagnostics-user-installation-admin.log`). The previous DLL is preserved, and normal Winamp is left closed for user testing.
 
 ## Interrupted media and artist display
 

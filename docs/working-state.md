@@ -2,7 +2,7 @@
 
 ## Current work package
 
-The user requested visible buffer usage under Settings → Diagnostics. The panel now refreshes every second with cumulative received/sent MiB, active streaming downloads and shared reserved media storage. German/English native screenshots and real timer refresh pass. Muted MP3 playback demonstrates completed upstream buffering while Winamp still reads; prepared FLAC storage is included without a proxy. Current Debug/Release runs pass 13 suites each, and a disabled-refresh countercheck fails. Keep the intermittent resource-guard and broader library-UI test observations in [testing.md](testing.md) explicit. The diagnostic DLL has not been installed in normal Winamp; its existing buffer DLL remains unchanged.
+The user requested visible buffer usage under Settings → Diagnostics. The panel now refreshes every second with cumulative received/sent MiB, active streaming downloads and shared reserved media storage. German/English native screenshots and real timer refresh pass. Muted MP3 playback demonstrates completed upstream buffering while Winamp still reads; prepared FLAC storage is included without a proxy. Current Debug/Release runs pass 13 suites each, and a disabled-refresh countercheck fails. Keep the intermittent resource-guard and broader library-UI test observations in [testing.md](testing.md) explicit. The user separately authorized installing this diagnostics DLL in normal Winamp; its installed hash matches the tested Release build as recorded below.
 
 The user resumed work on November 6, 2026. Implement a bounded media buffer that decouples upstream Plex downloading from Winamp's consumption rate, while preserving authentication, TLS validation, byte-exact resumption, seeking and controlled teardown.
 
@@ -40,11 +40,11 @@ Premature completion was reproduced on “The Puppeteer”: 129.8 seconds instea
 
 A real Puppeteer run reached natural end after an actual upstream interruption. “Until Dawn” also reached natural end at a decoder duration of 369 seconds, observed elapsed time 368.3 seconds. Artist/title formatting is present in playlists and scrolling display while raw metadata fields remain separate.
 
-The user explicitly authorized installing the tested buffer DLL into the normal Winamp on November 6. The executable version was verified as 5.9.2.10042 and no Winamp process was running. Windows required administrator approval for the protected Plugins directory. The installed DLL independently matches the native-tested local Release build, SHA-256:
+The user explicitly authorized installing the tested diagnostics DLL into normal Winamp on November 6. The target installation is Winamp 5.9.2.10042; no Winamp process was running before replacement. Windows required administrator approval for the protected Plugins directory. The installed DLL independently matches the native-tested local Release build, SHA-256:
+`faa098180cad37211210fd7ec5f9cfb7b81bb7454da8e4a54f12f2fc26d625a2`.
+The replaced buffer DLL is preserved under `.local/installation-rollback-diagnostics-20261106/ml_plex.dll`, SHA-256:
 `616576076668969eda8e2f85ea3ec7fee61f0b5b88bff44d02693276a4f140bd`.
-The replaced DLL is preserved under `.local/installation-rollback-20261106/ml_plex.dll`, SHA-256:
-`080dd4d80f798e9600be5592c1c07420ecc2529f13d96f79465dc11a77d119ed`.
-Winamp was left closed for the user's own testing. Evidence: `buffer-user-installation-admin.log`. The user's two earlier uninterrupted songs apply to the previous DLL, not a listening test of the buffer build. **This authorization covered one replacement only; future replacements require their own authorization.**
+Winamp was left closed for the user's own testing. Evidence: `diagnostics-user-installation-admin.log`. **This authorization covered one replacement only; future replacements require their own authorization.**
 
 Plexamp reference research supports background buffering, retry behavior, disk caching and preloading:
 - https://forums.plex.tv/t/plexamp-constantly-pausing/675610
