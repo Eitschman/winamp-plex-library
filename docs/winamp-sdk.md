@@ -2,6 +2,8 @@
 
 ## Host language
 
+The single-line search EDIT uses the verified Skin SDK `SWES_VCENTER` style through `MLSkinWindow`. The skin engine handles text/caret alignment and colors; the field keeps its ordinary row height and native editing behavior. No multiline control or custom text renderer is used.
+
 The UI inherits the active Winamp language through `IPC_GETLANGUAGEPACKINSTANCE` with `MAKEWPARAM(5, LANG_LANG_CODE)`. Original SDK 5.55 `Winamp/wa_ipc.h`, lines 1648 through 1665, documents this contract since Winamp 5.51. The target returns `de` or `en`; German selects German text, and other supported host-language responses use English plugin text. A missing interface fails initialization explicitly. Windows locale and a saved plugin language are not substituted. The SDK host covers German, English and missing responses; the isolated real host was tested in English and with its German language pack.
 
 ## Original headers and provenance

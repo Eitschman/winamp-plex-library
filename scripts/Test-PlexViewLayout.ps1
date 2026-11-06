@@ -40,9 +40,43 @@ try {
             Write-Output 'layout_guard_detects_clipped_filter=1'
         }
         Assert-ControlBounds $bounds
+        $search = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1051).Handle
+        $searchBounds = New-Object PlexNative+Rect
+        [void][PlexNative]::GetWindowRect($search,[ref]$searchBounds)
+        function Assert-SearchTextCentered {
+            # WM_ML_IPC / ML_IPC_SKINNEDWND_GETSTYLE und SWES_VCENTER
+            # stammen aus dem unveränderten Skin-SDK-Header.
+            $style = [PlexNative]::Query($search,5120,[IntPtr]::Zero,[IntPtr]7).ToInt32()
+            if (($style -band 131072) -eq 0) { throw 'Native vertikale Textzentrierung fehlt.' }
+            if (([PlexNative]::WindowStyle($search,-16) -band 4) -ne 0) { throw 'Das Suchfeld ist kein einzeiliges EDIT.' }
+        }
+        Assert-SearchTextCentered
+        if ($size[0] -eq 1024) {
+            $style = [PlexNative]::Query($search,5120,[IntPtr]::Zero,[IntPtr]7).ToInt32()
+            $detected = $false
+            try {
+                [void][PlexNative]::Query($search,5120,[IntPtr]($style -band (-bnot 131072)),[IntPtr]6)
+                try { Assert-SearchTextCentered } catch { $detected = $true }
+            } finally { [void][PlexNative]::Query($search,5120,[IntPtr]$style,[IntPtr]6) }
+            if (!$detected) { throw 'Fehlerhafte Suchtext-Ausrichtung wurde nicht erkannt.' }
+            $originalSearch = [PlexNative]::ControlText($search)
+            try {
+                [void][PlexNative]::SendMessage($search,12,[IntPtr]::Zero,'Elvellon')
+                $singleLine = [PlexNative]::ControlText($search)
+                [void][PlexNative]::Query($search,258,[IntPtr]13,[IntPtr]::Zero)
+                if ([PlexNative]::ControlText($search) -ne $singleLine -or [PlexNative]::Query($search,186,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { throw 'Enter erzeugt eine zweite Suchzeile.' }
+            } finally { [void][PlexNative]::SendMessage($search,12,[IntPtr]::Zero,$originalSearch) }
+        }
+        Write-Output 'search_text_vertically_centered_in_original_height=1'
         $path = Join-Path (Split-Path $PSScriptRoot -Parent) ('.local\library-layout-' + $size[0] + '.png')
         # Die Skin-Engine zeichnet den vollständigen Host, nicht das isolierte Kindfenster.
-        Save-PlexWindowScreenshot $outer[0].Handle $path
+        $captureSearch = [PlexNative]::ControlText($search)
+        try {
+            if (!$captureSearch) { [void][PlexNative]::SendMessage($search,12,[IntPtr]::Zero,'Elvellon') }
+            Save-PlexWindowScreenshot $outer[0].Handle $path
+        } finally {
+            if (!$captureSearch) { [void][PlexNative]::SendMessage($search,12,[IntPtr]::Zero,$captureSearch) }
+        }
         Write-Output ("Ansichtsgrenzen geprüft: " + $size[0] + ' × ' + $size[1])
     }
 } finally {

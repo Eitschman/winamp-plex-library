@@ -109,6 +109,28 @@ try {
         try {
             $text = [PlexNative]::Children($diagnostics[0].Handle) | Where-Object ControlId -eq 1084
             $information = [PlexNative]::ControlText($text.Handle)
+            function Assert-DiagnosticTextFits {
+                $bounds = New-Object PlexNative+Rect
+                [void][PlexNative]::GetWindowRect($text.Handle, [ref]$bounds)
+                $required = [PlexNative]::GetProp($text.Handle,'WinampPlex.RequiredTextHeight').ToInt32()
+                if ($required -le 0) { throw 'Gemessene Diagnosehöhe fehlt.' }
+                if ($required -gt $bounds.Bottom-$bounds.Top) { throw "Diagnosetext wird unten abgeschnitten: benötigt $required, verfügbar $($bounds.Bottom-$bounds.Top)." }
+            }
+            Save-PlexWindowScreenshot $diagnostics[0].Handle (Join-Path (Split-Path $PSScriptRoot -Parent) ".local\$ScreenshotName-diagnostics.png")
+            Assert-DiagnosticTextFits
+            if ($information -notmatch 'Lokale Verbindungsenden:|Local disconnects:') { throw 'Letzte Diagnosezeile fehlt.' }
+            $originalTextBounds = New-Object PlexNative+Rect
+            [void][PlexNative]::GetWindowRect($text.Handle, [ref]$originalTextBounds)
+            $detected = $false
+            try {
+                [void][PlexNative]::SetWindowPos($text.Handle,[IntPtr]::Zero,0,0,$originalTextBounds.Right-$originalTextBounds.Left,1,6)
+                try { Assert-DiagnosticTextFits } catch { $detected = $true }
+            } finally {
+                [void][PlexNative]::SetWindowPos($text.Handle,[IntPtr]::Zero,0,0,$originalTextBounds.Right-$originalTextBounds.Left,$originalTextBounds.Bottom-$originalTextBounds.Top,6)
+            }
+            if (!$detected) { throw 'Abgeschnittener Diagnosetext wurde von der Gegenprobe nicht erkannt.' }
+            Assert-DiagnosticTextFits
+            Write-Output 'diagnostics_complete_text_fits_and_clipping_countercheck_passed=1'
             if ($information -notmatch 'Windows DPAPI' -or $information -notmatch 'HTTP:' -or $information -match 'https?://|X-Plex-Token|accessToken') {
                 throw 'Diagnose enthält unzulässige oder unzureichende Informationen.'
             }

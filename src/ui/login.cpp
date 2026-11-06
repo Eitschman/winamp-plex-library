@@ -42,6 +42,40 @@ const wchar_t* connection_error(DWORD error) {
     return localized(L"Plex-Anmeldung oder Serverantwort fehlerhaft. Erneut versuchen.", L"Plex sign-in or server response failed. Try again.");
 }
 std::wstring diagnostics_information(DWORD connection_code);
+// Die Diagnose wächst mit den tatsächlich umgebrochenen Zeilen des Skin-Fonts.
+// Ein fester Ressourcenrahmen darf neu ergänzte Zähler nicht abschneiden.
+void update_diagnostics(HWND dialog, DWORD connection_code) {
+    const auto information = diagnostics_information(connection_code);
+    const auto label = GetDlgItem(dialog, IDC_DIAGNOSTICS_TEXT);
+    SetWindowTextW(label, information.c_str());
+    RECT text{}, button{}, client{};
+    GetWindowRect(label, &text); MapWindowPoints(nullptr, dialog, reinterpret_cast<POINT*>(&text), 2);
+    GetWindowRect(GetDlgItem(dialog, IDCANCEL), &button); MapWindowPoints(nullptr, dialog, reinterpret_cast<POINT*>(&button), 2);
+    GetClientRect(dialog, &client);
+    const auto dc = GetDC(label);
+    if (!dc) throw std::runtime_error("diagnostics_measure");
+    const auto font = reinterpret_cast<HFONT>(SendMessageW(label, WM_GETFONT, 0, 0));
+    const auto previous = font ? SelectObject(dc, font) : nullptr;
+    RECT measured{0, 0, text.right - text.left, 0};
+    DrawTextW(dc, information.c_str(), static_cast<int>(information.size()), &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+    if (previous) SelectObject(dc, previous);
+    ReleaseDC(label, dc);
+    // Die gemessene Mindesthöhe steht der nativen Layoutprüfung zur Verfügung.
+    // GDI-Fonthandles dürfen nicht in einen anderen Prozess übernommen werden.
+    SetPropW(label, L"WinampPlex.RequiredTextHeight", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(measured.bottom)));
+    const int padding = (std::max)(8L, text.top);
+    const int required = measured.bottom + padding;
+    const int growth = (std::max)(0L, required - (text.bottom - text.top));
+    if (!growth) return;
+    SetWindowPos(label, nullptr, 0, 0, text.right - text.left, required, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(GetDlgItem(dialog, IDCANCEL), nullptr, button.left, button.top + growth, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(dialog, nullptr, 0, 0, client.right, client.bottom + growth, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    const auto frame = GetParent(dialog);
+    if (GetDlgItem(frame, IDC_SETTINGS_CONTENT) == dialog) {
+        RECT bounds{}; GetWindowRect(frame, &bounds);
+        SetWindowPos(frame, nullptr, 0, 0, bounds.right - bounds.left, bounds.bottom - bounds.top + growth, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
 INT_PTR CALLBACK diagnostics_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) noexcept {
     try {
         if (message == WM_INITDIALOG) {
@@ -49,15 +83,15 @@ INT_PTR CALLBACK diagnostics_dialog(HWND dialog, UINT message, WPARAM parameter,
             SetDlgItemTextW(dialog, IDC_DIAGNOSTICS_TEXT, diagnostics_information(static_cast<DWORD>(detail)).c_str());
             SetDlgItemTextW(dialog, IDCANCEL, localized(L"Schließen", L"Close"));
             skin_library_dialog(dialog);
+            update_diagnostics(dialog, static_cast<DWORD>(detail));
             if (!SetTimer(dialog, 1, 1000, nullptr)) throw std::runtime_error("diagnostics_timer");
             return TRUE;
         }
         if (message == WM_TIMER && parameter == 1) {
-            SetDlgItemTextW(dialog, IDC_DIAGNOSTICS_TEXT,
-                diagnostics_information(static_cast<DWORD>(GetWindowLongPtrW(dialog, DWLP_USER))).c_str());
+            update_diagnostics(dialog, static_cast<DWORD>(GetWindowLongPtrW(dialog, DWLP_USER)));
             return TRUE;
         }
-        if (message == WM_DESTROY) KillTimer(dialog, 1);
+        if (message == WM_DESTROY) { KillTimer(dialog, 1); RemovePropW(GetDlgItem(dialog, IDC_DIAGNOSTICS_TEXT), L"WinampPlex.RequiredTextHeight"); }
         if (message == WM_COMMAND && (LOWORD(parameter) == IDOK || LOWORD(parameter) == IDCANCEL)) {
             EndDialog(GetParent(dialog), IDOK); return TRUE;
         }

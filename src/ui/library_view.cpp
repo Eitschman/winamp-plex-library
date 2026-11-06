@@ -44,8 +44,10 @@ void skin_view(HWND dialog) {
     for (auto child = GetWindow(dialog, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (GetDlgCtrlID(child) == IDC_LIBRARY) continue;
         const bool list = GetDlgCtrlID(child) == IDC_CATALOG;
+        // Die Skin-Engine zentriert den Suchtext, ohne Feldhöhe oder EDIT-Verhalten zu ändern.
         window = {child, static_cast<UINT>(list ? SKINNEDWND_TYPE_LISTVIEW : SKINNEDWND_TYPE_AUTO),
-                  style | (list ? SWLVS_FULLROWSELECT | SWLVS_DOUBLEBUFFER : 0)};
+                  style | (list ? SWLVS_FULLROWSELECT | SWLVS_DOUBLEBUFFER : 0) |
+                  (GetDlgCtrlID(child) == IDC_SEARCH ? SWES_VCENTER : 0)};
         if (!MLSkinWindow(library, &window)) throw std::runtime_error("skin_control");
     }
 }

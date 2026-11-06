@@ -13,6 +13,7 @@ public class PlexNativeWindow {
   public string Text;
 }
 public static class PlexNative {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr GetProp(IntPtr window, string name);
   [StructLayout(LayoutKind.Sequential)] struct CopyData {
     public IntPtr Tag;
     public int Size;
