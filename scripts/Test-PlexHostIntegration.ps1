@@ -128,7 +128,7 @@ try {
     }
     $first = $samples[0]; $last = $samples[-1]
     Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $PSScriptRoot '..\.local\host-local-media.png')
-    if ($last.gdi -gt $first.gdi + 2 -or $last.user -gt $first.user + 2 -or $last.handles -gt $first.handles + 4) {
+    if (Test-PlexGuiResourceGrowth $first $last) {
         Write-Output "Host-Ressourcenanstieg beobachtet: GDI=$($last.gdi - $first.gdi), USER=$($last.user - $first.user), Handles=$($last.handles - $first.handles)."
         if ($RequireStableResources) { throw 'Ressourcenzähler des Hosts wachsen nach der Aufwärmphase.' }
     }

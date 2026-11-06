@@ -98,7 +98,6 @@ $after = Measure-Resources
 Write-Output ('Nachher: ' + ($after | ConvertTo-Json -Compress))
 Save-HandleSummary 'after'
 Write-Output ("Gemessene Laufzeit einschließlich gleicher Ruhephasen: " + [Math]::Round($duration.Elapsed.TotalSeconds, 1) + ' Sekunden.')
-if ($after.gdi -gt $before.gdi + 2) { throw "GDI-Ressourcen wachsen: $mode." }
-if ($after.user -gt $before.user + 2) { throw "USER-Ressourcen wachsen: $mode." }
-if ($SettleSeconds -ge 60 -and $after.handles -gt $before.handles + 4) { throw 'Prozesshandles wachsen auch nach der Ruhephase.' }
+if (Test-PlexGuiResourceGrowth $before $after) { throw "GDI-/USER-Ressourcen wachsen: $mode." }
+# Globale Prozesshandles bleiben Diagnosewerte und beeinflussen das Ergebnis nicht.
 Write-Output "$Cycles Messintervalle geprüft: $mode. Kein allgemeiner Speicherlecknachweis."

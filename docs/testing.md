@@ -6,7 +6,7 @@ Baseline evidence date: November 6, 2026. This document distinguishes executed c
 
 The SDK lifecycle executable reproduces process-resource growth without running the Winamp executable or loading its core or `gen_ml.dll`. It supplies mock IPC and Wasabi services to the real plugin DLL. A Winamp-core defect cannot directly account for growth inside this synthetic process. Windows controls, COM and the plugin remain separate possible contributors. No plugin leak correction is claimed by this investigation.
 
-The unchanged strict guard rejects any post-unload handle count above the first completed cycle. Diagnostic mode continues collecting evidence after growth, but still fails the run. It does not convert a later reduction into a pass. PSS snapshots report handle types and thread-start module basenames; object names and full module paths are not printed. PSS does not provide creation stacks here. Baselines vary with process launch and inherited standard handles, so compare deltas within each process.
+By user decision, aggregate process-handle counts are diagnostic values, not pass/fail criteria, in the SDK host, standalone and catalog probes, and native resource scripts. Windows-runtime effects are the working explanation for these observations, not a proven attribution of every handle. GDI/USER checks, plugin service/window teardown, owned-resource counterchecks and functional failures remain enforced. PSS snapshots report handle types and thread-start module basenames; object names and full module paths are not printed. PSS does not provide creation stacks here. Baselines vary with process launch and inherited standard handles, so compare deltas within each process. The recorded failures below describe the measurements made with the original aggregate-count criterion.
 
 Executed comparisons use the local version-0.2.0 DLL and isolated synthetic configuration, without Plex credentials or audible playback:
 
@@ -24,7 +24,7 @@ Executed comparisons use the local version-0.2.0 DLL and isolated synthetic conf
 | Native dialogs without the plugin, 500 slower cycles | 140 to 141 at iteration 111, returning to 139 by iteration 500 | `handles-native-dialog-slow-control.log` |
 | Windows dispatcher queues without the plugin, 500 create/shutdown cycles | 103 to 134 at the first cycle, unchanged through cycle 500, 133 after one second idle | `handles-isolated-dispatcher.log` |
 
-The high SDK baseline includes `CoreMessaging.dll`, `CoreUIComponents.dll` and `wintypes.dll`; these are absent from the low-baseline module inventory and the IME-disabled comparison. The large increase and those modules can therefore appear during warmup rather than after many cycles. The independent dispatcher probe calls the documented [CreateDispatcherQueueController](https://learn.microsoft.com/en-us/windows/win32/api/dispatcherqueue/nf-dispatcherqueue-createdispatcherqueuecontroller), completes `ShutdownQueueAsync` with message pumping, checks its result and releases its interface references each time. Its stable final count establishes a one-time Windows-runtime increase in that probe, not a per-queue leak. The IME comparison uses [ImmDisableIME](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immdisableime) before creating the first test-thread window; the normal plugin and other applications' input methods are unchanged. Neither comparison proves the exact origin of the original 24-handle failure. The cause remains unassigned, and the strict guard is retained.
+The high SDK baseline includes `CoreMessaging.dll`, `CoreUIComponents.dll` and `wintypes.dll`; these are absent from the low-baseline module inventory and the IME-disabled comparison. The large increase and those modules can therefore appear during warmup rather than after many cycles. The independent dispatcher probe calls the documented [CreateDispatcherQueueController](https://learn.microsoft.com/en-us/windows/win32/api/dispatcherqueue/nf-dispatcherqueue-createdispatcherqueuecontroller), completes `ShutdownQueueAsync` with message pumping, checks its result and releases its interface references each time. Its stable final count establishes a one-time Windows-runtime increase in that probe, not a per-queue leak. The IME comparison uses [ImmDisableIME](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immdisableime) before creating the first test-thread window; the normal plugin and other applications' input methods are unchanged. Neither comparison proves the exact origin of the original 24-handle failure. Aggregate growth alone is intentionally excluded from regression failures.
 
 The slow Debug run also fails the USER-object guard, 10 to 11. Remaining thread windows include `MSCTFIME UI` and `IME` alongside the synthetic host window. The first additional thread starts in `ntdll.dll`. The final inventory contains two additional handles referring to the UI thread and two Windows-started worker threads. This is not a creation-stack attribution. At cycles 25, 50, 75 and 100, and after the settling period, the shared Debug CRT reports zero additional normal/client allocation blocks or bytes. That result covers these synthetic paths and CRT allocation classes; it does not establish freedom from every native, COM or playback leak.
 
@@ -32,7 +32,9 @@ The slow Debug run also fails the USER-object guard, 10 to 11. Remaining thread 
 
 The diagnostic countercheck holds an event open, verifies that PSS sees its exact handle, closes it and verifies its removal. Debug additionally detects a deliberate 4096-byte CRT allocation and verifies its release. `resource_diagnostics` runs these counterchecks through CTest. API definitions follow the Windows SDK and Microsoft documentation for [PssCaptureSnapshot](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-psscapturesnapshot), [PSS_HANDLE_ENTRY](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/ns-processsnapshot-pss_handle_entry) and balanced [CoInitializeEx](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex) calls.
 
-The current diagnostic-tool build passes all 16 regular suites in both Debug and Release, plus seven package checks (`handles-investigation-current-ctest-debug.log`, `handles-investigation-current-ctest-release.log`, `handles-investigation-packaging.log`). These passes do not supersede the deliberately failing growth runs above. The Release plugin DLL remains byte-identical, SHA-256 `fce89737a4bf18a884a9eadb353c28be56bb26276e33d1778bfc120ce3be0260`; no product implementation, installed DLL or release tag is changed by these diagnostic additions.
+The diagnostic-tool baseline passes all 16 regular suites in both Debug and Release, plus seven package checks (`handles-investigation-current-ctest-debug.log`, `handles-investigation-current-ctest-release.log`, `handles-investigation-packaging.log`). The aggregate-count policy adds `plugin_lifecycle_handle_observation`: a deliberately held, subsequently released event must be observed without failing the lifecycle test. Diagnostic event/heap counterchecks still reject incorrect measurements or incomplete fixture release. The Release plugin DLL remains byte-identical, SHA-256 `fce89737a4bf18a884a9eadb353c28be56bb26276e33d1778bfc120ce3be0260`; no product implementation, installed DLL or release tag is changed by these diagnostic additions.
+
+The policy build passes all 18 suites in Debug and Release (`handle-policy-ctest-debug.log`, `handle-policy-ctest-release.log`). The lifecycle fixture reports `observed_handle_growth=1` and succeeds. `resource_policy` exercises six synthetic native-script comparisons: unchanged resources, handle-only growth, permitted GDI/USER growth, excessive GDI, excessive USER and simultaneous GUI growth despite a falling handle count. Isolated counterchecks accept the healthy policy and reject three modified policies that reintroduce a process-handle gate or omit either GUI counter (`handle-policy-counterchecks-current.log`). The dispatcher probe reports growth and exits successfully (`handle-policy-dispatcher.log`). The catalog probe builds in both configurations and reports its handle delta without a threshold failure. These checks do not rerun the live catalog, native view-switch or foreign-plugin scripts; they exercise the shared native-script policy without opening Winamp or contacting Plex.
 
 Reproduce from the project directory after building the diagnostic targets:
 
@@ -43,7 +45,7 @@ cmake --build build --config Debug --target plugin_host_tests resource_probe --p
 & .\build\Debug\resource_probe.exe --com-race
 ```
 
-The slow option changes the settings-inspection timer from 25 to 250 ms after the first cycle and adds a bounded 30-second message-pumping comparison after unloading. Other host options are `--diagnose-handles-fast`, `--diagnose-handles-fast-after-warmup`, `--diagnose-handles-single-core`, `--diagnose-handles-without-ime` and `--stress-lifecycle`; the last keeps the immediate strict assertion. Standalone probe options are `--verify`, `--threads`, `--com`, `--overlapping-com`, `--com-race`, `--dispatcher`, `--reaper`, `--dpapi`, `--text-input`, `--dialogs` and `--dialogs-slow`. Growth probes intentionally return failure whenever they observe growth, even when the final count stabilizes. These tools do not replace the native Winamp resource comparisons below.
+The slow option changes the settings-inspection timer from 25 to 250 ms after the first cycle and adds a bounded 30-second message-pumping comparison after unloading. Other host options are `--diagnose-handles-fast`, `--diagnose-handles-fast-after-warmup`, `--diagnose-handles-single-core`, `--diagnose-handles-without-ime`, `--stress-lifecycle` and `--simulate-handle-growth`. Standalone probe options are `--verify`, `--threads`, `--com`, `--overlapping-com`, `--com-race`, `--dispatcher`, `--reaper`, `--dpapi`, `--text-input`, `--dialogs` and `--dialogs-slow`. Probes report handle growth without turning that observation into failure; API, timeout and cleanup failures still fail. These tools do not replace the native Winamp resource comparisons below.
 
 ## Version 0.2.0 release checks
 
@@ -155,7 +157,7 @@ cmake --build build --config Debug --parallel
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-The current validated baseline contains 13 suites: plugin lifecycle, view status, view reaper, WinHTTP callbacks, AAC remux, playback reporter, transport, config/auth, catalog, artwork, artwork provider, feedback and security. Earlier referenced runs had fewer suites; their counts are not current totals.
+The current validated baseline contains 18 suites: plugin lifecycle, lifecycle handle observation, resource diagnostics, resource policy, view status, view reaper, WinHTTP callbacks, AAC remux, playback reporter, transport, config/auth, catalog, artwork, artwork provider, feedback, security, protected replay references and replay-probe isolation. Earlier referenced runs had fewer suites; their counts are not current totals.
 
 Coverage includes:
 
@@ -195,10 +197,10 @@ Controlled negative cases were removed after proving their checkers detect fault
 | Wrong playlist insertion position | `insert-position-negative.log`, `album-context-wrong-placement-negative.log` |
 | Stale catalog status after recovery | `view-status-negative.log` |
 | Invalid layout width of 80 px | `view-layout-bounds-negative.log` |
-| Leaked cancellation event | 159 versus 158 handles in cycle two, `lifecycle-handles-negative.log` |
+| Held cancellation event, aggregate count observation | 159 versus 158 handles in cycle two, `lifecycle-handles-negative.log`; aggregate counts are now diagnostic only |
 | Omitted table skin release | Native GDI growth, `view-resources-negative.log` |
 | Invalid CDB output despite exit 0 | `handle-summary-negative.log` |
-| Injected 96-event resource leak | `catalog-resources-negative.log` |
+| Injected 96-event aggregate increase | `catalog-resources-negative.log`; aggregate counts are now diagnostic only |
 | Wrong track-artist sorting / column selection | `track-artist-sort-negative.log`, `sort-columns-negative.log` |
 | Stale final rapid-search request | `rapid-search-negative.log` |
 | TranscodeSession or missing active player | Feedback/session tests |
@@ -232,7 +234,7 @@ The minimized-start checker observes stable minimization for at least 300 ms wit
 - [x] Configuration invoked from plugin management; normal stop/restart.
 - [x] Switching among all Plex views and an actual foreign Media Library plugin.
 - [x] Exit during started sign-in, a 12-second pending browser approval, active media preparation and stalled TLS.
-- [x] Resource observations with unchanged failure limits; unresolved observations remain below.
+- [x] Resource observations; GDI/USER limits remain enforced and process handles are diagnostic only.
 
 The phase-one gate passed with a real MP3: forward progress, HTTP 200, 262,144 transferred bytes, 306-second duration, seeking result zero and subsequent 10,569 ms, plus Plex title in a token/server-free M3U8 (`playback-metadata-hook.log`). Target-version compatibility requires WM_COPYDATA/M3U8 rather than the crashing old metadata structure, and IPC_SETPLAYLISTPOS plus WINAMP_BUTTON2 rather than IPC_STARTPLAY.
 
@@ -262,9 +264,9 @@ The checker uses three warmup cycles, equal before/after settling periods and ex
 
 Passing comparisons do not explain every earlier growth observation. Handle tracing in x86/x64 did not yield usable creation stacks and was disabled afterwards. Synthetic UI-only code was removed and the real DLL rebuilt/restored. Catalog-only transport with WIC passed 20 cycles, handles 333 → 305, GDI zero, USER one (`catalog-resources-native.log`); this does not isolate host/concurrent-cancellation effects.
 
-Tables release gen_ml skin resources at WM_DESTROY before control WM_NCDESTROY. Removing that release reproduces per-table GDI growth. SDK lifecycle measurement also checks process handles after every unload against the warmed baseline.
+Tables release gen_ml skin resources at WM_DESTROY before control WM_NCDESTROY. Removing that release reproduces per-table GDI growth. SDK lifecycle measurement records process handles after every unload against the warmed baseline without treating aggregate growth as a failure.
 
-Foreign-plugin integration used a temporary, hash-checked ml_local.dll only in the closed test copy, removing it afterwards. Five mixed-view cycles passed functionally but added three GDI objects per cycle. Foreign-only audio/video switching added four per cycle independently of Plex views. This remains a target-host observation (`host-integration-fixed.log`, `host-resources-foreign-only.log`, `host-resources-mixed-fixed.log`). RequireStableResources turns global growth into an explicit failure.
+Foreign-plugin integration used a temporary, hash-checked ml_local.dll only in the closed test copy, removing it afterwards. Five mixed-view cycles passed functionally but added three GDI objects per cycle. Foreign-only audio/video switching added four per cycle independently of Plex views. This remains a target-host observation (`host-integration-fixed.log`, `host-resources-foreign-only.log`, `host-resources-mixed-fixed.log`). RequireStableResources turns GDI/USER growth into an explicit failure; aggregate process handles remain diagnostic values.
 
 ## Connection and settings checklist
 

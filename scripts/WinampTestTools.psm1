@@ -441,4 +441,10 @@ function Select-PlexFeedbackTrack($Sample) {
     return [pscustomobject]@{ List = $list.Handle; View = $view; Outer = $outer[0].Handle }
 }
 
-Export-ModuleMember -Function Get-PlexTestProcess, Set-PlexTestMinimized, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Test-PlexMediaWriteLock, Select-PlexFeedbackTrack
+# Nur GDI-/USER-Zähler bestimmen den Ressourcenbefund. Globale Prozesshandles
+# bleiben wegen der beobachteten Windows-Laufzeitressourcen reine Diagnosewerte.
+function Test-PlexGuiResourceGrowth($Before, $After) {
+    return ($After.gdi -gt $Before.gdi + 2 -or $After.user -gt $Before.user + 2)
+}
+
+Export-ModuleMember -Function Get-PlexTestProcess, Set-PlexTestMinimized, Save-PlexWindowScreenshot, Test-PlexPlaybackLocation, Test-PlexMediaWriteLock, Select-PlexFeedbackTrack, Test-PlexGuiResourceGrowth
