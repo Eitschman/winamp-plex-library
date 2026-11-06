@@ -109,6 +109,9 @@ try {
         try {
             $text = [PlexNative]::Children($diagnostics[0].Handle) | Where-Object ControlId -eq 1084
             $information = [PlexNative]::ControlText($text.Handle)
+            if ($information -match 'MiB' -or $information -notmatch ' / 2147[,.]4 MB' -or $information -notmatch ' / 67[,.]1 MB') {
+                throw 'Diagnosegrößen oder Speichergrenzen sind nicht korrekt in dezimalen MB angegeben.'
+            }
             function Assert-DiagnosticTextFits {
                 $bounds = New-Object PlexNative+Rect
                 [void][PlexNative]::GetWindowRect($text.Handle, [ref]$bounds)

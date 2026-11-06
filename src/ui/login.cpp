@@ -110,9 +110,9 @@ std::wstring unicode(const std::string& value) {
 // Die Zähler gehören zur Proxy-Verbindung, nicht zum aktuell abgespielten Titel.
 std::wstring diagnostics_information(DWORD connection_code) {
     const auto status = playback_status();
-    const auto mib = [](unsigned long long bytes) {
-        return std::to_wstring(bytes / 1048576ULL) + (german() ? L"," : L".") +
-            std::to_wstring((bytes % 1048576ULL) * 10 / 1048576ULL) + L" MiB";
+    const auto megabytes = [](unsigned long long bytes) {
+        return std::to_wstring(bytes / 1000000ULL) + (german() ? L"," : L".") +
+            std::to_wstring((bytes % 1000000ULL) * 10 / 1000000ULL) + L" MB";
     };
     return std::wstring(L"Winamp Plex Library\r\nx86\r\n") +
         localized(L"Zugangsspeicherung: Windows DPAPI\r\n", L"Credential storage: Windows DPAPI\r\n") +
@@ -121,11 +121,11 @@ std::wstring diagnostics_information(DWORD connection_code) {
         localized(L"\r\nVerbindungscode: ", L"\r\nConnection code: ") + std::to_wstring(connection_code) +
         localized(L"\r\nCover-Zuordnungen: ", L"\r\nArtwork mappings: ") + std::to_wstring(artwork_provider_diagnostic(3)) +
         localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2)) +
-        localized(L"\r\n\r\nEmpfangen seit Verbindungsstart: ", L"\r\n\r\nReceived since connection start: ") + mib(status.bytes_received) +
-        localized(L"\r\nAn Winamp gesendet: ", L"\r\nSent to Winamp: ") + mib(status.bytes_sent) +
+        localized(L"\r\n\r\nEmpfangen seit Verbindungsstart: ", L"\r\n\r\nReceived since connection start: ") + megabytes(status.bytes_received) +
+        localized(L"\r\nAn Winamp gesendet: ", L"\r\nSent to Winamp: ") + megabytes(status.bytes_sent) +
         localized(L"\r\nLaufende Streaming-Downloads: ", L"\r\nActive streaming downloads: ") + std::to_wstring(status.active_downloads) +
-        localized(L"\r\nReservierter Medienspeicher: ", L"\r\nReserved media storage: ") + mib(status.reserved_media_bytes) + L" / 2048 MiB" +
-        localized(L"\r\nVorrat für nächste Titel: ", L"\r\nNext-track cache: ") + mib(status.prefetched_bytes) + L" / 64 MiB" +
+        localized(L"\r\nReservierter Medienspeicher: ", L"\r\nReserved media storage: ") + megabytes(status.reserved_media_bytes) + L" / " + megabytes(2048ULL * 1024 * 1024) +
+        localized(L"\r\nVorrat für nächste Titel: ", L"\r\nNext-track cache: ") + megabytes(status.prefetched_bytes) + L" / " + megabytes(64ULL * 1024 * 1024) +
         localized(L"\r\nVorladen aktiv / Treffer / Fehlercode: ", L"\r\nPrefetch active / hits / error code: ") +
         std::to_wstring(status.prefetch_active) + L" / " + std::to_wstring(status.prefetch_hits) + L" / " + std::to_wstring(status.prefetch_error) +
         localized(L"\r\n\r\nÜbertragungsfehler: ", L"\r\n\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +

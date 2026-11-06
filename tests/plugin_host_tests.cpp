@@ -42,9 +42,10 @@ BOOL CALLBACK inspect_settings(HWND dialog, LPARAM) {
     if (const auto diagnostic = GetDlgItem(dialog, 1084)) {
         wchar_t information[2049]{}; GetWindowTextW(diagnostic, information, 2049);
         diagnostics_valid = wcsstr(information, L"Windows DPAPI") && wcsstr(information, L"HTTP:") && wcsstr(information, L"Proxy: none") &&
-                            wcsstr(information, german_host ? L"Empfangen seit Verbindungsstart: 0,0 MiB" : L"Received since connection start: 0.0 MiB") &&
+                            wcsstr(information, german_host ? L"Empfangen seit Verbindungsstart: 0,0 MB" : L"Received since connection start: 0.0 MB") &&
                             wcsstr(information, german_host ? L"Laufende Streaming-Downloads: 0" : L"Active streaming downloads: 0") &&
-                            wcsstr(information, german_host ? L"Reservierter Medienspeicher: 0,0 MiB / 2048 MiB" : L"Reserved media storage: 0.0 MiB / 2048 MiB") &&
+                            wcsstr(information, german_host ? L"Reservierter Medienspeicher: 0,0 MB / 2147,4 MB" : L"Reserved media storage: 0.0 MB / 2147.4 MB") &&
+                            wcsstr(information, german_host ? L"Vorrat für nächste Titel: 0,0 MB / 67,1 MB" : L"Next-track cache: 0.0 MB / 67.1 MB") &&
                             !wcsstr(information, L"https://") && !wcsstr(information, L"X-Plex-Token");
         // Ein Timer-Ereignis muss die Daten neu lesen und eine veraltete Anzeige ersetzen.
         SetWindowTextW(diagnostic, L"stale diagnostic snapshot");
