@@ -152,6 +152,9 @@ struct Fixture {
         if (request.find("/library/parts/999/") != request.npos) {
             send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 999999\r\n\r\ntruncated"); return;
         }
+        if (request.find("/library/parts/988/") != request.npos) {
+            send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 33554433\r\n\r\n"); return;
+        }
         std::size_t first = 0, last = media.size() - 1;
         bool ranged = false;
         auto range = request.find("Range: bytes=");
@@ -502,6 +505,64 @@ int main(int count, char** arguments) {
         slow_decoder_checks();
         Fixture fixture;
         const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
+        {
+            plex::PlaybackProxy proxy({server, "synthetic-test-token", "/library/parts/1/file.mp3"});
+            const auto next = proxy.add({server, "synthetic-test-token", "/library/parts/2/file.m4a"});
+            proxy.prefetch(proxy.url(), next);
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!proxy.status().prefetched_bytes && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(proxy.status().prefetched_bytes == fixture.media.size(), "next_track_prefetched_entirely");
+            const auto hits = fixture.hits.load();
+            check(fetch(next).body == fixture.media, "cached_next_track_exact_bytes");
+            check(fetch(next, L"HEAD").status == 200, "cached_next_track_head");
+            check(fetch(next, L"GET", L"Range: bytes=5-11\r\n").body == fixture.media.substr(5, 7), "cached_next_track_seeking");
+            check(fetch(next, L"GET", L"Range: bytes=-17\r\n").body == fixture.media.substr(fixture.media.size() - 17), "cached_next_track_suffix");
+            check(fetch(next, L"GET", L"Range: bytes=100000-\r\n").status == 416, "cached_next_track_range_outside");
+            check(fetch(next, L"GET", L"Origin: https://example.invalid\r\n").status == 403, "cache_keeps_origin_checks");
+            check(fixture.hits.load() == hits && proxy.status().prefetch_hits == 4, "cached_next_track_avoids_upstream_requests");
+            proxy.prefetch(next, "https://radio.example/stream");
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            check(fetch(next).body == fixture.media && fixture.hits.load() == hits, "playing_cache_retained_mixed_radio_ignored");
+            proxy.revoke(next);
+            check(fetch(next).status == 403, "cache_keeps_revocation_checks");
+            proxy.prefetch({}, {});
+            const auto cleared = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (proxy.status().reserved_media_bytes && std::chrono::steady_clock::now() < cleared) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(proxy.status().prefetched_bytes == 0 && proxy.status().reserved_media_bytes == 0, "prefetch_releases_private_files_and_budget");
+            const auto invalid = proxy.add({server, "synthetic-test-token", "/library/parts/999/file.mp3"});
+            proxy.prefetch({}, invalid);
+            const auto failed = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!proxy.status().prefetch_error && std::chrono::steady_clock::now() < failed) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(proxy.status().prefetch_error && !proxy.status().prefetched_bytes, "partial_prefetch_not_published");
+            check(fetch(proxy.url()).body == fixture.media, "failed_speculation_preserves_actual_playback");
+            const auto oversized = proxy.add({server, "synthetic-test-token", "/library/parts/988/file.mp3"});
+            proxy.prefetch({}, oversized);
+            const auto large_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (proxy.status().prefetch_error != ERROR_FILE_TOO_LARGE && std::chrono::steady_clock::now() < large_deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(proxy.status().prefetch_error == ERROR_FILE_TOO_LARGE && proxy.status().reserved_media_bytes == 0, "prefetch_size_limit_does_not_reserve_large_file");
+        }
+        {
+            Fixture stalled;
+            auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{plex::parse_server_address("http://127.0.0.1:" + std::to_string(stalled.port)), "synthetic-test-token", "/library/parts/997/file.mp3"});
+            proxy->prefetch({}, proxy->url());
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!stalled.slow_started.load() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(stalled.slow_started.load(), "prefetch_cancel_fixture_started");
+            const auto started = std::chrono::steady_clock::now(); proxy.reset();
+            check(std::chrono::steady_clock::now() - started < std::chrono::seconds(2), "stalled_prefetch_shutdown_is_cancellable");
+        }
+        {
+            Fixture offline;
+            plex::PlaybackProxy proxy({plex::parse_server_address("http://127.0.0.1:" + std::to_string(offline.port)), "synthetic-test-token", "/library/parts/1/file.mp3"});
+            proxy.prefetch({}, proxy.url());
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!proxy.status().prefetched_bytes && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            check(proxy.status().prefetched_bytes == offline.media.size(), "outage_fixture_prefetch_ready");
+            offline.stop.store(true); offline.worker.join();
+            closesocket(offline.listener); offline.listener = INVALID_SOCKET;
+            check(fetch(proxy.url()).body == offline.media, "complete_prefetch_plays_with_upstream_listener_closed");
+            check(fetch(proxy.url(), L"GET", L"Range: bytes=7-\r\n").body == offline.media.substr(7), "complete_prefetch_seeks_during_upstream_outage");
+        }
         {
             const auto root = std::filesystem::temp_directory_path() / (L"WinampPlexBufferLimit-" + std::to_wstring(GetCurrentProcessId()));
             auto store = std::make_shared<plex::LocalMediaStore>(root, plex::LocalMediaLimits{16, 16});

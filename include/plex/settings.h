@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include "plex/browse_query.h"
 
 namespace plex {
 struct PlexConnection {
@@ -28,6 +29,7 @@ struct PlexConnectionSettings {
     std::string preferred_origin;
     std::vector<PlexConnection> server_connections;
     std::vector<PlexServer> known_servers;
+    LibraryPreferences library_preferences;
 };
 std::filesystem::path settings_path();
 PlexConnectionSettings load_settings(const std::filesystem::path& path);

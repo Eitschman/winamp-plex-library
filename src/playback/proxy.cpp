@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <vector>
 #include <cstddef>
+#include <condition_variable>
+#include <algorithm>
 
 namespace plex {
 namespace {
@@ -119,6 +121,133 @@ struct PlaybackProxy::State {
     ProxyFailure last_failure;
     std::shared_ptr<LocalMediaStore> media_store;
     std::atomic<unsigned long long> bytes_received{0}, active_downloads{0};
+    struct Prefetched {
+        std::shared_ptr<LocalMediaBuffer> file;
+        unsigned long long size;
+        std::string content_type;
+    };
+    std::mutex prefetch_mutex;
+    std::condition_variable prefetch_changed;
+    std::thread prefetch_worker;
+    HANDLE prefetch_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    std::string current_target, next_target;
+    unsigned long long prefetch_generation = 0;
+    std::unordered_map<std::string, std::shared_ptr<Prefetched>> prefetched;
+    std::atomic<unsigned long long> prefetch_bytes{0}, prefetch_hits{0};
+    std::atomic<DWORD> prefetch_error{0};
+    std::atomic<bool> prefetch_active{false};
+
+    void plan_prefetch(std::string current, std::string next) {
+        std::lock_guard<std::mutex> lock(prefetch_mutex);
+        if (current == current_target && next == next_target) return;
+        current_target = std::move(current); next_target = std::move(next);
+        ++prefetch_generation; SetEvent(prefetch_stop); prefetch_changed.notify_one();
+    }
+
+    // Höchstens zwei vollständige Dateien mit je 32 MiB. Teilweise geladene
+    // Dateien werden nie an den Decoder ausgegeben. Das gemeinsame Budget gilt zusätzlich.
+    void run_prefetch() noexcept {
+      try {
+        unsigned long long handled = 0;
+        for (;;) {
+            std::string target;
+            unsigned long long generation;
+            std::vector<std::shared_ptr<Prefetched>> retired;
+            {
+                std::unique_lock<std::mutex> lock(prefetch_mutex);
+                prefetch_changed.wait(lock, [&] { return WaitForSingleObject(stop, 0) == WAIT_OBJECT_0 || handled != prefetch_generation; });
+                if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) return;
+                handled = generation = prefetch_generation;
+                for (auto entry = prefetched.begin(); entry != prefetched.end();) {
+                    if (entry->first == current_target || entry->first == next_target) { ++entry; continue; }
+                    prefetch_bytes.fetch_sub(entry->second->size);
+                    retired.push_back(std::move(entry->second)); entry = prefetched.erase(entry);
+                }
+                if (!next_target.empty() && prefetched.find(next_target) == prefetched.end()) target = next_target;
+                ResetEvent(prefetch_stop);
+            }
+            retired.clear();
+            if (target.empty()) continue;
+            try {
+                std::shared_ptr<Grant> grant;
+                {
+                    std::lock_guard<std::mutex> lock(grants_mutex);
+                    const auto found = grants.find(target);
+                    if (found == grants.end() || found->second->expires <= std::chrono::steady_clock::now()) continue;
+                    grant = found->second;
+                }
+                // Der laufende Download hat Vorrang vor spekulativen Anfragen.
+                while (active_downloads.load() && WaitForSingleObject(stop, 0) != WAIT_OBJECT_0 && WaitForSingleObject(prefetch_stop, 100) == WAIT_TIMEOUT) {}
+                if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0 || WaitForSingleObject(prefetch_stop, 0) == WAIT_OBJECT_0) continue;
+                prefetch_active.store(true); prefetch_error.store(0);
+                HttpStream stream(grant->source.server, grant->source.token, grant->source.media_path, false, {}, stop, prefetch_stop);
+                if (stream.status() != 200) throw HttpError(ERROR_BAD_NET_RESP);
+                const auto length = stream.header(L"Content-Length"), encoding = stream.header(L"Content-Encoding");
+                if (length.empty() || length.size() > 19 || length.find_first_not_of("0123456789") != length.npos ||
+                    (!encoding.empty() && encoding != "identity")) throw HttpError(ERROR_INVALID_DATA);
+                const auto size = std::stoull(length);
+                if (!size || size > 32ULL * 1024 * 1024) throw HttpError(ERROR_FILE_TOO_LARGE);
+                auto file = media_store->buffer(size);
+                std::array<char, 65536> buffer{};
+                unsigned long long received = 0;
+                for (;;) {
+                    const auto count = stream.read(buffer.data(), static_cast<DWORD>(buffer.size()));
+                    if (!count) break;
+                    if (count > size - received) throw HttpError(ERROR_INVALID_DATA);
+                    file->append(buffer.data(), count); received += count; bytes_received.fetch_add(count);
+                }
+                if (received != size) throw HttpError(ERROR_HANDLE_EOF);
+                auto ready = std::make_shared<Prefetched>(Prefetched{std::move(file), size, stream.header(L"Content-Type")});
+                {
+                    std::lock_guard<std::mutex> lock(prefetch_mutex);
+                    if (generation == prefetch_generation && WaitForSingleObject(stop, 0) != WAIT_OBJECT_0) {
+                        prefetched.emplace(target, std::move(ready)); prefetch_bytes.fetch_add(size);
+                    }
+                }
+            } catch (const HttpError& failure) {
+                prefetch_error.store(WaitForSingleObject(prefetch_stop, 0) == WAIT_OBJECT_0 || WaitForSingleObject(stop, 0) == WAIT_OBJECT_0 ? 0 : failure.code);
+            }
+              catch (...) { prefetch_error.store(ERROR_INVALID_DATA); }
+            prefetch_active.store(false);
+        }
+      } catch (...) { prefetch_active.store(false); prefetch_error.store(ERROR_NOT_ENOUGH_MEMORY); }
+    }
+
+    bool serve_prefetched(SOCKET client, const std::string& target, const LocalRequest& request, bool& response_started) {
+        std::shared_ptr<Prefetched> cached;
+        {
+            std::lock_guard<std::mutex> lock(prefetch_mutex);
+            const auto found = prefetched.find(target);
+            if (found == prefetched.end()) return false;
+            cached = found->second;
+        }
+        auto first = 0ULL, last = cached->size - 1;
+        if (!request.range.empty()) {
+            const auto interval = request.range.substr(6);
+            const auto separator = interval.find('-');
+            const auto start = interval.substr(0, separator), end = interval.substr(separator + 1);
+            if (start.empty()) first = cached->size - (std::min)(cached->size, std::stoull(end));
+            else {
+                first = std::stoull(start);
+                if (!end.empty()) last = (std::min)(last, std::stoull(end));
+            }
+            if (first >= cached->size) { response_started = true; send_status(client, 416, stop); return true; }
+        }
+        std::string headers = request.range.empty() ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 206 Partial Content\r\n";
+        headers += "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nAccept-Ranges: bytes\r\nContent-Length: " + std::to_string(last - first + 1) + "\r\n";
+        if (!request.range.empty()) headers += "Content-Range: bytes " + std::to_string(first) + "-" + std::to_string(last) + "/" + std::to_string(cached->size) + "\r\n";
+        if (!cached->content_type.empty()) headers += "Content-Type: " + cached->content_type + "\r\n";
+        headers += "\r\n"; response_started = true; send_all(client, headers.data(), headers.size(), stop);
+        ++prefetch_hits;
+        if (request.head) return true;
+        std::array<char, 65536> buffer{};
+        while (first <= last) {
+            const auto count = cached->file->read(first, buffer.data(), static_cast<DWORD>((std::min)(static_cast<unsigned long long>(buffer.size()), last - first + 1)));
+            if (!count) throw HttpError(ERROR_HANDLE_EOF);
+            send_all(client, buffer.data(), count, stop); first += count; bytes.fetch_add(count);
+        }
+        return true;
+    }
 
     // Ein nachfolgender erfolgreicher Request darf den letzten Medienfehler
     // nicht aus der Diagnose löschen. Es werden ausschließlich Zahlen erfasst.
@@ -182,6 +311,11 @@ struct PlaybackProxy::State {
             }
             const auto parsed = parse_local_request(request, authority, capability);
             rejection.store(nullptr);
+            if (serve_prefetched(client, capability, parsed, response_started)) return;
+            if (!parsed.head && prefetch_active.load()) {
+                std::lock_guard<std::mutex> lock(prefetch_mutex);
+                SetEvent(prefetch_stop);
+            }
             StreamBuffer body(stop);
             auto stream = std::make_shared<HttpStream>(grant->source.server, grant->source.token, grant->source.media_path, parsed.head, parsed.range, stop, body.cancellation());
             const auto status = stream->status();
@@ -313,10 +447,17 @@ struct PlaybackProxy::State {
     }
 
     ~State() {
-        if (stop) SetEvent(stop);
+        {
+            std::lock_guard<std::mutex> lock(prefetch_mutex);
+            if (stop) SetEvent(stop);
+            if (prefetch_stop) SetEvent(prefetch_stop);
+        }
+        prefetch_changed.notify_one();
+        if (prefetch_worker.joinable()) prefetch_worker.join();
         for (auto& worker : workers) if (worker.joinable()) worker.join();
         if (listener != INVALID_SOCKET) closesocket(listener);
         if (stop) CloseHandle(stop);
+        if (prefetch_stop) CloseHandle(prefetch_stop);
         if (sockets_started) WSACleanup();
     }
 };
@@ -330,7 +471,7 @@ PlaybackProxy::PlaybackProxy(PlaybackSource source, std::chrono::milliseconds li
     state.policy = policy;
     state.media_store = media_store ? std::move(media_store) : std::make_shared<LocalMediaStore>(settings_path().parent_path() / L"playback");
     // Auch Aufrufer außerhalb der UI müssen die Origin-Sicherheitsregeln einhalten.
-    if (!state.stop) throw std::runtime_error("stop_event");
+    if (!state.stop || !state.prefetch_stop) throw std::runtime_error("stop_event");
     WSADATA socket_data{};
     if (WSAStartup(MAKEWORD(2, 2), &socket_data) != 0) throw std::runtime_error("socket_startup");
     state.sockets_started = true;
@@ -352,6 +493,7 @@ PlaybackProxy::PlaybackProxy(PlaybackSource source, std::chrono::milliseconds li
     state.authority = "127.0.0.1:" + std::to_string(ntohs(address.sin_port));
     state.local_url = state.add(std::move(source));
     for (auto& worker : state.workers) worker = std::thread([&state] { state.run(); });
+    state.prefetch_worker = std::thread([&state] { state.run_prefetch(); });
 }
 
 PlaybackProxy::~PlaybackProxy() = default;
@@ -366,6 +508,17 @@ void PlaybackProxy::revoke(const std::string& url) {
 ProxyStatus PlaybackProxy::status() const {
     std::lock_guard<std::mutex> lock(state_->failure_mutex);
     return {state_->upstream.load(), state_->error.load(), state_->bytes.load(), state_->rejection.load(), state_->last_failure, state_->local_disconnects.load(),
-            state_->bytes_received.load(), state_->active_downloads.load(), state_->media_store->bytes_used()};
+            state_->bytes_received.load(), state_->active_downloads.load(), state_->media_store->bytes_used(),
+            state_->prefetch_bytes.load(), state_->prefetch_hits.load(), state_->prefetch_error.load(), state_->prefetch_active.load()};
+}
+void PlaybackProxy::prefetch(const std::string& current_url, const std::string& next_url) {
+    const auto origin = "http://" + state_->authority;
+    const auto own = [&](const std::string& url) {
+        if (url.compare(0, origin.size(), origin) != 0) return std::string{};
+        const auto path = url.substr(origin.size());
+        std::lock_guard<std::mutex> lock(state_->grants_mutex);
+        return state_->grants.find(path) == state_->grants.end() ? std::string{} : path;
+    };
+    state_->plan_prefetch(own(current_url), own(next_url));
 }
 }

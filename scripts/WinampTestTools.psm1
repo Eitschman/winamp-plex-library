@@ -381,9 +381,15 @@ function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
     $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTest
     if (-not $main) { throw 'Hauptfenster der Testinstanz fehlt.' }
     $wasMinimized = ([PlexNative]::WindowStyle($main.Handle,-16) -band 536870912) -ne 0
+    $targetVisible = [PlexNative]::IsWindowVisible($Window)
     $bitmap = $null
     try {
         if ($wasMinimized) { [void][PlexNative]::ShowWindow($main.Handle,9); Start-Sleep -Milliseconds 200 }
+        # Winamp versteckt eigenständige Bibliotheksfenster beim Minimieren.
+        # PrintWindow kann dafür Erfolg melden und trotzdem nur Schwarz liefern.
+        [void][PlexNative]::ShowWindow($Window,9)
+        [void][PlexNative]::RedrawWindow($Window,[IntPtr]::Zero,[IntPtr]::Zero,389)
+        Start-Sleep -Milliseconds 150
         $rectangle = New-Object PlexNative+Rect
         if (-not [PlexNative]::GetWindowRect($Window, [ref]$rectangle)) { throw 'Fensterrechteck nicht verfügbar.' }
         $bitmap = New-Object Drawing.Bitmap(($rectangle.Right - $rectangle.Left), ($rectangle.Bottom - $rectangle.Top))
@@ -396,6 +402,7 @@ function Save-PlexWindowScreenshot([IntPtr]$Window, [string]$Path) {
         $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png)
     } finally {
         if ($bitmap) { $bitmap.Dispose() }
+        if (!$targetVisible) { [void][PlexNative]::ShowWindow($Window,0) }
         if ($wasMinimized) { Set-PlexTestMinimized }
     }
 }

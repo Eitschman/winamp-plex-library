@@ -77,6 +77,8 @@ int wmain(int count, wchar_t** arguments) {
             // Ein eigener Client verhindert, dass der Test die laufende Plex-Sitzung
             // der normalen Winamp-Installation unter derselben Kennung überschreibt.
             settings.client_identifier = plex::create_client_identifier();
+            // Benutzeransichten gehören nicht zum isolierten Testprofil.
+            settings.library_preferences = {};
             write_connection_fixture(settings);
             return 0;
         }

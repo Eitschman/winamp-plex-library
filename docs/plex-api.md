@@ -31,6 +31,9 @@ Plex also documents JWT/device-key authentication and renewal. This plugin uses 
 | Artwork | Relative `thumb` under `/library/metadata/{id}/thumb`, optionally with numeric revision | Authenticated original image plus WIC thumbnail; inherited `parentThumb` for tracks. |
 | Media bytes | `Media[].Part[].key`, e.g. `/library/parts/46618/1389985872/file.flac` | WinHTTP proxy/private preparation; never use the server-local `file` field. |
 | Search/sort | Typed `all` queries with supported filters and `sort` | Check capabilities rather than inventing query syntax. |
+| Filter values | `/library/sections/{id}/genre?type=8` (or 9/10), `/library/sections/{id}/year?type=9`, `/library/sections/{id}/audioCodec?type=10` | `MediaContainer.Directory[]` contains `key` and `title`. Values are loaded on a worker; failures remain visible. |
+
+Genre keys, album `year` / track `album.year`, and track `audioCodec` are URL-encoded query predicates, combined with title search, sorting and pagination. They filter the library on PMS, not only the currently visible page. The actual server was checked for artists/albums/tracks, audio-codec equality, album-year equality via parent metadata, and rejection of a nonexistent codec on album children. Source contracts: [official section audio codecs and media queries](https://developer.plex.tv/pms/) and [Python-PlexAPI filter-choice implementation](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/library.html#LibrarySection.listFilterChoices). Other server/provider versions still require integration evidence; unsupported endpoints are errors, without silently removing filters.
 
 Tracks may contain multiple Media variants and Parts. Selection must be reproducible; concatenating arbitrary part URLs is not an implementation. API durations use milliseconds; playlist IPC uses seconds.
 

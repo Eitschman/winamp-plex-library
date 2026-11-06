@@ -59,6 +59,23 @@ void poll_playback() {
     if (!reporter) return;
     std::optional<PlaybackSnapshot> snapshot;
     const auto state = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_ISPLAYING);
+    if (proxy) {
+        std::string current, next;
+        if (state == 1 || state == 3) {
+            const auto index = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTPOS);
+            const auto count = SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GETLISTLENGTH);
+            const auto entry = [&](LRESULT position) {
+                const auto* value = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, position, IPC_GETPLAYLISTFILEW));
+                return reinterpret_cast<UINT_PTR>(value) > 65535 && playback_bindings.find(value) != playback_bindings.end() ? utf8(value) : std::string{};
+            };
+            if (index >= 0 && index < count) {
+                current = entry(index);
+                // Die Shuffle-Reihenfolge und fremde Warteschlangen werden nie verändert.
+                if (!SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_SHUFFLE) && index + 1 < count) next = entry(index + 1);
+            }
+        }
+        proxy->prefetch(current, next);
+    }
     if (state == 1 || state == 3) {
         const auto* filename = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC, 0, IPC_GET_PLAYING_FILENAME));
         if (reinterpret_cast<UINT_PTR>(filename) > 65535) {
@@ -412,6 +429,10 @@ unsigned long long playback_diagnostic(unsigned counter) noexcept {
     case 1: return status.sent;
     case 2: return monitor_polls;
     case 3: return monitor_matches;
+    case 4: return proxy ? proxy->status().prefetched_bytes : 0;
+    case 5: return proxy ? proxy->status().prefetch_hits : 0;
+    case 6: return proxy ? proxy->status().prefetch_active : 0;
+    case 7: return proxy ? proxy->status().prefetch_error : 0;
     default: return 0;
     }
 }
@@ -449,6 +470,12 @@ void update_connection_settings(PlexConnectionSettings value) {
     if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
     settings = std::move(value);
     ++settings_revision; verified_connection = false;
+}
+// Reine Ansichtsänderungen dürfen weder die Verbindung verwerfen noch die Wiedergabe stoppen.
+void update_library_preferences(LibraryPreferences preferences) {
+    auto value = settings; value.library_preferences = std::move(preferences);
+    save_settings(settings_path(), value);
+    settings.library_preferences = std::move(value.library_preferences);
 }
 }
 

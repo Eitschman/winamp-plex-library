@@ -48,6 +48,8 @@ After `IPC_SETPLAYLISTPOS`, the plugin sends `WM_COMMAND` with original `WINAMP_
 
 `IPC_GETLISTLENGTH` checks actual import growth. `IPC_GETOUTPUTTIME` measures playback and seeking; `IPC_JUMPTOTIME` performs explicit seek checks. Tests address only the verified isolated window.
 
+Next-track prefetch uses SDK 5.55 `IPC_GETLISTPOS`, `IPC_GETLISTLENGTH`, `IPC_GETPLAYLISTFILEW` and `IPC_GET_SHUFFLE` on the UI thread. Only registered live Plex bindings are considered. Sequential physical next entries can be prepared; shuffle and queue plugins retain control of the actual next choice. No invented shuffle-order query or notification-as-query is used. A wrong speculative candidate merely remains unused and never changes playback order.
+
 The `IPC_WRITEPLAYLIST` SDK comment documents persistence to `winamp.m3u` and additionally `winamp.m3u8` on Unicode systems. Playback URLs must therefore already be token-free; log redaction after handoff is insufficient.
 
 ## Skin integration

@@ -26,6 +26,8 @@ PageCache cache;
 LibraryCache library_cache;
 std::unique_ptr<ViewReaper> view_reaper;
 std::atomic<unsigned long long> cache_scope{0};
+struct View;
+std::vector<View*> active_views;
 void clear_cache() { ++cache_scope; cache.clear(); library_cache.clear(); ArtworkLoader::clear_cache(); }
 const wchar_t* text(const wchar_t* de, const wchar_t* en) { return german() ? de : en; }
 void layout(HWND dialog);
@@ -116,7 +118,7 @@ Row make_row(const PlexItem& item) {
     }, item);
     return row;
 }
-enum class Action { browse, play, enqueue, insert_after, rate };
+enum class Action { browse, play, enqueue, insert_after, rate, filters };
 struct Job {
     Action action = Action::browse;
     BrowseQuery query;
@@ -141,8 +143,111 @@ struct Result {
     unsigned long long connection_revision = 0;
     std::string verified_origin;
     DWORD error = 0;
+    CatalogFilters filters;
 };
-struct Navigation { BrowseQuery query; std::wstring caption; std::vector<std::size_t> offsets{0}; };
+struct Navigation {
+    BrowseQuery query; std::wstring caption; std::vector<std::size_t> offsets{0};
+    std::vector<std::string> selected;
+    std::string focused, top;
+};
+struct FilterPanel {
+    BrowseQuery query;
+    CatalogFilters filters;
+    std::string server, library;
+    std::vector<SavedSearch> searches;
+    std::vector<std::size_t> indices;
+    void fill(HWND dialog, int control, const std::vector<FilterChoice>& choices, const std::string& selected) {
+        SendDlgItemMessageW(dialog, control, CB_RESETCONTENT, 0, 0);
+        SendDlgItemMessageW(dialog, control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text(L"Alle", L"All")));
+        int selection = 0;
+        for (std::size_t index = 0; index < choices.size(); ++index) {
+            const auto title = wide(choices[index].title);
+            SendDlgItemMessageW(dialog, control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(title.c_str()));
+            if (choices[index].key == selected) selection = static_cast<int>(index + 1);
+        }
+        // Ein gespeicherter Filter darf nicht unbemerkt verschwinden.
+        if (!selected.empty() && selection == 0) throw std::invalid_argument("saved_filter_unavailable");
+        SendDlgItemMessageW(dialog, control, CB_SETCURSEL, selection, 0);
+        EnableWindow(GetDlgItem(dialog, control), !choices.empty());
+    }
+    void display(HWND dialog) {
+        fill(dialog, IDC_GENRE, filters.genres, query.genre);
+        fill(dialog, IDC_YEAR, filters.years, query.year);
+        fill(dialog, IDC_CODEC, filters.audio_codecs, query.audio_codec);
+    }
+    void read(HWND dialog) {
+        const auto value = [&](int control, const std::vector<FilterChoice>& choices) {
+            const auto index = SendDlgItemMessageW(dialog, control, CB_GETCURSEL, 0, 0);
+            if (index < 0 || static_cast<std::size_t>(index) > choices.size()) throw std::invalid_argument("filter_selection");
+            return index == 0 ? std::string{} : choices[static_cast<std::size_t>(index - 1)].key;
+        };
+        query.genre = value(IDC_GENRE, filters.genres); query.year = value(IDC_YEAR, filters.years); query.audio_codec = value(IDC_CODEC, filters.audio_codecs);
+    }
+    void list(HWND dialog) {
+        indices.clear(); SendDlgItemMessageW(dialog, IDC_SAVED_SEARCH, CB_RESETCONTENT, 0, 0);
+        for (std::size_t index = 0; index < searches.size(); ++index) {
+            const auto& search = searches[index];
+            if (search.server != server || search.library != library || search.query.kind != query.kind) continue;
+            indices.push_back(index); const auto name = wide(search.name);
+            SendDlgItemMessageW(dialog, IDC_SAVED_SEARCH, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
+        }
+    }
+};
+INT_PTR CALLBACK filters_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) noexcept {
+    auto* panel = reinterpret_cast<FilterPanel*>(GetWindowLongPtrW(dialog, DWLP_USER));
+    try {
+        if (message == WM_INITDIALOG) {
+            panel = reinterpret_cast<FilterPanel*>(detail); SetWindowLongPtrW(dialog, DWLP_USER, detail);
+            for (const auto& label : {std::pair{IDC_SAVED_LABEL, text(L"Gespeicherte Ansicht", L"Saved view")},
+                {IDC_SAVE_SEARCH, text(L"Speichern", L"Save")}, {IDC_DELETE_SEARCH, text(L"Löschen", L"Delete")},
+                {IDC_GENRE_LABEL, L"Genre"}, {IDC_YEAR_LABEL, text(L"Jahr", L"Year")}, {IDC_CODEC_LABEL, text(L"Audioformat", L"Audio format")},
+                {IDC_RESET_FILTERS, text(L"Zurücksetzen", L"Reset")}, {IDOK, text(L"Anwenden", L"Apply")}, {IDCANCEL, text(L"Abbrechen", L"Cancel")}})
+                SetDlgItemTextW(dialog, label.first, label.second);
+            SendDlgItemMessageW(dialog, IDC_SAVED_SEARCH, CB_LIMITTEXT, 80, 0);
+            skin_view(dialog); panel->list(dialog); panel->display(dialog); return TRUE;
+        }
+        if (!panel || message != WM_COMMAND) return FALSE;
+        const auto control = LOWORD(parameter);
+        if (control == IDCANCEL) { EndDialog(GetParent(dialog), IDCANCEL); return TRUE; }
+        if (control == IDC_RESET_FILTERS) {
+            panel->query.genre.clear(); panel->query.year.clear(); panel->query.audio_codec.clear();
+            panel->display(dialog); return TRUE;
+        }
+        if (control == IDC_SAVED_SEARCH && HIWORD(parameter) == CBN_SELCHANGE) {
+            const auto index = SendDlgItemMessageW(dialog, IDC_SAVED_SEARCH, CB_GETCURSEL, 0, 0);
+            if (index >= 0 && static_cast<std::size_t>(index) < panel->indices.size()) {
+                const auto previous = panel->query;
+                panel->query = panel->searches[panel->indices[static_cast<std::size_t>(index)]].query;
+                try { panel->display(dialog); } catch (...) { panel->query = previous; panel->display(dialog); throw; }
+            }
+            return TRUE;
+        }
+        if (control == IDC_SAVE_SEARCH || control == IDC_DELETE_SEARCH) {
+            const auto name = input(dialog, IDC_SAVED_SEARCH);
+            if (name.empty() || name.size() > 256) throw std::invalid_argument("view_name");
+            auto preferences = connection_settings().library_preferences;
+            auto& searches = preferences.searches;
+            const auto found = std::find_if(searches.begin(), searches.end(), [&](const auto& value) {
+                return value.server == panel->server && value.library == panel->library && value.name == name && value.query.kind == panel->query.kind;
+            });
+            if (control == IDC_DELETE_SEARCH) {
+                if (found == searches.end()) throw std::invalid_argument("view_missing");
+                searches.erase(found);
+            } else {
+                panel->read(dialog); auto query = panel->query; query.offset = 0;
+                const SavedSearch search{panel->server, panel->library, name, query};
+                if (found == searches.end()) searches.push_back(search); else *found = search;
+            }
+            update_library_preferences(std::move(preferences)); panel->searches = connection_settings().library_preferences.searches;
+            panel->list(dialog); SetDlgItemTextW(dialog, IDC_SAVED_SEARCH, control == IDC_SAVE_SEARCH ? wide(name).c_str() : L"");
+            SetDlgItemTextW(dialog, IDC_STATUS, control == IDC_SAVE_SEARCH ? text(L"Ansicht gespeichert.", L"View saved.") : text(L"Ansicht gelöscht.", L"View deleted.")); return TRUE;
+        }
+        if (control == IDOK) { panel->read(dialog); EndDialog(GetParent(dialog), IDOK); return TRUE; }
+    } catch (...) {
+        SetDlgItemTextW(dialog, IDC_STATUS, text(L"Ansicht oder Filter nicht verfügbar. Bitte Auswahl prüfen; Änderungen wurden nicht übernommen.", L"View or filter unavailable. Check the selection; changes were not applied."));
+    }
+    return FALSE;
+}
 
 HBITMAP artwork_bitmap(const std::optional<ArtworkPixels>& pixels) {
     BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -178,22 +283,39 @@ struct View : RetiredView {
     std::vector<Row> rows;
     std::vector<PlexLibrary> libraries;
     CatalogPage page;
-    bool busy = false, suppress_search = false;
+    bool busy = false, suppress_search = false, restoring_position = false;
     bool library_skinned = false;
+    bool preference_error_notified = false;
     HIMAGELIST images = nullptr;
     std::unique_ptr<ArtworkLoader> artwork;
     std::vector<bool> requested_artwork;
     unsigned artwork_generation = 0;
+    std::string scope_server, scope_library;
 
     View(HWND window, BrowseKind kind) : dialog(window), root(kind) {
         current.query.kind = kind; current.caption = kind_title(kind);
+        // Winamp erstellt die neue Ansicht, bevor es die vorherige zerstört.
+        // Deren letzten sichtbaren Zustand deshalb vor dem Wiederherstellen sichern.
+        for (auto* previous : active_views) { previous->capture(); previous->persist_safely(); }
+        const auto settings = connection_settings(); scope_server = settings.server_identifier; scope_library = settings.library_identifier;
+        const auto restore = [](const LibraryNavigation& saved) {
+            return Navigation{saved.query, wide(saved.caption), saved.offsets, saved.selected, saved.focused, saved.top};
+        };
+        for (const auto& saved : settings.library_preferences.bookmarks) {
+            if (saved.server != scope_server || saved.library != scope_library || saved.root != kind) continue;
+            current = restore(saved.current);
+            for (const auto& entry : saved.history) history.push_back(restore(entry));
+            break;
+        }
         stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!stop) throw std::runtime_error("worker_event");
-        try { worker = std::thread([this] { run(); }); } catch (...) { CloseHandle(stop); throw; }
+        try { active_views.push_back(this); worker = std::thread([this] { run(); }); }
+        catch (...) { active_views.erase(std::remove(active_views.begin(), active_views.end(), this), active_views.end()); CloseHandle(stop); throw; }
     }
     // Fensterressourcen gehören dem UI-Thread. Netzwerk- und COM-Abbau dürfen
     // den anschließenden Navigationswechsel dagegen nicht blockieren.
     void close() {
+        active_views.erase(std::remove(active_views.begin(), active_views.end(), this), active_views.end());
         if (artwork) artwork->cancel();
         if (images) {
             const auto list = GetDlgItem(dialog, IDC_CATALOG);
@@ -208,6 +330,70 @@ struct View : RetiredView {
         artwork.reset();
         if (worker.joinable()) worker.join();
         CloseHandle(stop);
+    }
+    void capture() {
+        if (busy || rows.empty()) return;
+        const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        if (!IsWindow(list)) return;
+        current.selected.clear(); current.focused.clear(); current.top.clear();
+        for (int index = -1; (index = ListView_GetNextItem(list, index, LVNI_SELECTED)) >= 0;)
+            if (static_cast<std::size_t>(index) < rows.size()) current.selected.push_back(row_identity(static_cast<std::size_t>(index)));
+        const auto focused = ListView_GetNextItem(list, -1, LVNI_FOCUSED), top = ListView_GetTopIndex(list);
+        if (focused >= 0 && static_cast<std::size_t>(focused) < rows.size()) current.focused = row_identity(static_cast<std::size_t>(focused));
+        if (top >= 0 && static_cast<std::size_t>(top) < rows.size()) current.top = row_identity(static_cast<std::size_t>(top));
+    }
+    std::string row_identity(std::size_t index) const {
+        const auto& id = item_identifier(rows[index].item);
+        if (!current.query.playlist_items) return id;
+        // Eine Plex-Playlist darf denselben Titel mehrfach enthalten.
+        const auto occurrence = std::count_if(rows.begin(), rows.begin() + index, [&](const auto& row) { return item_identifier(row.item) == id; });
+        return id + ":" + std::to_string(occurrence);
+    }
+    void persist() {
+        if (scope_server.empty() || scope_library.empty()) return;
+        const auto settings = connection_settings();
+        if (scope_server != settings.server_identifier || scope_library != settings.library_identifier) return;
+        auto preferences = settings.library_preferences;
+        const auto encode = [&](const Navigation& navigation) {
+            auto query = navigation.query; query.library_identifier = scope_library;
+            // Beschriftungen sind UTF-8, unabhängig vom aktiven Skin und Sprachpaket.
+            const auto caption = navigation.caption;
+            const auto size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, caption.data(), static_cast<int>(caption.size()), nullptr, 0, nullptr, nullptr);
+            std::string title(static_cast<std::size_t>(size), '\0');
+            if (size) WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, caption.data(), static_cast<int>(caption.size()), title.data(), size, nullptr, nullptr);
+            return LibraryNavigation{query, title, navigation.offsets, navigation.selected, navigation.focused, navigation.top};
+        };
+        LibraryBookmark bookmark{scope_server, scope_library, root, encode(current), {}};
+        for (const auto& navigation : history) bookmark.history.push_back(encode(navigation));
+        auto& bookmarks = preferences.bookmarks;
+        const auto found = std::find_if(bookmarks.begin(), bookmarks.end(), [&](const auto& value) { return value.server == scope_server && value.library == scope_library && value.root == root; });
+        if (found != bookmarks.end()) *found = std::move(bookmark);
+        else { if (bookmarks.size() == 32) bookmarks.erase(bookmarks.begin()); bookmarks.push_back(std::move(bookmark)); }
+        update_library_preferences(std::move(preferences));
+    }
+    void persist_safely() noexcept {
+        try { persist(); preference_error_notified = false; }
+        catch (...) {
+            if (!preference_error_notified) MessageBoxW(GetParent(dialog), text(L"Plex-Ansichtsposition konnte nicht gespeichert werden.", L"Could not save the Plex view position."), L"Plex", MB_OK | MB_ICONERROR);
+            preference_error_notified = true;
+        }
+    }
+    void restore_position() {
+        struct RestoreGuard { bool& active; explicit RestoreGuard(bool& value) : active(value) { active = true; } ~RestoreGuard() { active = false; } } guard(restoring_position);
+        const auto list = GetDlgItem(dialog, IDC_CATALOG);
+        ListView_SetItemState(list, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+        int top = 0;
+        for (std::size_t index = 0; index < rows.size(); ++index) {
+            const auto id = row_identity(index);
+            const auto selected = std::find(current.selected.begin(), current.selected.end(), id) != current.selected.end();
+            ListView_SetItemState(list, static_cast<int>(index), (selected ? LVIS_SELECTED : 0) | (id == current.focused ? LVIS_FOCUSED : 0), LVIS_SELECTED | LVIS_FOCUSED);
+            if (id == current.top) top = static_cast<int>(index);
+        }
+        if (!rows.empty()) {
+            ListView_EnsureVisible(list, 0, FALSE);
+            RECT item{};
+            if (ListView_GetItemRect(list, 0, &item, LVIR_BOUNDS)) ListView_Scroll(list, 0, top * (item.bottom - item.top));
+        }
     }
 
     void prepare_artwork() {
@@ -330,7 +516,8 @@ struct View : RetiredView {
                     result.libraries_loaded = true;
                 }
                 const PlexCatalog client(job.settings, stop);
-                if (job.action == Action::browse) {
+                if (job.action == Action::filters) result.filters = client.filters(job.query);
+                else if (job.action == Action::browse) {
                     const auto key = std::to_string(job.cache_scope) + "|" + job.settings.server_identifier + "|" + catalog_path(job.query);
                     const auto cached = job.settings.cache_enabled ? cache.get(key) : std::nullopt;
                     result.page = cached ? *cached : client.page(job.query);
@@ -430,6 +617,7 @@ struct View : RetiredView {
         EnableWindow(GetDlgItem(dialog, IDC_NEXT), !busy && page.more);
         EnableWindow(GetDlgItem(dialog, IDC_BACK), !history.empty());
         EnableWindow(list, !busy);
+        EnableWindow(GetDlgItem(dialog, IDC_FILTERS), !busy);
         layout(dialog);
     }
     void submit(Job job) {
@@ -449,7 +637,7 @@ struct View : RetiredView {
         SetDlgItemTextW(dialog, IDC_STATUS, text(L"Wird geladen...", L"Loading..."));
         wake.notify_one();
     }
-    void load() { submit(Job{}); }
+    void load(bool preserve = false) { if (preserve) capture(); submit(Job{}); }
     void columns() {
         const auto list = GetDlgItem(dialog, IDC_CATALOG);
         while (ListView_DeleteColumn(list, 0)) {}
@@ -471,8 +659,11 @@ struct View : RetiredView {
         for (const auto& label : {std::pair{IDC_LOGIN, text(L"Einstellungen...", L"Settings...")}, {IDC_BACK, text(L"Zurück", L"Back")},
              {IDC_SEARCH_LABEL, text(L"Suche", L"Search")}, {IDC_REFRESH, text(L"Aktualisieren", L"Refresh")}, {IDC_CLEAR_CACHE, text(L"Cache leeren", L"Clear cache")},
              {IDC_LIBRARY_LABEL, text(L"Musikbibliothek", L"Music library")},
+             {IDC_FILTERS, text(L"Filter / Ansichten...", L"Filters / views...")},
              {IDC_PREVIOUS, text(L"Vorherige Seite", L"Previous page")}, {IDC_NEXT, text(L"Nächste Seite", L"Next page")}})
             SetDlgItemTextW(dialog, label.first, label.second);
+        const auto filter_count = static_cast<unsigned>(!current.query.genre.empty()) + static_cast<unsigned>(!current.query.year.empty()) + static_cast<unsigned>(!current.query.audio_codec.empty());
+        if (filter_count) SetDlgItemTextW(dialog, IDC_FILTERS, (std::wstring(text(L"Filter (", L"Filters (")) + std::to_wstring(filter_count) + L")...").c_str());
         columns();
     }
     void count_status() {
@@ -521,13 +712,29 @@ struct View : RetiredView {
                 if (libraries[index].identifier == selected) SendDlgItemMessageW(dialog, IDC_LIBRARY, CB_SETCURSEL, index, 0);
             }
         }
-        if (result->action == Action::browse) {
+        if (result->action == Action::filters) {
+            capture();
+            auto query = current.query; query.library_identifier = scope_library;
+            FilterPanel panel{query, std::move(result->filters), scope_server, scope_library, connection_settings().library_preferences.searches, {}};
+            if (show_library_panel(dialog, IDD_PLEX_FILTERS, filters_dialog, reinterpret_cast<LPARAM>(&panel), text(L"Plex-Filter und Ansichten", L"Plex filters and views"))) {
+                if (current.query.parent_identifier != panel.query.parent_identifier || current.query.kind != panel.query.kind) {
+                    if (history.size() == 16) history.erase(history.begin());
+                    history.push_back(current);
+                }
+                const auto caption = current.caption;
+                current = Navigation{}; current.query = panel.query;
+                current.query.offset = 0; current.offsets = {0}; current.caption = kind_title(current.query.kind);
+                if (!current.query.parent_identifier.empty()) current.caption = caption;
+                suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, wide(current.query.search).c_str()); suppress_search = false;
+                localize(); load();
+            } else count_status();
+        } else if (result->action == Action::browse) {
             ListView_SetItemCount(GetDlgItem(dialog, IDC_CATALOG), 0);
             page = std::move(result->page); rows.clear(); rows.reserve(page.items.size());
             for (const auto& item : page.items) rows.push_back(make_row(item));
             prepare_artwork();
             ListView_SetItemCount(GetDlgItem(dialog, IDC_CATALOG), static_cast<int>(rows.size()));
-            if (!rows.empty()) ListView_EnsureVisible(GetDlgItem(dialog, IDC_CATALOG), 0, FALSE);
+            restore_position();
             count_status();
             visible_artwork();
         } else if (result->action == Action::rate) {
@@ -571,7 +778,9 @@ struct View : RetiredView {
         if (busy) return;
         const auto selected = selection(); if (selected.empty()) return;
         if (std::holds_alternative<PlexTrack>(selected.front())) { play(true); return; }
-        history.push_back(current);
+        capture(); history.push_back(current);
+        current.selected.clear(); current.focused.clear(); current.top.clear();
+        current.query.genre.clear(); current.query.year.clear(); current.query.audio_codec.clear();
         current.query.parent_identifier = item_identifier(selected.front()); current.query.playlist_items = std::holds_alternative<PlexPlaylist>(selected.front());
         current.query.kind = std::holds_alternative<PlexArtist>(selected.front()) ? BrowseKind::albums : BrowseKind::tracks;
         current.query.sort = current.query.kind == BrowseKind::tracks ? "albumOrder" : "titleSort";
@@ -593,7 +802,7 @@ void layout(HWND dialog) {
     const auto horizontal = [&](int value) { return value * units.right / 4; };
     const auto vertical = [&](int value) { return value * units.bottom / 8; };
     const int width = area.right, height = area.bottom, padding = horizontal(6);
-    const bool narrow = width < horizontal(350);
+    const bool narrow = width < horizontal(460);
     auto place = [&](int control, int left, int top, int control_width, int control_height) {
         MoveWindow(GetDlgItem(dialog, control), left, top, (std::max)(1, control_width), (std::max)(1, control_height), TRUE);
     };
@@ -613,10 +822,24 @@ void layout(HWND dialog) {
     const int search_label_left = back_visible ? horizontal(60) : padding;
     const int search_left = search_label_left + horizontal(30);
     place(IDC_SEARCH_LABEL, search_label_left, search_y + vertical(2), horizontal(28), vertical(12));
-    place(IDC_SEARCH, search_left, search_y, width - search_left - horizontal(narrow ? 6 : 175), vertical(15));
+    place(IDC_SEARCH, search_left, search_y, width - search_left - horizontal(narrow ? 6 : 283), vertical(15));
     const int refresh_y = narrow ? search_y + vertical(20) : search_y;
-    place(IDC_REFRESH, width - horizontal(169), refresh_y, horizontal(78), vertical(15));
-    place(IDC_CLEAR_CACHE, width - horizontal(85), refresh_y, horizontal(79), vertical(15));
+    if (narrow) {
+        const int gap = horizontal(5), button = (width - 2 * padding - 2 * gap) / 3;
+        place(IDC_FILTERS, padding, refresh_y, button, vertical(15));
+        place(IDC_REFRESH, padding + button + gap, refresh_y, button, vertical(15));
+        place(IDC_CLEAR_CACHE, padding + 2 * (button + gap), refresh_y, button, vertical(15));
+    } else {
+        place(IDC_REFRESH, width - horizontal(169), refresh_y, horizontal(78), vertical(15));
+        place(IDC_CLEAR_CACHE, width - horizontal(85), refresh_y, horizontal(79), vertical(15));
+        place(IDC_FILTERS, width - horizontal(277), refresh_y, horizontal(102), vertical(15));
+    }
+    if (const auto* view = reinterpret_cast<const View*>(GetWindowLongPtrW(dialog, GWLP_USERDATA))) {
+        const auto count = static_cast<unsigned>(!view->current.query.genre.empty()) + static_cast<unsigned>(!view->current.query.year.empty()) + static_cast<unsigned>(!view->current.query.audio_codec.empty());
+        const auto caption = count ? std::wstring(text(L"Filter (", L"Filters (")) + std::to_wstring(count) + L")..." :
+            std::wstring(narrow ? text(L"Filter...", L"Filters...") : text(L"Filter / Ansichten...", L"Filters / views..."));
+        SetDlgItemTextW(dialog, IDC_FILTERS, caption.c_str());
+    }
     const int bottom = height - vertical(narrow ? 42 : 22), list_y = refresh_y + vertical(21);
     place(IDC_CATALOG, padding, list_y, width - 2 * padding, bottom - list_y - vertical(7));
     place(IDC_STATUS, padding, bottom + vertical(3), narrow ? width - 2 * padding : width - horizontal(204), vertical(14));
@@ -653,6 +876,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             SendDlgItemMessageW(dialog, IDC_LIBRARY, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
             SendDlgItemMessageW(dialog, IDC_LIBRARY, CB_SETCURSEL, 0, 0);
         }
+        view->suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, wide(view->current.query.search).c_str()); view->suppress_search = false;
         view->localize(); skin_view(dialog); layout(dialog); view->controls(); view->load(); return TRUE;
     }
     if (!view) return FALSE;
@@ -668,12 +892,13 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         return TRUE;
     }
     if (message == WM_TIMER && parameter == 2) {
-        KillTimer(dialog, 2); view->current.query.search = input(dialog, IDC_SEARCH); view->current.query.offset = 0; view->current.offsets = {0}; view->load(); return TRUE;
+        KillTimer(dialog, 2); view->current.query.search = input(dialog, IDC_SEARCH); view->current.query.offset = 0; view->current.offsets = {0}; view->current.selected.clear(); view->current.focused.clear(); view->current.top.clear(); view->load(); return TRUE;
     }
     if (message == WM_COMMAND) {
         const auto control = LOWORD(parameter);
         if (control == IDC_SEARCH && HIWORD(parameter) == EN_CHANGE && !view->suppress_search) { SetTimer(dialog, 2, 350, nullptr); return TRUE; }
         if (control == IDC_BACK) { view->back(); return TRUE; }
+        if (control == IDC_FILTERS) { if (!view->busy) { Job job; job.action = Action::filters; view->submit(std::move(job)); } return TRUE; }
         if (control == IDC_OPEN) { view->open(); return TRUE; }
         if (control == IDC_PLAY) { view->play(true); return TRUE; }
         if (control == IDC_ENQUEUE) { view->play(false); return TRUE; }
@@ -685,7 +910,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             Job job; job.action = Action::rate; job.selected = std::move(selected); job.rating = 2.0 * (control - IDC_RATE_NONE);
             view->submit(std::move(job)); return TRUE;
         }
-        if (control == IDC_REFRESH || control == IDC_CLEAR_CACHE) { clear_cache(); view->libraries.clear(); view->load(); return TRUE; }
+        if (control == IDC_REFRESH || control == IDC_CLEAR_CACHE) { clear_cache(); view->libraries.clear(); view->load(true); return TRUE; }
         if (control == IDC_NEXT && !view->busy && view->page.more) {
             view->current.query.offset += view->page.items.size(); view->current.offsets.push_back(view->current.query.offset); view->load(); return TRUE;
         }
@@ -698,6 +923,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             const auto next = connection_settings();
             clear_cache(); view->libraries.clear();
             if (previous.server_origin != next.server_origin || previous.library_identifier != next.library_identifier) {
+                view->scope_server = next.server_identifier; view->scope_library = next.library_identifier;
                 view->history.clear(); view->current = Navigation{};
                 view->current.query.kind = view->root; view->current.caption = kind_title(view->root);
                 view->suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, L""); view->suppress_search = false;
@@ -709,6 +935,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             if (index >= 0 && static_cast<std::size_t>(index) < view->libraries.size()) {
                 auto settings = connection_settings(); const auto& library = view->libraries[static_cast<std::size_t>(index)];
                 settings.library_identifier = library.identifier; settings.library_title = library.title; update_connection_settings(std::move(settings));
+                view->scope_server = connection_settings().server_identifier; view->scope_library = library.identifier;
                 view->history.clear(); view->current = Navigation{}; view->current.query.kind = view->root; view->current.caption = kind_title(view->root);
                 view->suppress_search = true; SetDlgItemTextW(dialog, IDC_SEARCH, L""); view->suppress_search = false;
                 view->localize(); view->load();
@@ -734,7 +961,7 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
             const auto* hint = reinterpret_cast<NMLVCACHEHINT*>(detail);
             view->request_artwork(hint->iFrom, hint->iTo); return TRUE;
         }
-        if (notification->code == LVN_ITEMCHANGED) { view->controls(); return TRUE; }
+        if (notification->code == LVN_ITEMCHANGED) { if (!view->restoring_position) view->controls(); return TRUE; }
         if (notification->code == NM_DBLCLK) { view->open(); return TRUE; }
         if (notification->code == LVN_KEYDOWN) {
             const auto key = reinterpret_cast<NMLVKEYDOWN*>(detail)->wVKey;
@@ -791,6 +1018,8 @@ INT_PTR library_view_message(HWND dialog, UINT message, WPARAM parameter, LPARAM
         DestroyMenu(menu); if (command) PostMessageW(dialog, WM_COMMAND, command, 0); return TRUE;
     }
     if (message == WM_DESTROY) {
+        view->capture();
+        view->persist_safely();
         const auto library = descriptor().hwndLibraryParent;
         const auto list = GetDlgItem(dialog, IDC_CATALOG);
         // Tooltip und Kopfzeile werden von gen_ml zusammen mit der Tabelle angebunden.

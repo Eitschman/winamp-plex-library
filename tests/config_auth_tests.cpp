@@ -67,6 +67,20 @@ int main() {
         check(encrypted.find(settings.server_token) == encrypted.npos && encrypted.find(settings.server_origin) == encrypted.npos, "no_plaintext_credentials");
         check(encrypted.find("synthetic-other-token") == encrypted.npos && encrypted.find(settings.preferred_origin) == encrypted.npos, "no_plaintext_profile_credentials");
         stored.close();
+        plex::BrowseQuery saved_query; saved_query.library_identifier = settings.library_identifier; saved_query.kind = plex::BrowseKind::tracks;
+        saved_query.search = "Björk & Orchestra"; saved_query.genre = "12"; saved_query.audio_codec = "flac";
+        settings.library_preferences.searches.push_back({settings.server_identifier, settings.library_identifier, "Meine Musik", saved_query});
+        saved_query.offset = 250;
+        settings.library_preferences.bookmarks.push_back({settings.server_identifier, settings.library_identifier, plex::BrowseKind::tracks,
+            {saved_query, "Tracks", {0, 250}, {"123", "124"}, "124", "120"}, {}});
+        plex::save_settings(path, settings);
+        const auto preferences = plex::load_settings(path).library_preferences;
+        check(preferences.searches.size() == 1 && preferences.searches.front().query.search == "Björk & Orchestra" && preferences.searches.front().query.audio_codec == "flac", "saved_search_unicode_filters_roundtrip");
+        check(preferences.bookmarks.front().current.selected.size() == 2 && preferences.bookmarks.front().current.top == "120" && preferences.bookmarks.front().current.query.offset == 250, "stable_selection_scroll_page_roundtrip");
+        auto invalid_view = settings; invalid_view.library_preferences.bookmarks.front().current.offsets = {0};
+        rejects([&] { plex::save_settings(path, invalid_view); }, "inconsistent_saved_page_rejected");
+        invalid_view = settings; invalid_view.library_preferences.searches.front().query.sort = "title&injected=1";
+        rejects([&] { plex::save_settings(path, invalid_view); }, "saved_query_injection_rejected");
         settings.library_title = "Replacement library";
         plex::save_settings(path, settings);
         check(plex::load_settings(path).library_title == settings.library_title, "atomic_config_replacement");

@@ -10,7 +10,8 @@
     [switch]$SharedPrepared,
     [switch]$Radio,
     [string]$ProductDll = '',
-    [switch]$SkipNegative
+    [switch]$SkipNegative,
+    [switch]$Prefetch
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
@@ -362,6 +363,32 @@ try {
             if (!$fields.title -or !$fields.artist) { throw 'Ausgangsmetadaten fehlen.' }
             $expectedMetadata += $fields
         }
+        if ($Prefetch) {
+            $testProcess = Get-PlexTestProcess
+            $outer = @([PlexNative]::Windows($testProcess.Id) | Where-Object { @([PlexNative]::Children($_.Handle) | Where-Object Class -eq SysTreeView32).Count -gt 0 })
+            if ($outer.Count -ne 1) { throw 'Native prefetch library view missing.' }
+            $list = ([PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1050).Handle
+            $view = [PlexNative]::GetParent($list)
+            [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]252)
+            [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]253)
+            [void][PlexNative]::Query($main,1024,[IntPtr]0,[IntPtr]121)
+            [void][PlexNative]::Query($main,273,[IntPtr]40045,[IntPtr]0)
+            $deadline = [DateTime]::UtcNow.AddSeconds(40)
+            do {
+                $cached = [PlexNative]::QueryInt32($view,32813,[IntPtr]4,[IntPtr]0)
+                if ($cached -gt 0) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $deadline)
+            if ($cached -le 0) { throw 'Native next-track prefetch did not complete.' }
+            [void][PlexNative]::Query($main,273,[IntPtr]40048,[IntPtr]0)
+            Wait-Index $main 1 $true
+            if ([PlexNative]::QueryInt32($view,32813,[IntPtr]5,[IntPtr]0) -le 0) { throw 'Winamp did not consume the prefetched next track.' }
+            if ([PlexNative]::QueryInt32($main,1024,[IntPtr]10000,[IntPtr]106) -ne 0) { throw 'Cached native track seek failed.' }
+            Start-Sleep -Milliseconds 500
+            if ([PlexNative]::QueryInt32($main,1024,[IntPtr]0,[IntPtr]105) -lt 10000) { throw 'Cached track seek did not advance.' }
+            [void][PlexNative]::Query($main,273,[IntPtr]40047,[IntPtr]0)
+            Write-Output 'native_next_track_prefetch_consumed_and_seeked=1'
+        }
         if ($SharedPrepared) {
             if ($FirstFormat -notin @('flac','ogg','aac') -or !(Test-Path -LiteralPath $originalNames[0] -PathType Leaf)) { throw 'Vorbereitete Probe für Bindungsgegenprobe fehlt.' }
             $registry = Join-Path $isolatedProfile 'playlist-references.dpapi'
@@ -460,9 +487,19 @@ try {
                 }
             }
         }
-        $list = [PlexNative]::Children(([PlexNative]::Windows((Get-PlexTestProcess).Id) | Where-Object {
-            @([PlexNative]::Children($_.Handle) | Where-Object ControlId -eq 1050).Count -gt 0
-        }).Handle) | Where-Object ControlId -eq 1050
+        $catalogProcess = Get-PlexTestProcess
+        $library = @([PlexNative]::Windows($catalogProcess.Id) | Where-Object { @([PlexNative]::Children($_.Handle) | Where-Object Class -eq SysTreeView32).Count -gt 0 })
+        if ($library.Count -ne 1) { throw 'Library required for restored playback diagnostics.' }
+        $tree = ([PlexNative]::Children($library[0].Handle) | Where-Object Class -eq SysTreeView32).Handle
+        $root = [PlexNative]::Query($tree,4362,[IntPtr]0,[IntPtr]0)
+        [void][PlexNative]::Query($tree,4363,[IntPtr]9,$root)
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            $list = [PlexNative]::Children($library[0].Handle) | Where-Object ControlId -eq 1050
+            if ($list) { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if (!$list) { throw 'Restored playback diagnostic view unavailable.' }
         $view = [PlexNative]::GetParent($list.Handle)
         if ([PlexNative]::QueryInt32($view,32812,[IntPtr]3,[IntPtr]::Zero) -lt 1) { throw 'Wiederhergestellte Coverbindungen fehlen.' }
         $deadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -526,11 +563,20 @@ try {
     if ((Probe-State $main 3) -ne 10) { throw 'Enter im Playlist-Editor fehlt.' }
     Write-Output 'playlist_editor_enter=playing; rewritten_total=10'
     [void][PlexNative]::Query($main,1024,[IntPtr]1,[IntPtr]252)
+    # Am Ende einer zufälligen Reihenfolge darf Winamp regulär stoppen.
+    # Wiederholen isoliert hier deshalb den Wechsel von diesem Endzustand.
+    [void][PlexNative]::Query($main,1024,[IntPtr]1,[IntPtr]253)
     [void][PlexNative]::Query($main,273,[IntPtr]40048,[IntPtr]::Zero)
-    Start-Sleep -Seconds 2
-    if ([PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]104) -ne 1 -or
-        [PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]105) -lt 1000) { throw 'Zufallswiedergabe nach Wiederherstellung fehlt.' }
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $playing = [PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]104)
+        $position = [PlexNative]::QueryInt32($main,1024,[IntPtr]::Zero,[IntPtr]105)
+        if ($playing -eq 1 -and $position -ge 1000) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if ($playing -ne 1 -or $position -lt 1000) { throw 'Zufallswiedergabe nach Wiederherstellung fehlt.' }
     [void][PlexNative]::Query($main,1024,[IntPtr]::Zero,[IntPtr]252)
+    [void][PlexNative]::Query($main,1024,[IntPtr]::Zero,[IntPtr]253)
     Write-Output 'shuffle_next_after_restore=playing'
     $sentinel = Join-Path $project '.local\audio-fixtures\silence.mp3'
     if (!(Test-Path -LiteralPath $sentinel -PathType Leaf)) { throw 'Lokale Stille als fremder Playlist-Eintrag fehlt.' }

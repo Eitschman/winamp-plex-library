@@ -91,6 +91,9 @@ std::wstring diagnostics_information(DWORD connection_code) {
         localized(L"\r\nAn Winamp gesendet: ", L"\r\nSent to Winamp: ") + mib(status.bytes_sent) +
         localized(L"\r\nLaufende Streaming-Downloads: ", L"\r\nActive streaming downloads: ") + std::to_wstring(status.active_downloads) +
         localized(L"\r\nReservierter Medienspeicher: ", L"\r\nReserved media storage: ") + mib(status.reserved_media_bytes) + L" / 2048 MiB" +
+        localized(L"\r\nVorrat für nächste Titel: ", L"\r\nNext-track cache: ") + mib(status.prefetched_bytes) + L" / 64 MiB" +
+        localized(L"\r\nVorladen aktiv / Treffer / Fehlercode: ", L"\r\nPrefetch active / hits / error code: ") +
+        std::to_wstring(status.prefetch_active) + L" / " + std::to_wstring(status.prefetch_hits) + L" / " + std::to_wstring(status.prefetch_error) +
         localized(L"\r\n\r\nÜbertragungsfehler: ", L"\r\n\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +
         localized(L"\r\nLetzter Fehler (HTTP / Windows): ", L"\r\nLast failure (HTTP / Windows): ") +
         std::to_wstring(status.last_failure.upstream_status) + L" / " + std::to_wstring(status.last_failure.transport_error) +
@@ -544,6 +547,10 @@ INT_PTR CALLBACK settings_frame(HWND dialog, UINT message, WPARAM parameter, LPA
 bool show_settings(HWND parent) noexcept {
     if (IsWindow(active_settings)) { SetForegroundWindow(active_settings); return false; }
     SettingsPanel panel{IDD_PLEX_LOGIN, login_dialog, localized(L"Plex-Einstellungen", L"Plex settings"), 0, true};
+    return DialogBoxParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_SETTINGS_FRAME), parent, settings_frame, reinterpret_cast<LPARAM>(&panel)) == IDOK;
+}
+bool show_library_panel(HWND parent, int resource, DLGPROC procedure, LPARAM context, const wchar_t* caption) {
+    SettingsPanel panel{resource, procedure, caption, context};
     return DialogBoxParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_SETTINGS_FRAME), parent, settings_frame, reinterpret_cast<LPARAM>(&panel)) == IDOK;
 }
 }

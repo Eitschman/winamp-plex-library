@@ -32,6 +32,9 @@ struct ProxyStatus {
     unsigned long long bytes_received = 0;
     unsigned long long active_downloads = 0;
     unsigned long long reserved_media_bytes = 0;
+    unsigned long long prefetched_bytes = 0, prefetch_hits = 0;
+    unsigned long prefetch_error = 0;
+    bool prefetch_active = false;
 };
 
 enum class ProxyClientPolicy { capability_only, host_session };
@@ -48,6 +51,8 @@ public:
     const std::string& url() const;
     std::string add(PlaybackSource source);
     void revoke(const std::string& url);
+    // Nur eigene Grants werden vorgeladen; fremde Playlist-Einträge bleiben unberührt.
+    void prefetch(const std::string& current_url, const std::string& next_url);
     ProxyStatus status() const;
 private:
     struct State;

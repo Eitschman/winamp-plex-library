@@ -101,6 +101,7 @@ std::vector<PlexMediaPart> direct_parts(const PlexTrack& track) {
 }
 
 std::string catalog_path(const BrowseQuery& query) {
+    if (query.kind != BrowseKind::artists && query.kind != BrowseKind::albums && query.kind != BrowseKind::tracks && query.kind != BrowseKind::playlists) throw std::invalid_argument("catalog_kind");
     if (!query.limit || query.limit > 500 || query.offset > 10000000 || query.search.size() > 1024)
         throw std::invalid_argument("catalog_query");
     if (query.sort != "titleSort" && query.sort != "year" && query.sort != "duration" && query.sort != "index" &&
@@ -117,6 +118,11 @@ std::string catalog_path(const BrowseQuery& query) {
         path = "/library/sections/" + library + "/all"; parameters.push_back("type=" + std::to_string(type));
     }
     if (!query.search.empty()) parameters.push_back("title=" + encode_query_component(query.search));
+    if (query.kind == BrowseKind::playlists && (!query.genre.empty() || !query.year.empty() || !query.audio_codec.empty())) throw std::invalid_argument("playlist_filters");
+    for (const auto& filter : {std::pair{"genre", query.genre}, {query.kind == BrowseKind::tracks ? "album.year" : "year", query.year}, {"audioCodec", query.audio_codec}}) {
+        if (filter.second.size() > 256 || filter.second.find('\0') != filter.second.npos) throw std::invalid_argument("catalog_filter");
+        if (!filter.second.empty()) parameters.push_back(std::string(filter.first) + "=" + encode_query_component(filter.second));
+    }
     // Album-Kinder liefert Plex bereits in Disc-/Titelreihenfolge. Ein zusätzlicher
     // parentIndex-Sortierschlüssel wird nicht von allen Musikbibliotheken akzeptiert.
     if (!query.playlist_items && query.sort != "albumOrder")
@@ -172,6 +178,35 @@ PlexPlaylist PlexCatalog::playlist(const std::string& playlist_identifier) const
 CatalogPage PlexCatalog::page(const BrowseQuery& query) const {
     const PlexAuth client(settings_.client_identifier, stop_);
     return parse_catalog_page(client.get_server(settings_.server_origin, settings_.server_token, catalog_path(query)), query.offset);
+}
+std::vector<FilterChoice> parse_filter_choices(const nlohmann::json& document) {
+    const auto& container = document.at("MediaContainer");
+    std::vector<FilterChoice> result;
+    if (!container.contains("Directory")) {
+        if (container.value("size", 0) != 0) throw std::invalid_argument("filter_choices");
+        return result;
+    }
+    const auto& choices = container.at("Directory");
+    if (!choices.is_array() || choices.size() > 5000) throw std::invalid_argument("filter_limit");
+    for (const auto& choice : choices) {
+        auto key = field(choice, "key"), title = field(choice, "title");
+        if (key.empty() || key.size() > 256 || title.empty()) throw std::invalid_argument("filter_choice");
+        result.push_back({std::move(key), std::move(title)});
+    }
+    return result;
+}
+CatalogFilters PlexCatalog::filters(const BrowseQuery& query) const {
+    if (query.kind == BrowseKind::playlists) return {};
+    const PlexAuth client(settings_.client_identifier, stop_);
+    const auto base = "/library/sections/" + identifier(query.library_identifier) + "/";
+    const auto type = query.kind == BrowseKind::artists ? "8" : query.kind == BrowseKind::albums ? "9" : "10";
+    const auto load = [&](const char* field_name) {
+        return parse_filter_choices(client.get_server(settings_.server_origin, settings_.server_token, base + field_name + "?type=" + type));
+    };
+    CatalogFilters result; result.genres = load("genre");
+    if (query.kind != BrowseKind::artists) result.years = parse_filter_choices(client.get_server(settings_.server_origin, settings_.server_token, base + "year?type=9"));
+    if (query.kind == BrowseKind::tracks) result.audio_codecs = load("audioCodec");
+    return result;
 }
 std::vector<PlexTrack> PlexCatalog::tracks(const BrowseQuery& input) const {
     auto query = input;

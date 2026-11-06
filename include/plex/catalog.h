@@ -1,11 +1,11 @@
 #pragma once
 #include "plex/auth.h"
 #include "plex/settings.h"
+#include "plex/browse_query.h"
 #include <optional>
 #include <variant>
 
 namespace plex {
-enum class BrowseKind { artists, albums, tracks, playlists };
 struct PlexMediaPart {
     std::string key, container, audio_codec;
     long long duration_ms = 0;
@@ -35,12 +35,9 @@ struct CatalogPage {
     std::optional<std::size_t> total;
     bool more = false;
 };
-struct BrowseQuery {
-    BrowseKind kind = BrowseKind::artists;
-    std::string library_identifier, parent_identifier, search, sort = "titleSort";
-    bool playlist_items = false, descending = false;
-    std::size_t offset = 0, limit = 250;
-};
+struct FilterChoice { std::string key, title; };
+struct CatalogFilters { std::vector<FilterChoice> genres, years, audio_codecs; };
+std::vector<FilterChoice> parse_filter_choices(const nlohmann::json& document);
 std::string catalog_path(const BrowseQuery& query);
 CatalogPage parse_catalog_page(const nlohmann::json& document, std::size_t requested_offset);
 PlexPlaylist parse_playlist_details(const nlohmann::json& document, const std::string& expected_identifier);
@@ -53,6 +50,7 @@ class PlexCatalog {
 public:
     PlexCatalog(PlexConnectionSettings settings, HANDLE stop);
     CatalogPage page(const BrowseQuery& query) const;
+    CatalogFilters filters(const BrowseQuery& query) const;
     PlexPlaylist playlist(const std::string& identifier) const;
     std::vector<PlexTrack> tracks(const BrowseQuery& query) const;
 private:

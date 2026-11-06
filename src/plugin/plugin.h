@@ -34,6 +34,8 @@ unsigned long long connection_revision() noexcept;
 bool connection_verified() noexcept;
 bool accept_verified_connection(unsigned long long revision, const std::string& origin);
 void update_connection_settings(PlexConnectionSettings settings);
+void update_library_preferences(LibraryPreferences preferences);
+bool show_library_panel(HWND parent, int resource, DLGPROC procedure, LPARAM context, const wchar_t* caption);
 void clear_library_cache();
 void skin_library_dialog(HWND dialog);
 }

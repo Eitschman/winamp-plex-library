@@ -19,7 +19,8 @@ int main(int count, char** arguments) {
     const bool sorts = count == 2 && std::string(arguments[1]) == "--sorts";
     const bool resources = count == 3 && std::string(arguments[1]) == "--resources";
     const bool library_cache = count == 2 && std::string(arguments[1]) == "--library-cache";
-    if (count != 1 && !inventory && !sorts && !resources && !library_cache) return 2;
+    const bool filters = count == 2 && std::string(arguments[1]) == "--filters";
+    if (count != 1 && !inventory && !sorts && !resources && !library_cache && !filters) return 2;
     unsigned cycles = 0;
     if (resources) {
         const std::string value(arguments[2]);
@@ -31,6 +32,50 @@ int main(int count, char** arguments) {
     try {
         const auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexCatalog client(settings, stop);
+        if (filters) {
+            for (const auto kind : {plex::BrowseKind::artists, plex::BrowseKind::albums, plex::BrowseKind::tracks}) {
+                plex::BrowseQuery query; query.kind = kind; query.library_identifier = settings.library_identifier;
+                stage = 80;
+                const auto choices = client.filters(query);
+                std::cout << "filter_kind=" << static_cast<int>(kind) << " genres=" << choices.genres.size() << " years=" << choices.years.size() << " codecs=" << choices.audio_codecs.size() << std::endl;
+                for (unsigned field = 0; field < 3; ++field) {
+                    const auto& values = field == 0 ? choices.genres : field == 1 ? choices.years : choices.audio_codecs;
+                    if (values.empty()) continue;
+                    auto filtered = query;
+                    (field == 0 ? filtered.genre : field == 1 ? filtered.year : filtered.audio_codec) = values.front().key;
+                    const auto page = client.page(filtered);
+                    std::cout << "filter_field=" << field << " items=" << page.items.size() << " total=" << page.total.value_or(0) << std::endl;
+                    if (page.items.empty()) throw std::runtime_error("live_filter_empty");
+                    if (field == 1) for (const auto& item : page.items) std::visit([&](const auto& value) {
+                        using Type = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<Type, plex::PlexAlbum>)
+                            if (value.year != std::stoul(values.front().key)) throw std::runtime_error("live_year_filter_ignored");
+                    }, item);
+                    if (field == 1 && kind == plex::BrowseKind::tracks) {
+                        const plex::PlexAuth auth(settings.client_identifier, stop);
+                        std::set<std::string> albums;
+                        for (const auto& item : page.items) albums.insert(std::get<plex::PlexTrack>(item).album_identifier);
+                        for (const auto& album : albums) {
+                            const auto metadata = plex::parse_catalog_page(auth.get_server(settings.server_origin, settings.server_token, "/library/metadata/" + album), 0);
+                            if (metadata.items.size() != 1 || std::get<plex::PlexAlbum>(metadata.items.front()).year != std::stoul(values.front().key)) throw std::runtime_error("live_album_year_filter_ignored");
+                        }
+                    }
+                    if (field == 2) for (const auto& item : page.items) {
+                        const auto& track = std::get<plex::PlexTrack>(item);
+                        if (std::none_of(track.parts.begin(), track.parts.end(), [&](const auto& part) { return part.audio_codec == values.front().key; })) throw std::runtime_error("live_codec_filter_ignored");
+                    }
+                }
+            }
+            plex::BrowseQuery child; child.kind = plex::BrowseKind::tracks; child.library_identifier = settings.library_identifier; child.limit = 1;
+            const auto first = client.page(child);
+            if (!first.items.empty()) {
+                child.parent_identifier = std::get<plex::PlexTrack>(first.items.front()).album_identifier; child.sort = "albumOrder";
+                child.audio_codec = "synthetic-nonexistent-codec";
+                if (!client.page(child).items.empty()) throw std::runtime_error("live_child_codec_filter_ignored");
+                std::cout << "child_filters_verified=1" << std::endl;
+            }
+            CloseHandle(stop); return 0;
+        }
         if (resources) {
             stage = 60;
             // Derselbe Transport und WIC wie im Plugin, getrennt vom Winamp-Host.

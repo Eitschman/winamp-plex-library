@@ -1,6 +1,7 @@
 #include "plex/settings.h"
 #include "plex/auth.h"
 #include "plex/security.h"
+#include "plex/catalog.h"
 #include <windows.h>
 #include <wincrypt.h>
 #include <shlobj.h>
@@ -9,8 +10,85 @@
 #include <stdexcept>
 #include <vector>
 #include <array>
+#include <algorithm>
 
 namespace plex {
+namespace {
+using Json = nlohmann::json;
+Json query_json(const BrowseQuery& query) {
+    catalog_path(query);
+    return {{"kind", static_cast<int>(query.kind)}, {"library", query.library_identifier}, {"parent", query.parent_identifier},
+        {"search", query.search}, {"sort", query.sort}, {"playlist", query.playlist_items}, {"descending", query.descending},
+        {"offset", query.offset}, {"limit", query.limit}, {"genre", query.genre}, {"year", query.year}, {"codec", query.audio_codec}};
+}
+BrowseQuery read_query(const Json& value) {
+    const auto kind = value.at("kind").get<int>();
+    if (kind < 0 || kind > 3) throw std::invalid_argument("view_kind");
+    BrowseQuery query; query.kind = static_cast<BrowseKind>(kind);
+    query.library_identifier = value.at("library"); query.parent_identifier = value.at("parent");
+    query.search = value.at("search"); query.sort = value.at("sort");
+    query.playlist_items = value.at("playlist"); query.descending = value.at("descending");
+    query.offset = value.at("offset"); query.limit = value.at("limit");
+    query.genre = value.at("genre"); query.year = value.at("year"); query.audio_codec = value.at("codec");
+    catalog_path(query); return query;
+}
+void validate_navigation(const LibraryNavigation& navigation) {
+    if (navigation.caption.size() > 16384 || navigation.offsets.empty() || navigation.offsets.size() > 40001 || navigation.selected.size() > 500 ||
+        navigation.offsets.front() != 0 || navigation.offsets.back() != navigation.query.offset ||
+        !std::is_sorted(navigation.offsets.begin(), navigation.offsets.end())) throw std::invalid_argument("view_navigation");
+    for (const auto offset : navigation.offsets) if (offset > 10000000) throw std::invalid_argument("view_offset");
+    const auto valid_id = [](const std::string& id) {
+        const auto separator = id.find(':');
+        const auto key = id.substr(0, separator);
+        if (key.size() > 32 || key.find_first_not_of("0123456789") != key.npos) return false;
+        if (separator == id.npos) return true;
+        const auto occurrence = id.substr(separator + 1);
+        return !key.empty() && !occurrence.empty() && occurrence.size() <= 3 && occurrence.find_first_not_of("0123456789") == occurrence.npos;
+    };
+    for (const auto& id : navigation.selected) if (!valid_id(id)) throw std::invalid_argument("view_selection");
+    if (!valid_id(navigation.top) || !valid_id(navigation.focused)) throw std::invalid_argument("view_position");
+}
+Json navigation_json(const LibraryNavigation& navigation) {
+    validate_navigation(navigation);
+    return {{"query", query_json(navigation.query)}, {"caption", navigation.caption}, {"offsets", navigation.offsets},
+        {"selected", navigation.selected}, {"focused", navigation.focused}, {"top", navigation.top}};
+}
+LibraryNavigation read_navigation(const Json& value) {
+    LibraryNavigation result; result.query = read_query(value.at("query")); result.caption = value.at("caption");
+    result.offsets = value.at("offsets").get<std::vector<std::size_t>>(); result.selected = value.at("selected").get<std::vector<std::string>>();
+    result.focused = value.at("focused"); result.top = value.at("top"); validate_navigation(result); return result;
+}
+Json preferences_json(const LibraryPreferences& preferences) {
+    if (preferences.bookmarks.size() > 32 || preferences.searches.size() > 64) throw std::invalid_argument("views_limit");
+    Json bookmarks = Json::array(), searches = Json::array();
+    for (const auto& bookmark : preferences.bookmarks) {
+        if (bookmark.history.size() > 16 || bookmark.server.size() > 256 || bookmark.library.size() > 32) throw std::invalid_argument("view_scope");
+        Json history = Json::array();
+        for (const auto& navigation : bookmark.history) history.push_back(navigation_json(navigation));
+        bookmarks.push_back({{"server", bookmark.server}, {"library", bookmark.library}, {"root", static_cast<int>(bookmark.root)},
+            {"current", navigation_json(bookmark.current)}, {"history", history}});
+    }
+    for (const auto& search : preferences.searches) {
+        if (search.name.empty() || search.name.size() > 256 || search.server.size() > 256 || search.library.size() > 32) throw std::invalid_argument("view_name");
+        searches.push_back({{"server", search.server}, {"library", search.library}, {"name", search.name}, {"query", query_json(search.query)}});
+    }
+    return {{"bookmarks", bookmarks}, {"searches", searches}};
+}
+LibraryPreferences read_preferences(const Json& value) {
+    LibraryPreferences result;
+    if (!value.at("bookmarks").is_array() || value.at("bookmarks").size() > 32 || !value.at("searches").is_array() || value.at("searches").size() > 64) throw std::invalid_argument("views_limit");
+    for (const auto& item : value.at("bookmarks")) {
+        LibraryBookmark bookmark; bookmark.server = item.at("server"); bookmark.library = item.at("library");
+        const auto root = item.at("root").get<int>(); if (root < 0 || root > 3) throw std::invalid_argument("view_kind");
+        bookmark.root = static_cast<BrowseKind>(root); bookmark.current = read_navigation(item.at("current"));
+        if (!item.at("history").is_array() || item.at("history").size() > 16) throw std::invalid_argument("view_history");
+        for (const auto& navigation : item.at("history")) bookmark.history.push_back(read_navigation(navigation));
+        result.bookmarks.push_back(std::move(bookmark));
+    }
+    for (const auto& item : value.at("searches")) result.searches.push_back({item.at("server"), item.at("library"), item.at("name"), read_query(item.at("query"))});
+    preferences_json(result); return result;
+}
+}
 std::string create_client_identifier() {
     GUID identifier{};
     if (FAILED(CoCreateGuid(&identifier))) throw std::runtime_error("client_identifier");
@@ -57,6 +135,7 @@ PlexConnectionSettings load_settings(const std::filesystem::path& path) {
             document.at("server_name"), document.at("server_token"), document.at("library_identifier"), document.at("library_title")};
         validate_token(result.client_identifier);
         result.cache_enabled = document.value("cache_enabled", true);
+        if (document.contains("library_preferences")) result.library_preferences = read_preferences(document.at("library_preferences"));
         result.preferred_origin = document.value("preferred_origin", std::string{});
         if (!result.preferred_origin.empty()) parse_server_address(result.preferred_origin);
         if (document.contains("server_connections")) {
@@ -89,7 +168,8 @@ void save_settings(const std::filesystem::path& path, const PlexConnectionSettin
     nlohmann::json document{{"client_identifier", settings.client_identifier}, {"server_identifier", settings.server_identifier},
         {"server_origin", settings.server_origin}, {"server_name", settings.server_name}, {"server_token", settings.server_token},
         {"library_identifier", settings.library_identifier}, {"library_title", settings.library_title},
-        {"cache_enabled", settings.cache_enabled}, {"preferred_origin", settings.preferred_origin}};
+        {"cache_enabled", settings.cache_enabled}, {"preferred_origin", settings.preferred_origin},
+        {"library_preferences", preferences_json(settings.library_preferences)}};
     if (settings.server_connections.size() > 32) throw std::invalid_argument("connections_limit");
     document["server_connections"] = nlohmann::json::array();
     for (const auto& connection : settings.server_connections) {

@@ -89,6 +89,13 @@ int main() {
         check(path.find("Bj%C3%B6rk%20%26%20AC%2FDC") != path.npos, "query_encoding");
         check(path.find("X-Plex-Container-Start=0&X-Plex-Container-Size=250") != path.npos, "pagination_query");
         query.kind = plex::BrowseKind::tracks; query.sort = "originalTitle";
+        query.genre = "12&token=not-a-token"; query.year = "2001"; query.audio_codec = "flac";
+        const auto filtered = plex::catalog_path(query);
+        check(filtered.find("genre=12%26token%3Dnot-a-token") != filtered.npos && filtered.find("&album.year=2001&") != filtered.npos && filtered.find("audioCodec=flac") != filtered.npos, "filters_encoded_and_combined_before_pagination");
+        query.genre.clear(); query.year.clear(); query.audio_codec.clear();
+        const auto choices = plex::parse_filter_choices({{"MediaContainer", {{"size", 1}, {"Directory", nlohmann::json::array({{{"key", "42"}, {"title", "Rock & Metal"}}})}}}});
+        check(choices.size() == 1 && choices.front().key == "42" && choices.front().title == "Rock & Metal", "filter_choices_parse_server_values");
+        rejects([&] { plex::parse_filter_choices({{"MediaContainer", {{"size", 1}}}}); }, "missing_filter_choices_is_error");
         check(plex::catalog_path(query).find("sort=originalTitle%3Aasc") != std::string::npos, "track_artist_sort_query");
         query.descending = true;
         check(plex::catalog_path(query).find("sort=originalTitle%3Adesc") != std::string::npos, "track_artist_descending_query");

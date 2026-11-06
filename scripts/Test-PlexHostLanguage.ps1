@@ -1,4 +1,4 @@
-﻿param([switch]$CheckPlaylistMenu, [switch]$SettingsOnly)
+﻿param([switch]$CheckPlaylistMenu, [switch]$SettingsOnly, [switch]$BrowseFeatures)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -66,6 +66,9 @@ function Check-Views([string]$Name) {
     try {
         [void][PlexNative]::ShowWindow($main.Handle,9)
         & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName $Name -TestDiagnostics
+        if ($BrowseFeatures) {
+            & (Join-Path $PSScriptRoot 'Test-PlexBrowseFeatures.ps1') -KeepRunning -ScreenshotName ($Name + '-browse')
+        }
         if (-not $SettingsOnly) {
             & (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName $Name
         }
