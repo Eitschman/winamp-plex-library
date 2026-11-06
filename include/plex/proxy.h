@@ -6,6 +6,7 @@
 #include <chrono>
 
 namespace plex {
+class LocalMediaStore;
 struct PlaybackSource {
     ServerAddress server;
     std::string token;
@@ -28,6 +29,9 @@ struct ProxyStatus {
     const char* local_rejection = nullptr;
     ProxyFailure last_failure;
     unsigned long long local_disconnects = 0;
+    unsigned long long bytes_received = 0;
+    unsigned long long active_downloads = 0;
+    unsigned long long reserved_media_bytes = 0;
 };
 
 enum class ProxyClientPolicy { capability_only, host_session };
@@ -36,7 +40,8 @@ enum class ProxyClientPolicy { capability_only, host_session };
 class PlaybackProxy {
 public:
     explicit PlaybackProxy(PlaybackSource source, std::chrono::milliseconds lifetime = std::chrono::hours(2),
-                           ProxyClientPolicy policy = ProxyClientPolicy::capability_only);
+                           ProxyClientPolicy policy = ProxyClientPolicy::capability_only,
+                           std::shared_ptr<LocalMediaStore> media_store = {});
     ~PlaybackProxy();
     PlaybackProxy(const PlaybackProxy&) = delete;
     PlaybackProxy& operator=(const PlaybackProxy&) = delete;

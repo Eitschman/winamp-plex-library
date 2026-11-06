@@ -7,6 +7,7 @@
 #include "plex/artwork.h"
 #include "plex/http_stream.h"
 #include "plex/local_media.h"
+#include "plex/stream_buffer.h"
 #include <fstream>
 #include <aclapi.h>
 #include <objbase.h>
@@ -98,6 +99,12 @@ struct Fixture {
         }
         if (request.find("/library/parts/997/") != request.npos) {
             send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\npartial");
+            slow_started.store(true);
+            while (!stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            return;
+        }
+        if (request.find("/library/parts/989/") != request.npos) {
+            send_text(client, "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n" + media.substr(0, 65536));
             slow_started.store(true);
             while (!stop.load()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             return;
@@ -223,6 +230,11 @@ void slow_decoder_checks() {
     {
         LocalSocket client{connect_decoder()};
         std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+        const auto buffered = proxy->status();
+        check(buffered.bytes_received == origin.media.size() && buffered.bytes_sent < origin.media.size(),
+              "complete_upstream_is_buffered_while_decoder_does_not_read");
+        check(buffered.active_downloads == 0 && buffered.reserved_media_bytes == origin.media.size(),
+              "completed_download_releases_network_but_retains_bounded_media_buffer");
         const int buffer = 256 * 1024;
         setsockopt(client.value, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&buffer), sizeof(buffer));
         std::string response;
@@ -234,6 +246,12 @@ void slow_decoder_checks() {
         }
         const auto header = response.find("\r\n\r\n");
         check(header != response.npos && response.substr(header + 4) == origin.media, "decoder_backpressure_does_not_truncate_media");
+    }
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (proxy->status().reserved_media_bytes && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        check(proxy->status().reserved_media_bytes == 0, "completed_decoder_request_releases_buffer_reservation");
     }
     {
         const auto hits = origin.hits.load();
@@ -268,6 +286,131 @@ void slow_decoder_checks() {
         finished.set_value(); watchdog.join();
         check(elapsed < std::chrono::milliseconds(1500), "backpressured_decoder_does_not_block_shutdown");
     }
+}
+
+// Eine geschlossene Decoderverbindung muss einen noch laufenden Plex-Abruf
+// abbrechen, bevor dessen Empfangsfrist abläuft. Plugin-Ende prüft denselben Fall.
+void buffer_disconnect_checks() {
+    for (const bool decoder_close : {true, false}) {
+        Fixture origin;
+        const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(origin.port));
+        auto proxy = std::make_unique<plex::PlaybackProxy>(plex::PlaybackSource{server, "synthetic-test-token", "/library/parts/989/file.mp3"});
+        const auto url = proxy->url();
+        const auto path = url.find('/', 7);
+        const auto port = std::stoi(url.substr(url.find(':', 7) + 1, path - url.find(':', 7) - 1));
+        LocalSocket client{socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)};
+        check(client.value != INVALID_SOCKET, "buffer_cancel_client_socket");
+        DWORD timeout = 3000;
+        setsockopt(client.value, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(static_cast<u_short>(port));
+        check(connect(client.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0, "buffer_cancel_client_connect");
+        send_text(client.value, "GET " + url.substr(path) + " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(port) + "\r\n\r\n");
+        char marker = 0;
+        check(recv(client.value, &marker, 1, 0) == 1 && marker == 'H', "buffer_cancel_response_started");
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while ((!proxy->status().active_downloads || proxy->status().bytes_received != 65536) && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        check(origin.slow_started.load() && proxy->status().active_downloads == 1 && proxy->status().bytes_received == 65536,
+              "buffer_cancel_upstream_is_stalled_with_partial_data");
+        const auto started = std::chrono::steady_clock::now();
+        if (decoder_close) {
+            shutdown(client.value, SD_BOTH); closesocket(client.value); client.value = INVALID_SOCKET;
+            while (proxy->status().reserved_media_bytes && std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1500))
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            const auto status = proxy->status();
+            check(status.active_downloads == 0 && status.reserved_media_bytes == 0 && status.local_disconnects == 1 && status.last_failure.count == 0,
+                  "decoder_disconnect_cancels_download_and_releases_buffer_without_source_error");
+        } else {
+            proxy.reset();
+            check(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1500),
+                  "plugin_shutdown_cancels_download_while_buffer_waits_for_startup_bytes");
+        }
+    }
+}
+
+// Kleine Dateibudgets provozieren dieselben Grenzfälle ohne große Testdateien.
+void stream_buffer_checks() {
+    const auto root = std::filesystem::temp_directory_path() / (L"WinampPlexBufferTests-" + std::to_wstring(GetCurrentProcessId()));
+    check(!std::filesystem::exists(root), "stream_buffer_test_directory_is_new");
+    {
+        plex::LocalMediaStore store(root, {16, 24});
+        auto file = store.buffer(16);
+        check(store.bytes_used() == 16, "buffer_reserves_known_length_before_transfer");
+        file->append("abcdefgh", 8);
+        std::array<char, 32> bytes{};
+        check(file->read(2, bytes.data(), 4) == 4 && std::string(bytes.data(), 4) == "cdef", "buffer_reads_exact_published_offsets");
+        bool rejected = false;
+        try { file->read(9, bytes.data(), 1); } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_INVALID_DATA; }
+        check(rejected, "buffer_rejects_unwritten_offsets");
+        rejected = false;
+        try { file->append("012345678", 9); } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_FILE_TOO_LARGE; }
+        check(rejected && store.bytes_used() == 16, "buffer_cannot_exceed_per_file_reservation");
+        rejected = false;
+        try { store.buffer(9); } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_DISK_FULL; }
+        check(rejected && store.bytes_used() == 16, "concurrent_buffers_share_total_quota");
+        rejected = false;
+        try { store.buffer(17); } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_FILE_TOO_LARGE; }
+        check(rejected, "oversized_buffer_rejected_before_download");
+        auto second = store.buffer();
+        second->append("12345678", 8);
+        rejected = false;
+        try { second->append("9", 1); } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_DISK_FULL; }
+        check(rejected && store.bytes_used() == 24, "unknown_length_buffer_grows_only_within_shared_quota");
+        const auto directory = store.directory();
+        PSECURITY_DESCRIPTOR descriptor = nullptr; PACL acl = nullptr;
+        check(GetNamedSecurityInfoW(const_cast<wchar_t*>(directory.c_str()), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+              nullptr, nullptr, &acl, nullptr, &descriptor) == ERROR_SUCCESS, "buffer_private_acl_readable");
+        SECURITY_DESCRIPTOR_CONTROL control = 0; DWORD revision = 0;
+        const bool private_acl = GetSecurityDescriptorControl(descriptor, &control, &revision) && (control & SE_DACL_PROTECTED) && acl && acl->AceCount == 2;
+        LocalFree(descriptor);
+        check(private_acl, "buffer_directory_is_private_to_user_and_system");
+        file.reset(); second.reset();
+        check(store.bytes_used() == 0, "released_buffers_return_all_reserved_bytes");
+        unsigned files = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) if (entry.path().extension() == L".buffer") ++files;
+        check(files == 0, "released_buffers_delete_partial_files");
+        HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        check(stop != nullptr, "buffer_stop_event");
+        {
+            plex::StreamBuffer body(stop);
+            body.start(store.buffer(8), [](plex::StreamBuffer& destination) {
+                destination.append("abcdefgh", 8);
+                throw plex::HttpError(ERROR_CONNECTION_ABORTED);
+            });
+            std::string result;
+            rejected = false;
+            try {
+                for (;;) {
+                    const auto count = body.read(bytes.data(), static_cast<DWORD>(bytes.size()));
+                    if (!count) continue;
+                    if (!*count) break;
+                    result.append(bytes.data(), *count);
+                }
+            } catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_CONNECTION_ABORTED; }
+            check(rejected && result == "abcdefgh", "buffered_bytes_drain_before_explicit_terminal_error");
+        }
+        check(store.bytes_used() == 0, "failed_producer_releases_file_and_budget");
+        const auto started = std::chrono::steady_clock::now();
+        {
+            plex::StreamBuffer body(stop);
+            body.start(store.buffer(8), [](plex::StreamBuffer& destination) { WaitForSingleObject(destination.cancellation(), INFINITE); });
+        }
+        check(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1500), "buffer_destructor_cancels_and_joins_producer");
+        {
+            plex::StreamBuffer body(stop);
+            body.start(store.buffer(8), [stop](plex::StreamBuffer& destination) {
+                HANDLE events[] = {stop, destination.cancellation()}; WaitForMultipleObjects(2, events, FALSE, INFINITE);
+            });
+            SetEvent(stop); rejected = false;
+            try { body.read(bytes.data(), static_cast<DWORD>(bytes.size())); }
+            catch (const plex::HttpError& failure) { rejected = failure.code == ERROR_CANCELLED; }
+            check(rejected, "buffer_wait_is_cancelled_without_upstream_bytes");
+        }
+        CloseHandle(stop);
+    }
+    check(std::filesystem::is_empty(root), "buffer_session_files_removed_on_store_destruction");
+    check(std::filesystem::remove(root), "buffer_test_directory_removed");
 }
 struct Response { DWORD status = 0; std::string body; std::wstring raw_headers; };
 
@@ -333,6 +476,8 @@ int main(int count, char** arguments) {
             Apartment() { check(SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)), "artwork_com"); }
             ~Apartment() { CoUninitialize(); }
         } apartment;
+        stream_buffer_checks();
+        buffer_disconnect_checks();
         slow_decoder_checks();
         Fixture fixture;
         const auto server = plex::parse_server_address("http://127.0.0.1:" + std::to_string(fixture.port));
@@ -424,6 +569,10 @@ int main(int count, char** arguments) {
             plex::LocalMediaStore quota(root, {100000, 100000});
             auto retained = quota.stage({server, "synthetic-test-token", "/library/parts/1/file.ogg"}, stop);
             limited = false;
+            try { quota.buffer(1); }
+            catch (const plex::HttpError& error) { limited = error.code == ERROR_DISK_FULL; }
+            check(limited && quota.bytes_used() == fixture.media.size(), "prepared_media_and_stream_buffers_share_quota");
+            limited = false;
             try { quota.stage({server, "synthetic-test-token", "/library/parts/2/file.ogg"}, stop); }
             catch (const plex::HttpError& error) { limited = error.code == ERROR_DISK_FULL; }
             check(limited && std::filesystem::exists(retained->path()), "local_media_quota_and_active_session_preserved");
@@ -434,6 +583,7 @@ int main(int count, char** arguments) {
                 constexpr char marker[] = "WinampPlexLocalMedia1\r\n";
                 owner.write(marker, sizeof(marker));
                 std::ofstream media(abandoned / (std::wstring(48, L'a') + L".flac")); media << "partial";
+                std::ofstream buffer(abandoned / (std::wstring(48, L'b') + L".buffer")); buffer << "partial";
             }
             const auto foreign = root / (L"session-" + std::wstring(48, L'd'));
             std::filesystem::create_directory(foreign);

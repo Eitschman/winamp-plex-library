@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include <stdexcept>
+#include <algorithm>
 
 namespace plex {
 namespace {
@@ -40,7 +41,7 @@ bool hex_name(std::wstring_view name) {
     return true;
 }
 bool owned_file(std::wstring_view name) {
-    return name.size() > 48 && hex_name(name.substr(0, 48)) && (name.substr(48) == L".flac" || name.substr(48) == L".ogg" || name.substr(48) == L".aac" || name.substr(48) == L".m4a");
+    return name.size() > 48 && hex_name(name.substr(0, 48)) && (name.substr(48) == L".flac" || name.substr(48) == L".ogg" || name.substr(48) == L".aac" || name.substr(48) == L".m4a" || name.substr(48) == L".buffer");
 }
 
 // Nur der aktuelle Windows-Benutzer und SYSTEM erhalten Zugriff, auch wenn der
@@ -156,6 +157,69 @@ LocalMediaFile::~LocalMediaFile() {
         try { state_->deferred.emplace_back(std::move(path_), size_); }
         catch (...) { state_->cleanup_pending = true; }
     }
+}
+
+LocalMediaBuffer::LocalMediaBuffer(std::shared_ptr<LocalMediaState> state, std::filesystem::path path,
+                                 HANDLE file, unsigned long long reserved, unsigned long long limit)
+    : state_(std::move(state)), path_(std::move(path)), file_(file), reserved_(reserved), limit_(limit) {}
+LocalMediaBuffer::~LocalMediaBuffer() {
+    CloseHandle(file_);
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    if (DeleteFileW(path_.c_str()) || GetLastError() == ERROR_FILE_NOT_FOUND) state_->used -= reserved_;
+    else {
+        try { state_->deferred.emplace_back(std::move(path_), reserved_); }
+        catch (...) { state_->cleanup_pending = true; }
+    }
+}
+void LocalMediaBuffer::append(const char* data, unsigned long size) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (size > limit_ - written_) throw HttpError(ERROR_FILE_TOO_LARGE);
+    if (written_ + size > reserved_) {
+        std::lock_guard<std::mutex> budget(state_->mutex);
+        const auto extra = written_ + size - reserved_;
+        if (extra > state_->limits.total_bytes - state_->used) throw HttpError(ERROR_DISK_FULL);
+        state_->used += extra; reserved_ += extra;
+    }
+    LARGE_INTEGER position{}; position.QuadPart = static_cast<LONGLONG>(written_);
+    if (!SetFilePointerEx(file_, position, nullptr, FILE_BEGIN)) throw HttpError(GetLastError());
+    DWORD actual = 0;
+    if (!WriteFile(file_, data, size, &actual, nullptr) || actual != size) throw HttpError(ERROR_WRITE_FAULT);
+    written_ += actual;
+}
+unsigned long LocalMediaBuffer::read(unsigned long long offset, char* data, unsigned long capacity) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (offset > written_) throw HttpError(ERROR_INVALID_DATA);
+    const auto count = static_cast<DWORD>((std::min)(written_ - offset, static_cast<unsigned long long>(capacity)));
+    if (!count) return 0;
+    LARGE_INTEGER position{}; position.QuadPart = static_cast<LONGLONG>(offset);
+    if (!SetFilePointerEx(file_, position, nullptr, FILE_BEGIN)) throw HttpError(GetLastError());
+    DWORD actual = 0;
+    if (!ReadFile(file_, data, count, &actual, nullptr) || actual != count) throw HttpError(ERROR_READ_FAULT);
+    return actual;
+}
+
+std::shared_ptr<LocalMediaBuffer> LocalMediaStore::buffer(unsigned long long expected_bytes) {
+    std::unique_lock<std::mutex> lock(state_->mutex);
+    if (expected_bytes > state_->limits.file_bytes) throw HttpError(ERROR_FILE_TOO_LARGE);
+    state_->ensure_directory(); state_->reclaim();
+    if (expected_bytes > state_->limits.total_bytes - state_->used) throw HttpError(ERROR_DISK_FULL);
+    const auto path = state_->session / (random_name() + L".buffer");
+    Handle file{CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW,
+                            FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_RANDOM_ACCESS, nullptr)};
+    if (file.value == INVALID_HANDLE_VALUE) throw HttpError(GetLastError());
+    // Erst nach erfolgreicher Ressourcenübernahme wird das gemeinsame Budget belastet.
+    LocalMediaBuffer* result = nullptr;
+    try { result = new LocalMediaBuffer(state_, path, file.value, expected_bytes, expected_bytes ? expected_bytes : state_->limits.file_bytes); }
+    catch (...) {
+        CloseHandle(file.release());
+        if (!DeleteFileW(path.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) state_->cleanup_pending = true;
+        throw;
+    }
+    file.release(); state_->used += expected_bytes;
+    // Der shared_ptr kann selbst bei Speichermangel den Destruktor aufrufen.
+    // Dessen Budgetfreigabe darf nicht unter dem bereits gehaltenen Mutex erfolgen.
+    lock.unlock();
+    return std::shared_ptr<LocalMediaBuffer>(result);
 }
 bool requires_local_media(const std::string& path) {
     const auto extension = media_extension(path);

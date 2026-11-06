@@ -18,7 +18,7 @@ struct HttpError : std::exception {
 class HttpStream {
 public:
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-               bool head, const std::string& range, HANDLE stop);
+               bool head, const std::string& range, HANDLE stop, HANDLE request_stop = nullptr);
     // API-Pfade stammen aus dem Client; der Aufruf bleibt an die konfigurierte Origin gebunden.
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                HttpMethod method, const std::string& client_identifier, HANDLE stop,
@@ -32,7 +32,7 @@ public:
 private:
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop,
-               const wchar_t* accept, bool media = false);
+               const wchar_t* accept, bool media = false, HANDLE request_stop = nullptr);
     struct State;
     std::unique_ptr<State> state_;
 };

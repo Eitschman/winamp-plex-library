@@ -21,6 +21,7 @@ struct HttpStream::State {
     HANDLE closed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE unloaded = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE stop = nullptr;
+    HANDLE request_stop = nullptr;
     std::atomic<DWORD> error{0};
     std::atomic<DWORD> bytes{0};
     bool context_installed = false;
@@ -50,15 +51,17 @@ struct HttpStream::State {
 
     void prepare() {
         if (WaitForSingleObject(stop, 0) == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
+        if (request_stop && WaitForSingleObject(request_stop, 0) == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
         ResetEvent(completed); error.store(0); bytes.store(0);
     }
 
     void wait(BOOL started) {
         if (!started && GetLastError() != ERROR_IO_PENDING) throw HttpError(GetLastError());
-        HANDLE events[] = {stop, completed};
-        const auto outcome = WaitForMultipleObjects(2, events, FALSE, operation_timeout);
-        if (outcome == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
-        if (outcome != WAIT_OBJECT_0 + 1) throw HttpError(outcome == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError());
+        HANDLE events[] = {stop, request_stop ? request_stop : completed, completed};
+        const auto count = request_stop ? 3UL : 2UL;
+        const auto outcome = WaitForMultipleObjects(count, events, FALSE, operation_timeout);
+        if (outcome >= WAIT_OBJECT_0 && outcome < WAIT_OBJECT_0 + count - 1) throw HttpError(ERROR_CANCELLED);
+        if (outcome != WAIT_OBJECT_0 + count - 1) throw HttpError(outcome == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError());
         if (error.load()) throw HttpError(error.load());
     }
 
@@ -81,8 +84,8 @@ struct HttpStream::State {
 };
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       bool head, const std::string& range, HANDLE stop)
-    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*", true) {}
+                       bool head, const std::string& range, HANDLE stop, HANDLE request_stop)
+    : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*", true, request_stop) {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                        HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation)
@@ -90,7 +93,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
                  representation == HttpRepresentation::image ? L"image/*" : L"application/json") {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept, bool media)
+                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept, bool media, HANDLE request_stop)
     : state_(std::make_unique<State>()) {
     if (!token.empty()) validate_token(token);
     validate_token(client_identifier);
@@ -99,6 +102,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     if (!range.empty()) validate_range(range);
     auto& state = *state_;
     state.stop = stop;
+    state.request_stop = request_stop;
     if (!state.completed || !state.closed || !state.unloaded || !stop) throw HttpError(ERROR_NOT_ENOUGH_MEMORY);
     state.session = WinHttpOpen(L"Winamp Plex Library/0.1", WINHTTP_ACCESS_TYPE_NO_PROXY,
                                 WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC);

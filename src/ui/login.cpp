@@ -409,7 +409,7 @@ INT_PTR CALLBACK login_dialog(HWND dialog, UINT message, WPARAM parameter, LPARA
                     localized(L"\r\nÜbertragungsfehler: ", L"\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +
                     localized(L"\r\nLetzter Fehler (HTTP / Windows): ", L"\r\nLast failure (HTTP / Windows): ") +
                     std::to_wstring(status.last_failure.upstream_status) + L" / " + std::to_wstring(status.last_failure.transport_error) +
-                    localized(L"\r\nGesendete / erwartete Bytes: ", L"\r\nSent / expected bytes: ") +
+                    localized(L"\r\nEmpfangene / erwartete Bytes: ", L"\r\nReceived / expected bytes: ") +
                     std::to_wstring(status.last_failure.transferred_bytes) + L" / " + std::to_wstring(status.last_failure.expected_bytes) +
                     localized(L"\r\nLokale Verbindungsenden: ", L"\r\nLocal disconnects: ") + std::to_wstring(status.local_disconnects);
                 SettingsPanel panel{IDD_PLEX_DIAGNOSTICS, diagnostics_dialog, localized(L"Plex-Diagnose", L"Plex diagnostics"), reinterpret_cast<LPARAM>(information.c_str())};
