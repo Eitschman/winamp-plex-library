@@ -1,10 +1,12 @@
 #include <windows.h>
+#include <imm.h>
 #include <gen_ml/ml.h>
 #include <gen_ml/ml_ipc_0313.h>
 #include <Winamp/wa_ipc.h>
 #include <gen_tray/WINAMPCMD.H>
 #include "wasabi_mock.h"
 #include "winamp_playlist_checks.h"
+#include "resource_snapshot.h"
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
@@ -25,7 +27,15 @@ bool deny_language = false;
 bool diagnostics_requested = false, diagnostics_checked = false, diagnostics_valid = false;
 int foreign_playlist_length = 0;
 unsigned foreign_play_commands = 0;
+unsigned inspection_interval = 25;
+ULONGLONG hold_settings_until = 0;
+bool diagnostic_controls = false;
 BOOL CALLBACK inspect_settings(HWND dialog, LPARAM) {
+    // Nur der synthetische Host hält Dialoge für externe Ressourcen-Gegenproben offen.
+    if (GetTickCount64() < hold_settings_until) {
+        SetWindowPos(dialog, nullptr, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
+        return TRUE;
+    }
     const auto frame = dialog;
     dialog = GetDlgItem(dialog, 1081);
     if (const auto diagnostic = GetDlgItem(dialog, 1084)) {
@@ -71,6 +81,12 @@ VOID CALLBACK inspect_settings_timer(HWND, UINT, UINT_PTR, DWORD) {
     EnumThreadWindows(GetCurrentThreadId(), inspect_settings, 0);
 }
 LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operation) {
+    // Privates Testprotokoll, keine Winamp-IPC: 1 hält höchstens acht Sekunden,
+    // 2 gibt den Dialog für den normalen Testablauf wieder frei.
+    if (diagnostic_controls && message == WM_APP + 117 && (parameter == 1 || parameter == 2)) {
+        hold_settings_until = parameter == 1 ? GetTickCount64() + 8000 : 0;
+        return 117;
+    }
     if (message == WM_WA_IPC && operation == IPC_GETLISTLENGTH) return foreign_playlist_length;
     if (message == WM_WA_IPC && operation == IPC_GETPLAYLISTFILEW && foreign_playlist_length)
         return reinterpret_cast<LRESULT>(L"C:\\synthetic\\foreign.mp3");
@@ -111,8 +127,26 @@ void check(bool value, const char* name) { if (!value) throw std::runtime_error(
 }
 
 int wmain(int count, wchar_t** arguments) {
-    if (count != 2) return 2;
+    const bool diagnose_no_ime = count == 3 && wcscmp(arguments[2], L"--diagnose-handles-without-ime") == 0;
+    const bool diagnose_single = count == 3 && wcscmp(arguments[2], L"--diagnose-handles-single-core") == 0;
+    const bool diagnose_slow = diagnose_no_ime || (count == 3 && wcscmp(arguments[2], L"--diagnose-handles-slow-after-warmup") == 0);
+    const bool diagnose_late = count == 3 && wcscmp(arguments[2], L"--diagnose-handles-fast-after-warmup") == 0;
+    const bool diagnose_fast = count == 3 && wcscmp(arguments[2], L"--diagnose-handles-fast") == 0;
+    const bool diagnose = diagnose_slow || diagnose_single || diagnose_late || diagnose_fast || (count == 3 && wcscmp(arguments[2], L"--diagnose-handles") == 0);
+    const bool stress = diagnose_fast || (count == 3 && wcscmp(arguments[2], L"--stress-lifecycle") == 0);
+    if (count != 2 && !diagnose && !stress) return 2;
+    if (stress) inspection_interval = 1;
+    diagnostic_controls = diagnose;
     try {
+        // Gegenprobe nur auf dem eigenen synthetischen UI-Thread. Das Plugin
+        // und die Eingabemethode anderer Anwendungen werden nicht verändert.
+        if (diagnose_no_ime) check(ImmDisableIME(GetCurrentThreadId()) != FALSE, "disable_test_thread_ime");
+        if (diagnose_single) {
+            DWORD_PTR available = 0, system = 0;
+            check(GetProcessAffinityMask(GetCurrentProcess(), &available, &system) != FALSE && available != 0, "read_test_affinity");
+            check(SetProcessAffinityMask(GetCurrentProcess(), available & (~available + 1)) != FALSE, "single_core_test_affinity");
+        }
+        if (diagnose) resource_checks::verify();
         playlist_checks::verify();
         const auto configuration = std::filesystem::temp_directory_path() / (L"PlexHostTest-" + std::to_wstring(GetCurrentProcessId()));
         check(!std::filesystem::exists(configuration), "isolated_configuration_path");
@@ -133,6 +167,11 @@ int wmain(int count, wchar_t** arguments) {
         const auto baseline = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
         const auto gdi_baseline = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
         DWORD warm_gdi = 0, warm_process_handles = 0;
+        DWORD maximum_process_handles = 0;
+        ULONGLONG measured_at = 0;
+        resource_checks::Handles warm_handles;
+        resource_checks::HeapBaseline heap;
+        bool handle_growth = false;
         for (int iteration = 0; iteration < 100; ++iteration) {
             german_host = iteration % 2 == 0;
             const auto library = LoadLibraryW(arguments[1]);
@@ -172,7 +211,7 @@ int wmain(int count, wchar_t** arguments) {
             if (iteration == 0) {
                 for (settings_case = 0; settings_case < 3; ++settings_case) {
                     settings_valid = false;
-                    const auto timer = SetTimer(window, 1, 25, inspect_settings_timer);
+                    const auto timer = SetTimer(window, 1, inspection_interval, inspect_settings_timer);
                     check(timer != 0, "settings_inspection_timer");
                     plugin->MessageProc(ML_MSG_CONFIG, reinterpret_cast<INT_PTR>(window), 0, 0);
                     KillTimer(window, timer);
@@ -184,7 +223,7 @@ int wmain(int count, wchar_t** arguments) {
                 settings_case = 3;
                 diagnostics_requested = diagnostics_checked = diagnostics_valid = false;
                 settings_valid = false;
-                const auto timer = SetTimer(window, 1, 25, inspect_settings_timer);
+                const auto timer = SetTimer(window, 1, inspection_interval, inspect_settings_timer);
                 check(timer != 0, "repeat_settings_timer");
                 plugin->MessageProc(ML_MSG_CONFIG, reinterpret_cast<INT_PTR>(window), 0, 0);
                 KillTimer(window, timer);
@@ -201,14 +240,73 @@ int wmain(int count, wchar_t** arguments) {
             else check(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == warm_gdi, "no_gdi_growth_across_settings_cycles");
             DWORD process_handles = 0;
             check(GetProcessHandleCount(GetCurrentProcess(), &process_handles) != FALSE, "process_handle_measurement");
-            if (iteration == 0) warm_process_handles = process_handles;
+            if (iteration == 0) {
+                warm_process_handles = process_handles;
+                if (diagnose) {
+                    warm_handles = resource_checks::snapshot(); resource_checks::counters("after_first_unload");
+                    check(GetProcessHandleCount(GetCurrentProcess(), &warm_process_handles) != FALSE, "warm_process_handles");
+                }
+                std::cerr << "Process handles baseline=" << warm_process_handles << '\n';
+                maximum_process_handles = warm_process_handles;
+                measured_at = GetTickCount64();
+                if (diagnose) { resource_checks::modules("warmup"); heap.capture(); }
+                if (diagnose_late) inspection_interval = 1;
+                if (diagnose_slow) inspection_interval = 250;
+            }
             else {
-                if (process_handles > warm_process_handles)
-                    std::cerr << "Process handles after cycle " << iteration + 1 << ": " << process_handles << ", baseline=" << warm_process_handles << '\n';
-                check(process_handles <= warm_process_handles, "no_process_handle_growth_across_lifecycle_cycles");
+                if (process_handles > warm_process_handles) {
+                    std::cerr << "Process handles after cycle " << iteration + 1 << ": " << process_handles << ", baseline=" << warm_process_handles
+                              << ", elapsed_ms=" << GetTickCount64() - measured_at << '\n';
+                    if (diagnose && process_handles > maximum_process_handles) {
+                        resource_checks::modules("new_peak");
+                        resource_checks::describe(warm_handles, "new_peak");
+                        resource_checks::counters("at_new_peak");
+                        maximum_process_handles = process_handles;
+                    }
+                    if (!diagnose) {
+                        resource_checks::describe({}, "strict_failure");
+                        resource_checks::counters("immediately_after_failure");
+                        Sleep(100);
+                        resource_checks::counters("failure_after_100_ms_idle");
+                        Sleep(900);
+                        resource_checks::describe({}, "failure_after_1_second_idle");
+                        resource_checks::counters("failure_after_1_second_idle");
+                        resource_checks::pump(1000);
+                        resource_checks::describe({}, "failure_after_1_second_pumped");
+                        resource_checks::counters("failure_after_1_second_pumped");
+                    }
+                    handle_growth = true;
+                }
+                if (!diagnose) check(process_handles <= warm_process_handles, "no_process_handle_growth_across_lifecycle_cycles");
             }
             if (iteration == 0 || iteration == 49 || iteration == 99)
                 std::cerr << "GDI objects after cycle " << iteration + 1 << ": " << GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) << ", baseline=" << gdi_baseline << '\n';
+            if (diagnose && iteration % 25 == 24) {
+                resource_checks::counters("after_25_more_unloads");
+                heap.describe("after_25_more_unloads");
+            }
+        }
+        if (diagnose) {
+            resource_checks::describe(warm_handles, "after_100_unloads");
+            resource_checks::counters("after_100_unloads");
+            Sleep(100);
+            resource_checks::counters("after_100_ms_idle");
+            Sleep(900);
+            resource_checks::describe(warm_handles, "after_1_second_idle");
+            resource_checks::counters("after_1_second_idle");
+            heap.describe("after_1_second_idle");
+            resource_checks::pump(1000);
+            resource_checks::describe(warm_handles, "after_1_second_pumped");
+            resource_checks::counters("after_1_second_pumped");
+            heap.describe("after_1_second_pumped");
+            if (diagnose_slow) {
+                for (unsigned interval = 0; interval < 6; ++interval) {
+                    resource_checks::pump(5000);
+                    resource_checks::counters("after_5_more_seconds_pumped");
+                }
+                resource_checks::describe(warm_handles, "after_30_more_seconds_pumped");
+                heap.describe("after_30_more_seconds_pumped");
+            }
         }
         check(additions == 500 && removals == 100, "balanced_navigation");
         check(skin_dialogs == 302 && skin_lists == 100, "native_skin_registration");
@@ -228,6 +326,7 @@ int wmain(int count, wchar_t** arguments) {
         DestroyWindow(window);
         check(std::filesystem::remove(configuration / L"connection.dpapi"), "settings_test_file_cleanup");
         check(std::filesystem::remove(configuration), "settings_test_directory_cleanup");
+        if (diagnose) check(!handle_growth, "diagnostic_observed_handle_growth");
         std::cout << "100 load/init/view/quit/unload cycles passed; failed init and foreign nodes rejected\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAILED: " << error.what() << '\n'; return 1; }

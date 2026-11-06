@@ -44,7 +44,7 @@ To uninstall, exit Winamp and remove only the DLL you installed. The plugin's DP
 
 ## Development and validation status
 
-The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 15 automated test suites, including protected playlist references and isolation checks for the separate replay probe. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
+The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 16 automated test suites, including protected playlist references, diagnostic counterchecks and isolation checks for the separate replay probe. Slower diagnostic runs can still trigger process-handle growth. Independent Windows-runtime probes also produce growth without the plugin; attribution of the original intermittent increase remains open. Measurements and their limits are documented in [testing](docs/testing.md).
 
 Artists, albums, tracks and playlists use native paginated tables with background loading. Artist → album → track → Winamp playlist navigation has been tested with real data. A bounded metadata cache retains loaded pages. Audio playlists preserve Plex ordering; empty and populated playlists have native coverage.
 

@@ -1,6 +1,49 @@
 # Validation and integration checklist
 
-Baseline evidence date: November 5, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+Baseline evidence date: November 6, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+
+## Controlled handle-growth investigation
+
+The SDK lifecycle executable reproduces process-resource growth without running the Winamp executable or loading its core or `gen_ml.dll`. It supplies mock IPC and Wasabi services to the real plugin DLL. A Winamp-core defect cannot directly account for growth inside this synthetic process. Windows controls, COM and the plugin remain separate possible contributors. No plugin leak correction is claimed by this investigation.
+
+The unchanged strict guard rejects any post-unload handle count above the first completed cycle. Diagnostic mode continues collecting evidence after growth, but still fails the run. It does not convert a later reduction into a pass. PSS snapshots report handle types and thread-start module basenames; object names and full module paths are not printed. PSS does not provide creation stacks here. Baselines vary with process launch and inherited standard handles, so compare deltas within each process.
+
+Executed comparisons use the local version-0.2.0 DLL and isolated synthetic configuration, without Plex credentials or audible playback:
+
+| Comparison | Observed result | Local evidence |
+| --- | --- | --- |
+| Five unchanged CTest lifecycle runs | All five pass the original 100-cycle guard | `handles-ctest-controlled-capture.log` |
+| Parallel Release suite | 15 suites pass, including the strict lifecycle guard | `handles-controlled-parallel-release.log` |
+| Fast dialogs after normal warmup | 153 handles remain unchanged through 100 unloads | `handles-fast-after-warmup.log` |
+| One CPU core | 153 handles remain unchanged through 100 unloads | `handles-sdk-single-core.log` |
+| External UI Automation client | 128 dialog queries; 158 handles remain unchanged | `handles-uia-controlled-held1-stderr.log`, `handles-uia-held1-run.log` |
+| Slower dialogs after normal warmup, Release | 153 to 154 at cycle 39, 156 after 100 unloads and message pumping | `handles-sdk-slow-after-warmup.log` |
+| Slower dialogs after normal warmup, Debug | 153 to 154 at cycle 39, 179 at cycle 57, 181 at cycle 77; 181 remain after 100 unloads and 30 additional seconds of message pumping | `handles-sdk-slow-debug-idle.log` |
+| Slower dialogs, Release with peak snapshots | Already 178 handles at warmup, 181 after 100 unloads and 30 seconds of pumping | `handles-sdk-slow-peaks-release.log` |
+| Same slow Debug workload, IME disabled only on the synthetic UI thread | 150 to 153 handles; CRT allocation deltas zero, USER/GDI guards pass; handle-growth guard still fails | `handles-sdk-without-ime-debug.log` |
+| Native dialogs without the plugin, 500 slower cycles | 140 to 141 at iteration 111, returning to 139 by iteration 500 | `handles-native-dialog-slow-control.log` |
+| Windows dispatcher queues without the plugin, 500 create/shutdown cycles | 103 to 134 at the first cycle, unchanged through cycle 500, 133 after one second idle | `handles-isolated-dispatcher.log` |
+
+The high SDK baseline includes `CoreMessaging.dll`, `CoreUIComponents.dll` and `wintypes.dll`; these are absent from the low-baseline module inventory and the IME-disabled comparison. The large increase and those modules can therefore appear during warmup rather than after many cycles. The independent dispatcher probe calls the documented [CreateDispatcherQueueController](https://learn.microsoft.com/en-us/windows/win32/api/dispatcherqueue/nf-dispatcherqueue-createdispatcherqueuecontroller), completes `ShutdownQueueAsync` with message pumping, checks its result and releases its interface references each time. Its stable final count establishes a one-time Windows-runtime increase in that probe, not a per-queue leak. The IME comparison uses [ImmDisableIME](https://learn.microsoft.com/en-us/windows/win32/api/imm/nf-imm-immdisableime) before creating the first test-thread window; the normal plugin and other applications' input methods are unchanged. Neither comparison proves the exact origin of the original 24-handle failure. The cause remains unassigned, and the strict guard is retained.
+
+The slow Debug run also fails the USER-object guard, 10 to 11. Remaining thread windows include `MSCTFIME UI` and `IME` alongside the synthetic host window. The first additional thread starts in `ntdll.dll`. The final inventory contains two additional handles referring to the UI thread and two Windows-started worker threads. This is not a creation-stack attribution. At cycles 25, 50, 75 and 100, and after the settling period, the shared Debug CRT reports zero additional normal/client allocation blocks or bytes. That result covers these synthetic paths and CRT allocation classes; it does not establish freedom from every native, COM or playback leak.
+
+`resource_probe` is a non-shipping executable for independent comparisons. Thread creation, sequential and overlapping COM apartments, the real view reaper, DPAPI with synthetic bytes, native dialogs and Text Services Framework activation each complete 500 cycles without handle growth in their respective runs. Racing eight COM threads through 20 balanced initialization/uninitialization pairs per thread instead increases handles from 105 to 130 on the first iteration. The count remains 130 through 500 iterations and 30 seconds of message pumping (`handles-com-race-idle.log`). This proves that process growth is possible without the plugin, but its inventory is not identical to the original intermittent 24-handle increase. It must not be treated as proof of the original cause.
+
+The diagnostic countercheck holds an event open, verifies that PSS sees its exact handle, closes it and verifies its removal. Debug additionally detects a deliberate 4096-byte CRT allocation and verifies its release. `resource_diagnostics` runs these counterchecks through CTest. API definitions follow the Windows SDK and Microsoft documentation for [PssCaptureSnapshot](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-psscapturesnapshot), [PSS_HANDLE_ENTRY](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/ns-processsnapshot-pss_handle_entry) and balanced [CoInitializeEx](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex) calls.
+
+The current diagnostic-tool build passes all 16 regular suites in both Debug and Release, plus seven package checks (`handles-investigation-current-ctest-debug.log`, `handles-investigation-current-ctest-release.log`, `handles-investigation-packaging.log`). These passes do not supersede the deliberately failing growth runs above. The Release plugin DLL remains byte-identical, SHA-256 `fce89737a4bf18a884a9eadb353c28be56bb26276e33d1778bfc120ce3be0260`; no product implementation, installed DLL or release tag is changed by these diagnostic additions.
+
+Reproduce from the project directory after building the diagnostic targets:
+
+```powershell
+cmake --build build --config Debug --target plugin_host_tests resource_probe --parallel
+& .\build\Debug\plugin_host_tests.exe "$PWD\build\Debug\ml_plex.dll" --diagnose-handles
+& .\build\Debug\plugin_host_tests.exe "$PWD\build\Debug\ml_plex.dll" --diagnose-handles-slow-after-warmup
+& .\build\Debug\resource_probe.exe --com-race
+```
+
+The slow option changes the settings-inspection timer from 25 to 250 ms after the first cycle and adds a bounded 30-second message-pumping comparison after unloading. Other host options are `--diagnose-handles-fast`, `--diagnose-handles-fast-after-warmup`, `--diagnose-handles-single-core`, `--diagnose-handles-without-ime` and `--stress-lifecycle`; the last keeps the immediate strict assertion. Standalone probe options are `--verify`, `--threads`, `--com`, `--overlapping-com`, `--com-race`, `--dispatcher`, `--reaper`, `--dpapi`, `--text-input`, `--dialogs` and `--dialogs-slow`. Growth probes intentionally return failure whenever they observe growth, even when the final count stabilizes. These tools do not replace the native Winamp resource comparisons below.
 
 ## Version 0.2.0 release checks
 
