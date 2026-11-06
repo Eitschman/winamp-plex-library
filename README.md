@@ -41,7 +41,7 @@ To uninstall, exit Winamp and remove only the DLL you installed. The plugin's DP
 
 ## Development and validation status
 
-The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 13 automated test suites. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
+The plugin is tested in a separate copy of the target Winamp version. The SDK host passes 100 load/unload cycles, and a native 100-view-switch test stays within the defined resource limits. View changes cancel outstanding requests and transfer worker cleanup to a controlled background thread. Debug and Release each pass 14 automated test suites, including isolation checks for the separate playlist replay probe. Earlier resource-growth observations and other validation limits remain documented in [testing](docs/testing.md).
 
 Artists, albums, tracks and playlists use native paginated tables with background loading. Artist → album → track → Winamp playlist navigation has been tested with real data. A bounded metadata cache retains loaded pages. Audio playlists preserve Plex ordering; empty and populated playlists have native coverage.
 
@@ -80,6 +80,7 @@ Output: `build/Release/ml_plex.dll`. Prerequisites, exact SDK commands, Debug bu
 - Playback URLs contain no Plex token, server address or Plex media path.
 - The proxy binds only to `127.0.0.1` on an automatically assigned port. Each grant has 192 random bits and expires for other processes after two hours.
 - Replacement, connection teardown or plugin shutdown revoke the associated grants. Saved Winamp playlists may contain local URLs that cannot be reused later.
+- An isolated, non-shipping test module demonstrates saved-playlist replay after a process restart using protected Plex-ID mappings and renewed playback targets. MP3 and FLAC/M4A cases pass. This is a feasibility result; durable saved playlists are not implemented in the regular DLL. See [testing](docs/testing.md).
 - The running Winamp instance has additional session access, verified by Windows ownership of the exact TCP client connection. This does not extend exported-link validity or bypass revocation and security checks.
 - One listener manages up to 10,000 independent grants; worker count does not grow with playlist length.
 - Active MP3/M4A responses use private temporary disk buffers in the same restricted session store. Each active response has at most one download thread, bounded by four proxy workers. Buffer files are deleted after the response ends or is cancelled. Buffers and prepared media share the 512 MiB per-file and 2 GiB total limits. Quota or disk errors fail explicitly. There is no persistent offline cache or automatic next-track prefetch.

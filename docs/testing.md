@@ -2,6 +2,26 @@
 
 Baseline evidence date: November 5, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
 
+## Saved-playlist restart feasibility
+
+The optional `playlist_replay_probe` target is a separate, non-shipping Media Library DLL. It is restricted to the WinampPlexTest class and the executable directory `.local/winamp-test`. The `playlist_replay_isolation` CTest rejects an unrelated class and a matching class outside that executable directory. The positive case is exercised only in the authorized real test copy. Source is under `tests`, and release packages exclude this DLL.
+
+`scripts/Test-PlexPlaylistReplay.ps1` bootstraps two uniquely identified Plex tracks, lets Winamp export its real M3U8 playlist, closes the process, reloads the unchanged file in a new process and requests playback. A DPAPI reference index survives the restart; temporary targets do not. Server identity, TLS and current authentication are checked again before resolving track IDs. Tests are muted and minimized; the normal DLL and Plex profile hashes are checked before/after.
+
+Executed MP3 evidence (`replay-native-mp3-final.log`):
+
+- With the resolver DLL removed, the saved playlist makes no audio progress for ten seconds, maximum position 0 ms.
+- With the resolver present in a fresh process, both stale entries are rewritten before decoder start and playback advances past 1500 ms.
+- Seeking near the end of the first track provokes a natural automatic transition and progress on the second, without waiting through two whole songs.
+- Reloading the same saved file works through IPC_STARTPLAY, editor Play selection, row double-click and Enter. Shuffle/Next also continues playback.
+- A mixed playlist preserves its unrelated local entry and resumes the requested owned entry at index 1. Twelve owned-entry replacements are confirmed across the tested loads; the saved source file hash remains unchanged.
+
+The full MP3 run's maximum polled UI query is 403 ms. An earlier test of only the main-window gate could not start through the editor; the explicit editor gates are included in the tested module. That observation is why a main Play-command hook alone is insufficient.
+
+The prepared-file branch is separately verified with real FLAC and M4A (`replay-native-flac-m4a-current.log`). After exit/restart, the FLAC file is prepared again and both entries are replaced. Playback and the automatic transition to M4A pass; the maximum polled UI query is 430 ms. Bootstrap discovery filters artist, album and format to reject ambiguous title matches. This is not an overnight-duration test: a real process teardown invalidates the old targets immediately, while the protected reference mapping remains on disk without an age-based expiry.
+
+The regular `ml_plex.dll` does not implement this behavior yet. The probe omits production handling of concurrent playlist edits, large/demand-loaded queues, multiple servers/parts, startup autoplay and rebinding of metadata/artwork/timeline services. OGG and ADTS replay are not separately verified here. Normal Winamp remains on the diagnostics DLL; the test module is removed and the test process exits with its playlist cleared after each run.
+
 ## Live buffer diagnostics
 
 Settings → Diagnostics refreshes every second in the native skinned panel. The SDK host checks German/English labels, zero values without playback, absence of URLs/tokens and restoration of a deliberately replaced snapshot on WM_TIMER. Disabling the refresh handler makes that regression fail at `skinned_diagnostics_without_credentials` (exit 8); the handler is restored (`ctest-diagnostics-refresh-negative.log`). The native settings test also checks the real timer rather than sending a timer message.

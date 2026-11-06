@@ -2,6 +2,8 @@
 
 ## Components
 
+The regular plugin does not yet restore saved playback entries across process restarts. The separately built test-only replay module is described below; its behavior is not part of `ml_plex.dll`.
+
 | Area | Responsibility |
 | --- | --- |
 | `src/plugin` | SDK descriptor/export, navigation nodes, lifecycle, playlist IPC and playback ownership |
@@ -117,6 +119,14 @@ WinHTTP uses asynchronous handles. Workers wait for completion or cancellation w
 Playback belongs to the core and survives view destruction. A shared listener supports up to 10,000 grants. Adding tracks preserves earlier grants; failed handoff revokes only newly issued ones. Connection teardown revokes all.
 
 `send_playlist_to_winamp` handles synchronous SDK calls and verifies imported count. Insert-after-current hands M3U8 to the playlist editor without a playback command. The reporter is allocated before modifying the host. Partial imports are errors; atomic host rollback is not promised.
+
+## Saved-playlist feasibility probe
+
+`tests/playlist_replay_probe.cpp` builds a separate Media Library test module. It persists old playback-target → Plex server/track-ID mappings with user-bound DPAPI. On restart, it reads those mappings, intercepts a playback request, verifies the selected server's identity/TLS and resolves `/library/metadata/{id}` on a worker. New proxy grants or newly prepared private files replace the stale playlist entries through original playlist-editor IPC. The saved source playlist is not modified. No Plex tokens, server addresses or media paths are added to exported playlists.
+
+Both main-window and playlist-editor subclassing are needed. The editor can call StartPlaying directly, bypassing the main Play command. The probe gates main Play, IPC_STARTPLAY, editor Play selection, Enter and row double-click before the decoder opens an obsolete target. A pending request resumes on the UI thread after replacement. It eagerly resolves all owned entries in the two-track fixture, so normal automatic advancement and shuffle subsequently use valid targets. It does not decode audio or keep a permanent proxy port.
+
+This is a bounded proof: two bootstrap titles, one selected server, one media part per track and at most 100 historical aliases. It is not the production persistence design. Production integration still needs canonical durable references without per-reload alias growth, safe handling of playlist changes during resolution, startup/autoplay coverage, demand-driven preparation within media quotas, and rebinding of ordinary metadata/artwork/timeline services. Existing entries whose ID mapping was already lost cannot be reconstructed reliably from title text. The regular DLL and normal installation remain unaffected by this probe.
 
 ## Authentication and configuration
 

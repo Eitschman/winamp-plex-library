@@ -33,7 +33,9 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The validated MSVC x86 Debug and Release configurations each pass 13 CTest suites. Tests cover the original dialog procedure, controlled transport failures, WinHTTP callback teardown and bounded background view cleanup on a COM-initialized thread. Native Winamp tests use the Release DLL; a Debug host test does not validate skins.
+The validated MSVC x86 Debug and Release configurations each pass 14 CTest suites. Tests cover the original dialog procedure, controlled transport failures, WinHTTP callback teardown, bounded background view cleanup on a COM-initialized thread and rejection of foreign hosts by the separate replay probe. Native Winamp tests use the Release DLL; a Debug host test does not validate skins.
+
+With BUILD_TESTING enabled, `ml_plex_replay_probe.dll` is also built for the saved-playlist feasibility test. It requires both the WinampPlexTest window class and an executable under `.local/winamp-test`, and refuses ordinary Winamp installations. It is excluded from release packages. `scripts/Test-PlexPlaylistReplay.ps1` installs it temporarily in the isolated copy, runs muted checks, removes it, and verifies that the normal DLL and Plex profile hashes remain unchanged. This optional integration script needs an already approved Plex profile and two uniquely identifiable real titles; ordinary CTest does not need credentials.
 
 A separate `.local/repro-build` directory also passed SDK verification, a freshly fetched JSON dependency, Release compilation and all 13 suites without using regular build artifacts. Evidence includes `repro-configure.log`, `repro-view-reaper-build.log` and `repro-view-reaper-ctest.log` under ignored local logs. This validates the build procedure, not bit-for-bit DLL reproducibility.
 
