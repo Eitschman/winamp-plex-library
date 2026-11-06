@@ -110,6 +110,8 @@ Known Content-Length reserves quota before starting the body. Unknown-length res
 
 Buffered bytes are drained before a terminal producer error is reported. The last failure remains recorded. Budget changes stay serialized with file ownership; numeric byte-use diagnostics are atomic and do not wait for filesystem cleanup on the UI thread.
 
+The native diagnostics panel samples these counters every second without network requests. Received/sent MiB accumulate over the proxy lifetime, including repeated range requests. Active downloads count streaming producers; zero does not establish that any specific track is cached. Reserved storage is the shared private-store quota, including prepared local formats even when no proxy exists. It is not the number of bytes already downloaded. The timer is removed when the panel is destroyed; error counts retain their separate meaning.
+
 WinHTTP uses asynchronous handles. Workers wait for completion or cancellation while the UI remains responsive. Callbacks touch only request context. After HANDLE_CLOSING, connection/session handles close; the transport then waits for [WINHTTP_OPTION_UNLOAD_NOTIFY_EVENT](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags#winhttp_option_unload_notify_event), confirming all callbacks have returned before context and code are freed. HANDLE_CLOSING delivery alone is insufficient.
 
 Playback belongs to the core and survives view destruction. A shared listener supports up to 10,000 grants. Adding tracks preserves earlier grants; failed handoff revokes only newly issued ones. Connection teardown revokes all.

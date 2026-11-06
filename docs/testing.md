@@ -2,6 +2,16 @@
 
 Baseline evidence date: November 5, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
 
+## Live buffer diagnostics
+
+Settings → Diagnostics refreshes every second in the native skinned panel. The SDK host checks German/English labels, zero values without playback, absence of URLs/tokens and restoration of a deliberately replaced snapshot on WM_TIMER. Disabling the refresh handler makes that regression fail at `skinned_diagnostics_without_credentials` (exit 8); the handler is restored (`ctest-diagnostics-refresh-negative.log`). The native settings test also checks the real timer rather than sending a timer message.
+
+Both language variants were visually inspected without clipping in the isolated Big Bento host (`host-language-en-diagnostics.png`, `host-language-de-diagnostics.png`; `diagnostics-native-languages-settings.log`). Muted MP3 playback showed 8.8 MiB received, 0.7 MiB sent, zero active downloads and 8.8 MiB reserved while playback continued (`diagnostics-playing.log`). A prepared FLAC response showed 59.4 MiB reserved with no streaming proxy (`diagnostics-prepared-display.log`); its 30-second playback, seeking and metadata checks passed (`diagnostics-prepared-playback.log`). These values are shared storage/session counters, not per-track cache percentages.
+
+Current Debug and Release runs each pass 13 suites (`ctest-diagnostics-debug-current.log`, `ctest-diagnostics-release-current.log`). Two earlier Release attempts failed the existing process-handle guard at 181 versus baseline 157, after cycles 49 and 4. A targeted repeat and the subsequent full run passed; the cause of that intermittent resource observation remains unresolved. The initial broader language test also failed the existing single-library dropdown assertion; the focused `-SettingsOnly` run passes both languages and restores German. Neither observation is evidence for every library layout or resource condition.
+
+After restoring the refresh handler, the Release lifecycle check passes again; seven packaging checks and the redacted change scan also pass (`ctest-diagnostics-refresh-restored.log`, `diagnostics-packaging.log`, `diagnostics-secret-scan.log`). The isolated host stops, clears its playlist and exits normally. The normal Winamp DLL remains unchanged.
+
 ## Interrupted media and artist display
 
 A native “The Puppeteer” run stopped after 129,788 ms despite a decoder duration of 273 seconds. Diagnostics recorded HTTP 200, Windows error 38 and 4,521,984 of 9,330,407 expected bytes. This reproduced an incomplete transfer in the common transport path. The exact cause of the upstream termination remains unresolved. A later healthy request's HTTP 200/Windows 0 cannot reconstruct that earlier failure, so numeric failure history is retained.

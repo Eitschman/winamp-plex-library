@@ -332,7 +332,12 @@ void stop_playback() noexcept {
     clear_playback_artwork();
     playback_files.clear(); media_store.reset();
 }
-ProxyStatus playback_status() noexcept { return proxy ? proxy->status() : ProxyStatus{}; }
+ProxyStatus playback_status() noexcept {
+    auto result = proxy ? proxy->status() : ProxyStatus{};
+    // Vorbereitete lokale Formate benötigen nicht zwingend einen HTTP-Proxy.
+    if (media_store) result.reserved_media_bytes = media_store->bytes_used();
+    return result;
+}
 ReporterStatus playback_reporting_status() noexcept {
     auto result = reporter ? reporter->status() : ReporterStatus{};
     if (monitor_error) result.error = monitor_error;

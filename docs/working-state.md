@@ -2,6 +2,8 @@
 
 ## Current work package
 
+The user requested visible buffer usage under Settings → Diagnostics. The panel now refreshes every second with cumulative received/sent MiB, active streaming downloads and shared reserved media storage. German/English native screenshots and real timer refresh pass. Muted MP3 playback demonstrates completed upstream buffering while Winamp still reads; prepared FLAC storage is included without a proxy. Current Debug/Release runs pass 13 suites each, and a disabled-refresh countercheck fails. Keep the intermittent resource-guard and broader library-UI test observations in [testing.md](testing.md) explicit. The diagnostic DLL has not been installed in normal Winamp; its existing buffer DLL remains unchanged.
+
 The user resumed work on November 6, 2026. Implement a bounded media buffer that decouples upstream Plex downloading from Winamp's consumption rate, while preserving authentication, TLS validation, byte-exact resumption, seeking and controlled teardown.
 
 The buffer is implemented in the regular transport/private-store code. Debug and Release each pass 13 suites with 178 transport checks, including complete upstream retrieval while the decoder temporarily does not read, a paused HTTP 206 response, cancellation, cleanup and shared quotas. Deliberately recoupling producer and consumer fails the independence assertion; that countercheck is removed. Muted native MP3 and M4A runs reach their natural endings at 273 and 251 seconds. Both also pass seeking, metadata and no-TranscodeSession checks. The native fault series passes healthy, 401, 403, 404, redirect, truncated, stalled and healthy-again cases. Do not treat these changes as part of v0.1.0 or install them into the normal Winamp automatically.

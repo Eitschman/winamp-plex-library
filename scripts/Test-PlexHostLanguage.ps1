@@ -1,4 +1,4 @@
-﻿param([switch]$CheckPlaylistMenu)
+﻿param([switch]$CheckPlaylistMenu, [switch]$SettingsOnly)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -65,8 +65,10 @@ function Check-Views([string]$Name) {
     $main = [PlexNative]::Windows($running.Id) | Where-Object Class -eq WinampPlexTest
     try {
         [void][PlexNative]::ShowWindow($main.Handle,9)
-        & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName $Name
-        & (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName $Name
+        & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName $Name -TestDiagnostics
+        if (-not $SettingsOnly) {
+            & (Join-Path $PSScriptRoot 'Test-PlexLibraryUi.ps1') -ScreenshotName $Name
+        }
     } finally { Set-PlexTestMinimized }
 }
 $changed = $false

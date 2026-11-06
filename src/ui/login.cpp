@@ -41,13 +41,23 @@ const wchar_t* connection_error(DWORD error) {
         return localized(L"Keine erreichbare HTTPS-Verbindung. Netzwerk und erweiterte Einstellungen prüfen.", L"No reachable HTTPS connection. Check the network and advanced settings.");
     return localized(L"Plex-Anmeldung oder Serverantwort fehlerhaft. Erneut versuchen.", L"Plex sign-in or server response failed. Try again.");
 }
+std::wstring diagnostics_information(DWORD connection_code);
 INT_PTR CALLBACK diagnostics_dialog(HWND dialog, UINT message, WPARAM parameter, LPARAM detail) noexcept {
     try {
         if (message == WM_INITDIALOG) {
-            SetDlgItemTextW(dialog, IDC_DIAGNOSTICS_TEXT, reinterpret_cast<const wchar_t*>(detail));
+            SetWindowLongPtrW(dialog, DWLP_USER, detail);
+            SetDlgItemTextW(dialog, IDC_DIAGNOSTICS_TEXT, diagnostics_information(static_cast<DWORD>(detail)).c_str());
             SetDlgItemTextW(dialog, IDCANCEL, localized(L"Schließen", L"Close"));
-            skin_library_dialog(dialog); return TRUE;
+            skin_library_dialog(dialog);
+            if (!SetTimer(dialog, 1, 1000, nullptr)) throw std::runtime_error("diagnostics_timer");
+            return TRUE;
         }
+        if (message == WM_TIMER && parameter == 1) {
+            SetDlgItemTextW(dialog, IDC_DIAGNOSTICS_TEXT,
+                diagnostics_information(static_cast<DWORD>(GetWindowLongPtrW(dialog, DWLP_USER))).c_str());
+            return TRUE;
+        }
+        if (message == WM_DESTROY) KillTimer(dialog, 1);
         if (message == WM_COMMAND && (LOWORD(parameter) == IDOK || LOWORD(parameter) == IDCANCEL)) {
             EndDialog(GetParent(dialog), IDOK); return TRUE;
         }
@@ -61,6 +71,32 @@ std::wstring unicode(const std::string& value) {
     std::wstring result(static_cast<std::size_t>(size), L'\0');
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), result.data(), size);
     return result;
+}
+
+// Die Zähler gehören zur Proxy-Verbindung, nicht zum aktuell abgespielten Titel.
+std::wstring diagnostics_information(DWORD connection_code) {
+    const auto status = playback_status();
+    const auto mib = [](unsigned long long bytes) {
+        return std::to_wstring(bytes / 1048576ULL) + (german() ? L"," : L".") +
+            std::to_wstring((bytes % 1048576ULL) * 10 / 1048576ULL) + L" MiB";
+    };
+    return std::wstring(L"Winamp Plex Library\r\nx86\r\n") +
+        localized(L"Zugangsspeicherung: Windows DPAPI\r\n", L"Credential storage: Windows DPAPI\r\n") +
+        L"HTTP: " + std::to_wstring(status.upstream_status) + L" / Proxy: " + unicode(status.local_rejection ? status.local_rejection : "none") +
+        L"\r\nWindows: " + std::to_wstring(status.transport_error) +
+        localized(L"\r\nVerbindungscode: ", L"\r\nConnection code: ") + std::to_wstring(connection_code) +
+        localized(L"\r\nCover-Zuordnungen: ", L"\r\nArtwork mappings: ") + std::to_wstring(artwork_provider_diagnostic(3)) +
+        localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2)) +
+        localized(L"\r\n\r\nEmpfangen seit Verbindungsstart: ", L"\r\n\r\nReceived since connection start: ") + mib(status.bytes_received) +
+        localized(L"\r\nAn Winamp gesendet: ", L"\r\nSent to Winamp: ") + mib(status.bytes_sent) +
+        localized(L"\r\nLaufende Streaming-Downloads: ", L"\r\nActive streaming downloads: ") + std::to_wstring(status.active_downloads) +
+        localized(L"\r\nReservierter Medienspeicher: ", L"\r\nReserved media storage: ") + mib(status.reserved_media_bytes) + L" / 2048 MiB" +
+        localized(L"\r\n\r\nÜbertragungsfehler: ", L"\r\n\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +
+        localized(L"\r\nLetzter Fehler (HTTP / Windows): ", L"\r\nLast failure (HTTP / Windows): ") +
+        std::to_wstring(status.last_failure.upstream_status) + L" / " + std::to_wstring(status.last_failure.transport_error) +
+        localized(L"\r\nLetzter Fehler, empfangen / erwartet (Bytes): ", L"\r\nLast failure, received / expected (bytes): ") +
+        std::to_wstring(status.last_failure.transferred_bytes) + L" / " + std::to_wstring(status.last_failure.expected_bytes) +
+        localized(L"\r\nLokale Verbindungsenden: ", L"\r\nLocal disconnects: ") + std::to_wstring(status.local_disconnects);
 }
 
 struct Login {
@@ -398,21 +434,7 @@ INT_PTR CALLBACK login_dialog(HWND dialog, UINT message, WPARAM parameter, LPARA
                 SetDlgItemTextW(dialog, IDC_STATUS, localized(L"Cache geleert.", L"Cache cleared.")); return TRUE;
             }
             if (LOWORD(parameter) == IDC_LOGIN_DIAGNOSTICS) {
-                const auto status = playback_status();
-                const auto information = std::wstring(L"Winamp Plex Library\r\nx86\r\n") +
-                    localized(L"Zugangsspeicherung: Windows DPAPI\r\n", L"Credential storage: Windows DPAPI\r\n") +
-                    L"HTTP: " + std::to_wstring(status.upstream_status) + L" / Proxy: " + unicode(status.local_rejection ? status.local_rejection : "none") +
-                    L"\r\nWindows: " + std::to_wstring(status.transport_error) +
-                    localized(L"\r\nVerbindungscode: ", L"\r\nConnection code: ") + std::to_wstring(login->error.load()) +
-                    localized(L"\r\nCover-Zuordnungen: ", L"\r\nArtwork mappings: ") + std::to_wstring(artwork_provider_diagnostic(3)) +
-                    localized(L"\r\nCover-Abfragen: ", L"\r\nArtwork requests: ") + std::to_wstring(artwork_provider_diagnostic(2)) +
-                    localized(L"\r\nÜbertragungsfehler: ", L"\r\nTransfer failures: ") + std::to_wstring(status.last_failure.count) +
-                    localized(L"\r\nLetzter Fehler (HTTP / Windows): ", L"\r\nLast failure (HTTP / Windows): ") +
-                    std::to_wstring(status.last_failure.upstream_status) + L" / " + std::to_wstring(status.last_failure.transport_error) +
-                    localized(L"\r\nEmpfangene / erwartete Bytes: ", L"\r\nReceived / expected bytes: ") +
-                    std::to_wstring(status.last_failure.transferred_bytes) + L" / " + std::to_wstring(status.last_failure.expected_bytes) +
-                    localized(L"\r\nLokale Verbindungsenden: ", L"\r\nLocal disconnects: ") + std::to_wstring(status.local_disconnects);
-                SettingsPanel panel{IDD_PLEX_DIAGNOSTICS, diagnostics_dialog, localized(L"Plex-Diagnose", L"Plex diagnostics"), reinterpret_cast<LPARAM>(information.c_str())};
+                SettingsPanel panel{IDD_PLEX_DIAGNOSTICS, diagnostics_dialog, localized(L"Plex-Diagnose", L"Plex diagnostics"), static_cast<LPARAM>(login->error.load())};
                 DialogBoxParamW(descriptor().hDllInstance, MAKEINTRESOURCEW(IDD_PLEX_SETTINGS_FRAME), GetParent(dialog), settings_frame, reinterpret_cast<LPARAM>(&panel));
                 return TRUE;
             }

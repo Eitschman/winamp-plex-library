@@ -112,6 +112,17 @@ try {
             if ($information -notmatch 'Windows DPAPI' -or $information -notmatch 'HTTP:' -or $information -match 'https?://|X-Plex-Token|accessToken') {
                 throw 'Diagnose enthält unzulässige oder unzureichende Informationen.'
             }
+            if ($information -notmatch 'Empfangen seit Verbindungsstart:|Received since connection start:' -or
+                $information -notmatch 'Laufende Streaming-Downloads:|Active streaming downloads:' -or
+                $information -notmatch 'Reservierter Medienspeicher:|Reserved media storage:') {
+                throw 'Streaming-Diagnose fehlt.'
+            }
+            [void][PlexNative]::SendMessage($text.Handle, 12, [IntPtr]::Zero, 'stale diagnostic snapshot')
+            Start-Sleep -Milliseconds 1200
+            $refreshed = [PlexNative]::ControlText($text.Handle)
+            if ($refreshed -notmatch 'Windows DPAPI' -or $refreshed -match 'stale diagnostic snapshot') {
+                throw 'Diagnose wird nicht automatisch aktualisiert.'
+            }
             Save-PlexWindowScreenshot $diagnostics[0].Handle (Join-Path (Split-Path $PSScriptRoot -Parent) ".local\$ScreenshotName-diagnostics.png")
         } finally {
             [void][PlexNative]::PostMessage($diagnostics[0].Handle, 273, [IntPtr]2, [IntPtr]::Zero)
