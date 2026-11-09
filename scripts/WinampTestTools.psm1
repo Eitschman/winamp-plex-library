@@ -451,8 +451,8 @@ function Select-PlexFeedbackTrack($Sample) {
             throw 'API-Testtitel und sichtbare Tabellenzeile stimmen nicht überein.'
         }
     }
-    [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]36, [IntPtr]::Zero)
-    for ($row = 0; $row -lt $Sample.row_index; ++$row) { [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]40, [IntPtr]::Zero) }
+    # Direkte native Auswahl bleibt auch bei weit entfernten oder verdeckten Zeilen eindeutig.
+    [PlexNative]::SelectCatalogRows($list.Handle, $process.Id, [int[]]@($Sample.row_index))
     Start-Sleep -Milliseconds 150
     if ([PlexNative]::QueryInt32($list.Handle, 4108, [IntPtr](-1), [IntPtr]2) -ne $Sample.row_index -or
         [PlexNative]::QueryInt32($list.Handle, 4146, [IntPtr]::Zero, [IntPtr]::Zero) -ne 1) { throw 'Testtitel ist nicht einzeln ausgewählt.' }

@@ -289,6 +289,7 @@ int wmain(int count, wchar_t** arguments) {
                 const auto& item = std::get<plex::PlexTrack>(page.items[index]);
                 if (item.title.empty() || item.duration_ms <= 0) continue;
                 nlohmann::json sample{{"row_index", index}, {"title", item.title}, {"artist", item.artist}, {"album", item.album}};
+                sample["has_artwork"] = !plex::track_artwork(item).empty();
                 if (plex::track_artwork(item).empty() && missing.is_null()) missing = sample;
                 if (!plex::track_artwork(item).empty() && covered.is_null()) covered = sample;
                 if (item.parts.size() == 1 && item.parts.front().key.size() > 4 && item.parts.front().key.substr(item.parts.front().key.size() - 4) == ".mp3") {

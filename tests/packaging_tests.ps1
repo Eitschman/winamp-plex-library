@@ -7,6 +7,17 @@ $output = Join-Path $fixture 'package'
 $dll = Join-Path $build 'Release\ml_plex.dll'
 $license = Join-Path $build '_deps\nlohmann_json-src\LICENSE.MIT'
 $checks = 0
+$workflow = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\.github\workflows\release.yml') -Raw
+$tagPattern = [regex]::Match($workflow, "RELEASE_TAG -notmatch '([^']+)'").Groups[1].Value
+if (-not $tagPattern) { throw 'Release tag validation is missing.' }
+foreach ($case in @(
+    @{ Tag='v0.3.4'; Valid=$true }, @{ Tag='v0.3.4.1'; Valid=$true },
+    @{ Tag='v0.3'; Valid=$false }, @{ Tag='v0.3.4.1.2'; Valid=$false },
+    @{ Tag='v0.3.4-beta'; Valid=$false }, @{ Tag='v0.3.4.1suffix'; Valid=$false }
+)) {
+    if (($case.Tag -match $tagPattern) -ne $case.Valid) { throw 'Release tag guard accepted or rejected an incorrect version.' }
+    $checks++
+}
 function Expect-Failure([string]$Message) {
     try { & $packageScript -BuildDirectory $build -OutputDirectory $output; throw 'Defektes Paket wurde akzeptiert.' }
     catch { if ($_.Exception.Message -notmatch $Message) { throw }; $script:checks++ }

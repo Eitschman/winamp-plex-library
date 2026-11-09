@@ -39,6 +39,10 @@ int main() {
         auto pixels = plex::ArtworkPixels{1, 1, {10, 20, 30, 255}};
         const auto bytes = std::make_shared<const std::vector<std::uint8_t>>(plex::encode_artwork_png(pixels));
         bind_playback_artwork(url, bytes);
+        const auto retained_cover = playback_artwork(url);
+        check(retained_cover == bytes, "track_information_shares_canonical_png");
+        check(!playback_artwork(L"https://foreign.example/file.mp3"), "track_information_foreign_has_no_cover");
+        check(!playback_artwork(L"http://127.0.0.1:12345/stream/unbound/audio.mp3"), "track_information_unbound_has_no_cover");
         check(provider->IsMine(url.c_str()), "owned_url_recognized");
         check(artwork_provider_diagnostic(3) == 1 && artwork_provider_diagnostic(4) == 1, "provider_diagnostics_registered_and_bound");
         rejects([&] { bind_playback_artwork(L"https://foreign.example/file.mp3", bytes); }, "foreign_cover_binding_rejected");
@@ -58,8 +62,11 @@ int main() {
         check(provider->SetAlbumArtData(url.c_str(), L"cover", nullptr, 0, nullptr) == ALBUMARTPROVIDER_READONLY, "artwork_readonly");
         unbind_playback_artwork(url);
         check(!provider->IsMine(url.c_str()), "revoked_mapping_removed");
+        check(!playback_artwork(url), "track_information_revoked_cover_not_resolved");
+        check(retained_cover == bytes && !retained_cover->empty(), "open_information_retains_immutable_cover_after_revoke");
         const std::wstring local_file = L"C:\\private\\playback\\session-test\\012345678901234567890123456789012345678901234567.flac";
         bind_playback_artwork(local_file, bytes);
+        check(playback_artwork(local_file) == bytes, "prepared_track_information_shares_cover");
         check(provider->IsMine(local_file.c_str()), "prepared_file_cover_recognized");
         check(provider->GetAlbumArtData(local_file.c_str(), L"cover", &bits, &length, &mime) == ALBUMARTPROVIDER_SUCCESS,
               "prepared_file_cover_returned");

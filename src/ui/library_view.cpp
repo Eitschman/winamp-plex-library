@@ -44,11 +44,18 @@ void skin_view(HWND dialog) {
     for (auto child = GetWindow(dialog, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (GetDlgCtrlID(child) == IDC_LIBRARY) continue;
         const bool list = GetDlgCtrlID(child) == IDC_CATALOG;
-        // Die Skin-Engine zentriert Suchtext und schreibgeschützte Titelinformationen,
-        // ohne Feldhöhe oder EDIT-Verhalten zu ändern.
+        // Titelinformationen bleiben rahmenlose, kopierbare native EDITs. Farben
+        // liefert der skinnierte Eltern-Dialog über WM_CTLCOLORSTATIC; der Font
+        // stammt ebenfalls vom Skin. Der Skin-EDIT-Rahmen ist hier nicht erwünscht.
         const auto identifier = GetDlgCtrlID(child);
-        const bool centered_edit = identifier == IDC_SEARCH ||
-            (identifier >= IDC_TRACK_INFO_VALUE && identifier <= IDC_TRACK_INFO_VALUE + 8);
+        if (identifier >= IDC_TRACK_INFO_VALUE && identifier <= IDC_TRACK_INFO_VALUE + 8) {
+            const auto font = SendMessageW(dialog, WM_GETFONT, 0, 0);
+            if (!font) throw std::runtime_error("information_skin_font");
+            SendMessageW(child, WM_SETFONT, font, FALSE);
+            continue;
+        }
+        // Die Skin-Engine zentriert den Suchtext, ohne Feldhöhe oder EDIT-Verhalten zu ändern.
+        const bool centered_edit = identifier == IDC_SEARCH;
         window = {child, static_cast<UINT>(list ? SKINNEDWND_TYPE_LISTVIEW : SKINNEDWND_TYPE_AUTO),
                   style | (list ? SWLVS_FULLROWSELECT | SWLVS_DOUBLEBUFFER : 0) |
                   (centered_edit ? SWES_VCENTER : 0)};

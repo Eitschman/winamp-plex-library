@@ -133,6 +133,11 @@ void bind_playback_artwork(const std::wstring& url, ArtworkBytes bytes) {
     catch (...) { artwork.erase(inserted.first); throw; }
     if (!shared) artwork_size += bytes->size();
 }
+ArtworkBytes playback_artwork(const std::wstring& filename) {
+    std::lock_guard<std::mutex> lock(artwork_mutex);
+    const auto found = artwork.find(filename);
+    return found == artwork.end() ? nullptr : found->second;
+}
 void unbind_playback_artwork(const std::wstring& url) noexcept {
     std::lock_guard<std::mutex> lock(artwork_mutex);
     const auto found = artwork.find(url);

@@ -26,7 +26,7 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
 std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection);
 std::vector<PlaylistEntry> bind_restored(const std::vector<ReplayTrack>& tracks, const PlexConnectionSettings& connection, const PreparedMedia& prepared, const PlaybackArtwork& artwork);
 void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept;
-char description[] = "Winamp Plex Library 0.3.4";
+char description[] = "Winamp Plex Library 0.3.4.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
@@ -183,6 +183,7 @@ std::optional<TrackInformation> track_information(const std::wstring& filename) 
         if (seconds) information.duration = std::to_wstring(seconds / 60) + L":" +
             (seconds % 60 < 10 ? L"0" : L"") + std::to_wstring(seconds % 60);
     }
+    information.artwork = playback_artwork(filename);
     return information;
 }
 

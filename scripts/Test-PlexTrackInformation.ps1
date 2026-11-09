@@ -9,7 +9,10 @@ function Wait-Information {
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     do {
         $dialog = @([PlexNative]::Windows($process.Id) | Where-Object Text -match '^Plex(-Titelinformationen| track information)$')
-        if ($dialog.Count -eq 1) { return $dialog[0] }
+        if ($dialog.Count -eq 1) {
+            if (-not $CaptureSkins) { [void][PlexNative]::ShowWindow($dialog[0].Handle,0) }
+            return $dialog[0]
+        }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Plex track information did not open.'
@@ -23,16 +26,22 @@ function Check-Information($Dialog, $Sample) {
     }
     $values = @($controls | Where-Object { $_.ControlId -ge 1161 -and $_.ControlId -le 1169 } | Sort-Object ControlId)
     if ($values.Count -ne 9) { throw 'Expected exactly nine music fields.' }
+    $cover = @($controls | Where-Object ControlId -eq 1170)
+    if ($cover.Count -ne 1) { throw 'The album artwork area is missing.' }
+    $expectedCover = if ($Sample.has_artwork) { 1 } else { 2 }
+    if ([PlexNative]::GetProp($cover[0].Handle,'WinampPlexArtworkState').ToInt32() -ne $expectedCover) { throw 'The artwork state differs from the real track.' }
     foreach ($index in 0..2) {
         $expected = @($Sample.title, $Sample.artist, $Sample.album)[$index]
         if ([PlexNative]::ControlText($values[$index].Handle) -cne $expected) { throw 'Music metadata differs from the selected Plex track.' }
     }
     foreach ($value in $values) {
         if (([PlexNative]::WindowStyle($value.Handle,-16) -band 0x800) -eq 0) { throw 'Metadata must be read-only.' }
+        if (([PlexNative]::WindowStyle($value.Handle,-16) -band 0x800000) -ne 0) { throw 'Read-only music fields must be borderless.' }
+        if (([PlexNative]::WindowStyle($value.Handle,-20) -band 0x20200) -ne 0) { throw 'Read-only music fields must have no client edge.' }
         if ([PlexNative]::ControlText($value.Handle) -match 'https?://|X-Plex-Token|/library/parts/|connection\.dpapi') { throw 'Connection data appeared in the music dialog.' }
     }
     if ([PlexNative]::ControlText($values[7].Handle) -notmatch '^\d+:\d{2}$') { throw 'Track duration is missing.' }
-    if ([PlexNative]::ControlText($values[8].Handle) -notmatch '^(mp3|mpeg)$') { throw 'MP3 format is missing.' }
+    if ([PlexNative]::ControlText($values[8].Handle) -notmatch '^[a-zA-Z0-9._-]+$') { throw 'Audio format is missing.' }
 }
 try {
     [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]122)
@@ -81,7 +90,39 @@ try {
     Start-Sleep -Milliseconds 200
     $after = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]105)
     if ($after -le $before -or [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]104) -ne 1) { throw 'Information dialog interrupted playback.' }
+    $beforeResources = [pscustomobject]@{ gdi = [PlexNative]::GetGuiResources($process.Handle,0); user = [PlexNative]::GetGuiResources($process.Handle,1) }
+    foreach ($cycle in 1..20) {
+        [void][PlexNative]::PostMessage($main.Handle,273,[IntPtr]40188,[IntPtr]::Zero)
+        $dialog = Wait-Information
+        Check-Information $dialog $samples.tracks[0]
+        [void][PlexNative]::PostMessage($dialog.Handle,273,[IntPtr]2,[IntPtr]::Zero)
+        Start-Sleep -Milliseconds 80
+    }
+    $afterResources = [pscustomobject]@{ gdi = [PlexNative]::GetGuiResources($process.Handle,0); user = [PlexNative]::GetGuiResources($process.Handle,1) }
+    if (Test-PlexGuiResourceGrowth $beforeResources $afterResources) { throw 'Track information GDI/USER resources exceeded the existing bounds.' }
+    Write-Output ("Twenty artwork-dialog cycles: GDI $($beforeResources.gdi)/$($afterResources.gdi), USER $($beforeResources.user)/$($afterResources.user).")
+    # Echte Titel ohne Bild müssen den Leerzustand zeigen und dürfen kein voriges Cover behalten.
+    $selected = Select-PlexFeedbackTrack $samples.without_artwork
+    [void][PlexNative]::Query($main.Handle,273,[IntPtr]40047,[IntPtr]::Zero)
+    [void][PlexNative]::Query($main.Handle,1024,[IntPtr]::Zero,[IntPtr]101)
+    [void][PlexNative]::PostMessage($selected.View,273,[IntPtr]1056,[IntPtr]::Zero)
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 100
+        $ready = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]104) -eq 1
+    } while (-not $ready -and [DateTime]::UtcNow -lt $deadline)
+    if (-not $ready) { throw 'Missing-artwork sample playback did not start.' }
+    if ($CaptureSkins) { [void][PlexNative]::ShowWindow($main.Handle,9) }
+    [void][PlexNative]::PostMessage($main.Handle,273,[IntPtr]40188,[IntPtr]::Zero)
+    $dialog = Wait-Information
+    Check-Information $dialog $samples.without_artwork
+    if ($CaptureSkins) {
+        $language = if ($dialog.Text -eq 'Plex track information') { 'en' } else { 'de' }
+        Save-PlexWindowScreenshot $dialog.Handle (Join-Path $PSScriptRoot ("..\.local\track-information-missing-$language.png"))
+    }
+    [void][PlexNative]::PostMessage($dialog.Handle,273,[IntPtr]2,[IntPtr]::Zero)
     Write-Output 'Native track information: player, playlist editor, music fields, read-only controls, cancellation and uninterrupted muted playback passed.'
+    Write-Output 'Shared album artwork, borderless fields and missing-artwork state passed.'
 } finally {
     # Auch bei der Gegenprobe ohne neuen Dialog den nativen Testdialog schließen.
     foreach ($dialog in @([PlexNative]::Windows($process.Id) | Where-Object Class -eq '#32770')) {

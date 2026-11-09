@@ -2,7 +2,7 @@
 
 ## Host language
 
-The Plex track-information panel follows the host language and uses the existing skinned child-dialog frame. Its read-only EDIT fields also use `SWES_VCENTER` for text alignment. No connection or decoder state is passed to this panel.
+The Plex track-information panel follows the host language and uses the existing skinned child-dialog frame. Its borderless native read-only EDIT fields inherit the dialog's skin font and use the adjacent skinned STATIC's `WM_CTLCOLORSTATIC` colors. Their compact height and alignment are defined in the dialog resource. Text selection remains native. The cover's owner-drawn STATIC uses the same skin-provided brush and text color; `AlphaBlend` preserves transparency without a fixed background. No connection or decoder state is passed to this panel.
 
 The original command header defines `WINAMP_EDIT_ID3` (40188). The pinned IPC header defines `IPC_INFOBOX` (293), `IPC_INFOBOXW` (1293), their parameter layouts and OK/Cancel results. The playlist editor's `ID_PE_ID3` value (40208) was checked against [Winamp core resource definitions](https://www.unix.dog/~agris/winamp/Src/Winamp/resource.h), with selection enumeration from the original `ipc_pe.h`. The factual command value is retained locally; no implementation from that mirror is copied or bundled. [FileInfo.cpp](https://www.unix.dog/~agris/winamp/Src/Winamp/FileInfo.cpp) explains the unified information dialog's decoder-specific stream queries. Native target-version tests cover both command entry points; other hosts, including WACUP, remain unverified.
 

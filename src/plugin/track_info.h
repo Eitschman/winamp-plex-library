@@ -4,11 +4,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include "plugin/artwork_provider.h"
 
 namespace plex::plugin {
 // Ausschließlich sichtbare Musikdaten, keine Verbindung, URLs oder Zugangsdaten.
 struct TrackInformation {
     std::wstring title, artist, album, album_artist, genre, year, track, duration, format;
+    ArtworkBytes artwork;
 };
 bool show_track_information(HWND parent, const TrackInformation& information);
 
