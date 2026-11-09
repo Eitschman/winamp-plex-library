@@ -32,6 +32,18 @@ int main() {
         check(track.number == 2 && track.disc == 1 && track.duration_ms == 123456, "typed_track_numbers");
         check(track.parts.size() == 1 && track.parts.front().duration_ms == 123456, "media_part_model");
         check(!track.user_rating, "missing_user_rating_remains_unrated");
+        check(track.genres.empty(), "missing_genres_remain_empty");
+        auto tagged = fixture;
+        tagged["MediaContainer"]["Metadata"][0]["Genre"] = json::array({{{"tag", "Symphonic Metal"}}, {{"tag", "Grüße 東京"}}});
+        check(std::get<plex::PlexTrack>(plex::parse_catalog_page(tagged, 0).items.front()).genres ==
+            std::vector<std::string>{"Symphonic Metal", "Grüße 東京"}, "genre_tags_preserve_unicode_and_order");
+        for (const auto& invalid : {json("Metal"), json(nullptr), json::array({{{"tag", 42}}}), json::array({"Metal"})}) {
+            tagged["MediaContainer"]["Metadata"][0]["Genre"] = invalid;
+            rejects([&] { plex::parse_catalog_page(tagged, 0); }, "invalid_genres_rejected");
+        }
+        tagged["MediaContainer"]["Metadata"][0]["Genre"] = json::array();
+        for (unsigned index = 0; index < 65; ++index) tagged["MediaContainer"]["Metadata"][0]["Genre"].push_back({{"tag", "Metal"}});
+        rejects([&] { plex::parse_catalog_page(tagged, 0); }, "excessive_genres_rejected");
         auto rated = fixture;
         rated["MediaContainer"]["Metadata"][0]["userRating"] = 7.5;
         check(std::get<plex::PlexTrack>(plex::parse_catalog_page(rated, 0).items.front()).user_rating == 7.5, "fractional_plex_rating_preserved");

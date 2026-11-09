@@ -1,4 +1,4 @@
-﻿param([switch]$CheckPlaylistMenu, [switch]$SettingsOnly, [switch]$BrowseFeatures)
+﻿param([switch]$CheckPlaylistMenu, [switch]$SettingsOnly, [switch]$BrowseFeatures, [switch]$TrackInformation)
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'WinampTestTools.psm1')
 $process = Get-PlexTestProcess
@@ -39,10 +39,19 @@ function Start-TestCopy {
     Start-Process $executable -ArgumentList '/CLASS=WinampPlexTest' -WorkingDirectory $testRoot -WindowStyle Minimized
     Set-PlexTestMinimized
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    $selectedTrackNode = $false
     do {
         Start-Sleep -Milliseconds 100
         $running = @(Get-Process winamp -ErrorAction SilentlyContinue | Where-Object Path -eq $executable)
         if ($running.Count -eq 1) {
+            if ($TrackInformation -and -not $selectedTrackNode) {
+                $trees = @([PlexNative]::Windows($running[0].Id) | ForEach-Object { [PlexNative]::Children($_.Handle) } | Where-Object Class -eq 'SysTreeView32')
+                if ($trees.Count -eq 1) {
+                    $root = [PlexNative]::Query($trees[0].Handle,4362,[IntPtr]::Zero,[IntPtr]::Zero)
+                    [void][PlexNative]::Query($trees[0].Handle,4363,[IntPtr]9,$root)
+                    $selectedTrackNode = $true
+                }
+            }
             $library = @([PlexNative]::Windows($running[0].Id) | Where-Object {
                 @([PlexNative]::Children($_.Handle) | Where-Object ControlId -eq 1007).Count -gt 0
             })
@@ -64,6 +73,11 @@ function Check-Views([string]$Name) {
     $running = Get-PlexTestProcess
     $main = [PlexNative]::Windows($running.Id) | Where-Object Class -eq WinampPlexTest
     try {
+        if ($TrackInformation) {
+            $expectedLanguage = if ($Name -match '-en$') { 'en' } else { 'de' }
+            & (Join-Path $PSScriptRoot 'Test-PlexTrackInformation.ps1') -CaptureSkins -ExpectedLanguage $expectedLanguage
+            return
+        }
         [void][PlexNative]::ShowWindow($main.Handle,9)
         & (Join-Path $PSScriptRoot 'Test-PlexSettings.ps1') -ScreenshotName $Name -TestDiagnostics
         if ($BrowseFeatures) {
@@ -86,7 +100,8 @@ try {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\.local\insert-after-menu.png') -Destination (Join-Path $PSScriptRoot '..\.local\insert-after-menu-en.png')
     }
     Check-Views 'host-language-en'
-    Write-Output 'Englische Hostsprache in nativer Bibliothek und Einstellungen geprüft, ohne eigene Sprachauswahl.'
+    if ($TrackInformation) { Write-Output 'English host language verified in Plex track information across four skins.' }
+    else { Write-Output 'Englische Hostsprache in nativer Bibliothek und Einstellungen geprüft, ohne eigene Sprachauswahl.' }
 } finally {
     if ($changed) {
         $running = @(Get-Process winamp -ErrorAction SilentlyContinue | Where-Object Path -eq $executable)
@@ -101,4 +116,5 @@ if ($CheckPlaylistMenu) {
     & (Join-Path $PSScriptRoot 'Test-PlexPlaylistInsert.ps1') -UsePlugin -State Stopped -CaptureMenu
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\.local\insert-after-menu.png') -Destination (Join-Path $PSScriptRoot '..\.local\insert-after-menu-de.png')
 }
-Write-Output 'Deutsches Winamp-Sprachpaket wiederhergestellt und dieselben Ansichten geprüft. Keine Plex-Konfigurationsänderung.'
+if ($TrackInformation) { Write-Output 'German host language restored and verified in Plex track information across four skins.' }
+else { Write-Output 'Deutsches Winamp-Sprachpaket wiederhergestellt und dieselben Ansichten geprüft. Keine Plex-Konfigurationsänderung.' }

@@ -18,6 +18,14 @@ The reference registry, artwork and configuration have separate limits; they are
 
 ## Components
 
+### Track information
+
+The `TrackInformationController` subclasses the player and playlist editor on their UI thread. Only exact names present in the plugin's bound playback-metadata map are handled. Winamp File Information, the playlist editor's selected-entry information command and ANSI/Unicode information IPC open a native read-only panel. A mixed selection snapshots names in playlist order and sends foreign entries back through Winamp's information IPC; Cancel stops the sequence. Shutdown removes both subclasses before releasing playback state.
+
+The panel receives a copy of nine permitted music fields, with no transport or connection object. It performs no networking, displays no playback URL, server address, media path or Plex identifier, and cannot modify metadata. Missing fields show a dash. Genre tags are parsed from Plex's optional `Genre` array with a bounded count and validated string values. Normal decoder information remains available for unowned entries; an obsolete Plex entry must first be resolved through playback before its music fields can be shown.
+
+This panel does not inject ICY metadata, modify media bytes, change HTTP ranges or alter decoder playback. The MP3 decoder's Stream Info page queries decoder-specific stream fields directly rather than the Media Library metadata hook; adding values to that hook alone cannot populate that page.
+
 The regular plugin restores registered Plex playback entries across process restarts using current authorization and protected server/track/media-part mappings. The separately built feasibility module remains a test artifact and is never packaged.
 
 | Area | Responsibility |

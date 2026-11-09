@@ -46,6 +46,14 @@ PlexItem parse_item(const nlohmann::json& item) {
     track.album_artist = track.artist;
     const auto track_artist = field(item, "originalTitle");
     if (!track_artist.empty()) track.artist = track_artist;
+    if (item.contains("Genre")) {
+        const auto& genres = item.at("Genre");
+        if (!genres.is_array() || genres.size() > 64) throw std::invalid_argument("catalog_genres");
+        for (const auto& genre : genres) {
+            const auto tag = field(genre, "tag");
+            if (!tag.empty()) track.genres.push_back(tag);
+        }
+    }
     if (item.contains("userRating")) {
         const auto& value = item.at("userRating");
         if (!value.is_number()) throw std::invalid_argument("catalog_rating");

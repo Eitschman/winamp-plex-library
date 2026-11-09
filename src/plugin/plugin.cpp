@@ -4,6 +4,7 @@
 #include "plex/playlist.h"
 #include "plex/http_stream.h"
 #include "plugin/playlist_replay.h"
+#include "plugin/track_info.h"
 #include <cstddef>
 #include <stdexcept>
 #include <unordered_map>
@@ -25,13 +26,14 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
 std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection);
 std::vector<PlaylistEntry> bind_restored(const std::vector<ReplayTrack>& tracks, const PlexConnectionSettings& connection, const PreparedMedia& prepared, const PlaybackArtwork& artwork);
 void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept;
-char description[] = "Winamp Plex Library 0.3.3";
+char description[] = "Winamp Plex Library 0.3.4";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
 bool use_german = false;
 std::unique_ptr<PlaybackProxy> proxy;
 std::unique_ptr<PlaylistReplay> replay;
+std::unique_ptr<TrackInformationController> track_information_controller;
 unsigned long long playback_epoch = 0;
 std::shared_ptr<LocalMediaStore> media_store;
 std::unordered_map<std::wstring, std::shared_ptr<const LocalMediaFile>> playback_files;
@@ -163,6 +165,27 @@ static_assert(offsetof(winampMediaLibraryPlugin, hwndWinampParent) == 20);
 static_assert(sizeof(MLTREEITEMW) == 28);
 static_assert(sizeof(enqueueFileWithMetaStructW) == 12);
 
+// Nur die gebundenen Musikfelder passieren diese Grenze. Der Dialog erhält
+// weder Quell-/Proxy-Adresse noch Dateipfad, Plex-IDs oder Verbindungseinstellungen.
+std::optional<TrackInformation> track_information(const std::wstring& filename) {
+    std::lock_guard<std::mutex> lock(metadata_mutex);
+    const auto entry = playback_metadata.find(filename);
+    if (entry == playback_metadata.end()) return std::nullopt;
+    const auto field = [&](const wchar_t* key) {
+        const auto found = entry->second.find(key);
+        return found == entry->second.end() ? std::wstring{} : found->second;
+    };
+    TrackInformation information{field(L"title"), field(L"artist"), field(L"album"), field(L"albumartist"),
+        field(L"genre"), field(L"year"), field(L"track"), {}, field(L"format")};
+    const auto duration = field(L"length");
+    if (!duration.empty()) {
+        const auto seconds = std::stoull(duration) / 1000;
+        if (seconds) information.duration = std::to_wstring(seconds / 60) + L":" +
+            (seconds % 60 < 10 ? L"0" : L"") + std::to_wstring(seconds % 60);
+    }
+    return information;
+}
+
 int initialize() noexcept {
     try {
         if (!IsWindow(plugin.hwndLibraryParent) || !IsWindow(plugin.hwndWinampParent) || !plugin.hDllInstance)
@@ -198,11 +221,13 @@ int initialize() noexcept {
         if (!monitor || !SetTimer(monitor, 1, 500, nullptr)) throw std::runtime_error("playback_monitor_window");
         replay = std::make_unique<PlaylistReplay>(plugin.hwndWinampParent, monitor, plugin.hDllInstance,
             [](const std::wstring& name) { return playback_bindings.count(name) != 0; }, bind_restored, revoke_entries);
+        track_information_controller = std::make_unique<TrackInformationController>(plugin.hwndWinampParent, track_information, show_track_information);
         return 0;
     } catch (...) { shutdown(); return 1; }
 }
 
 void shutdown() noexcept {
+    track_information_controller.reset();
     replay.reset();
     if (monitor) { KillTimer(monitor, 1); DestroyWindow(monitor); monitor = nullptr; }
     destroy_views();
@@ -353,10 +378,13 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
         std::wstring title(static_cast<std::size_t>(size), L'\0');
         MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, label.data(), static_cast<int>(label.size()), title.data(), size);
         const auto cover = artwork.find(track_artwork(track));
+        std::string genre;
+        for (const auto& tag : track.genres) { if (!genre.empty()) genre += "; "; genre += tag; }
         Metadata metadata{{L"title", title}, {L"artist", unicode(track.artist)}, {L"albumartist", unicode(track.album_artist)},
                           {L"album", unicode(track.album)}, {L"year", track.year ? std::to_wstring(track.year) : L""},
                           {L"track", track.number ? std::to_wstring(track.number) : L""},
-                          {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)}};
+                          {L"disc", track.disc ? std::to_wstring(track.disc) : L""}, {L"length", std::to_wstring(track.duration_ms)},
+                          {L"genre", unicode(genre)}};
         const auto display_title = unicode(playlist_display_title(label, track.artist));
         long long total = 0, offset = 0;
         bool offsets_known = true;
@@ -373,8 +401,10 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
             const auto seconds = part.duration_ms / 1000;
             if (seconds > 2147483647) throw std::invalid_argument("duration_limit");
             const auto file = prepared.find(part.key);
+            auto part_metadata = metadata;
+            part_metadata[L"format"] = unicode(part.audio_codec.empty() ? part.container : part.audio_codec);
             items.push_back({{parse_server_address(connection.server_origin), connection.server_token, part.key}, display_title,
-                part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, metadata,
+                part.duration_ms ? static_cast<int>(seconds) : -1, cover == artwork.end() ? nullptr : cover->second, std::move(part_metadata),
                 file == prepared.end() ? nullptr : file->second, {track.identifier, timeline_duration, offset, offsets_known},
                 {{}, connection.server_identifier, track.identifier, part.key}});
             if (part.duration_ms > 0 && offset <= (std::numeric_limits<long long>::max)() - part.duration_ms) offset += part.duration_ms;

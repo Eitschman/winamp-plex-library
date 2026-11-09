@@ -2,6 +2,10 @@
 
 ## Host language
 
+The Plex track-information panel follows the host language and uses the existing skinned child-dialog frame. Its read-only EDIT fields also use `SWES_VCENTER` for text alignment. No connection or decoder state is passed to this panel.
+
+The original command header defines `WINAMP_EDIT_ID3` (40188). The pinned IPC header defines `IPC_INFOBOX` (293), `IPC_INFOBOXW` (1293), their parameter layouts and OK/Cancel results. The playlist editor's `ID_PE_ID3` value (40208) was checked against [Winamp core resource definitions](https://www.unix.dog/~agris/winamp/Src/Winamp/resource.h), with selection enumeration from the original `ipc_pe.h`. The factual command value is retained locally; no implementation from that mirror is copied or bundled. [FileInfo.cpp](https://www.unix.dog/~agris/winamp/Src/Winamp/FileInfo.cpp) explains the unified information dialog's decoder-specific stream queries. Native target-version tests cover both command entry points; other hosts, including WACUP, remain unverified.
+
 The single-line search EDIT uses the verified Skin SDK `SWES_VCENTER` style through `MLSkinWindow`. The skin engine handles text/caret alignment and colors; the field keeps its ordinary row height and native editing behavior. No multiline control or custom text renderer is used.
 
 The UI inherits the active Winamp language through `IPC_GETLANGUAGEPACKINSTANCE` with `MAKEWPARAM(5, LANG_LANG_CODE)`. Original SDK 5.55 `Winamp/wa_ipc.h`, lines 1648 through 1665, documents this contract since Winamp 5.51. The target returns `de` or `en`; German selects German text, and other supported host-language responses use English plugin text. A missing interface fails initialization explicitly. Windows locale and a saved plugin language are not substituted. The SDK host covers German, English and missing responses; the isolated real host was tested in English and with its German language pack.

@@ -27,6 +27,8 @@ This is a maintained working document, not an immutable copy of the initial prom
 
 ## Verified baseline
 
+- Native, skinned read-only Plex track information through the player/playlist File Information commands and documented information IPC. The panel receives only nine music fields; it has no URL, path, server or credential fields and does not alter media bytes. Foreign local/radio dialogs and mixed-selection cancellation retain native behavior. The current local Debug/Release builds pass 19 suites and seven package checks; current evidence is in `docs/testing.md`.
+
 - MSVC x86 builds, original SDK export/descriptor, Plex tree nodes, native views, regular exit/restart and 100 SDK load cycles.
 - Browser sign-in approved by the user, HTTPS identity checks, music library discovery and DPAPI persistence.
 - Synthetic transport, ranges, cancellation, URL security and classified failures.
