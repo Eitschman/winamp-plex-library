@@ -992,14 +992,18 @@ void layout(HWND dialog) {
     auto* view = reinterpret_cast<View*>(GetWindowLongPtrW(dialog, GWLP_USERDATA));
     const bool short_layout = height < vertical(200);
     const bool compact_header = short_layout && view && view->libraries.size() <= 1;
+    const int field_left = padding + horizontal(82);
+    const int action_gap = horizontal(5);
+    const int right_button_width = compact_header ? (width - 2 * padding - 2 * action_gap) / 3 : horizontal(102);
+    const int library_y = vertical(5), library_text_y = library_y + vertical(2);
     SetDlgItemTextW(dialog, IDC_LIBRARY_LABEL, narrow ? text(L"Bibliothek", L"Library") : text(L"Musikbibliothek", L"Music library"));
-    place(IDC_LIBRARY_LABEL, padding, vertical(7), horizontal(narrow ? 55 : 80), vertical(13));
-    const int library_y = vertical(5);
-    const int library_left = horizontal(narrow ? 65 : 90);
-    const int library_width = width - library_left - horizontal(114);
-    place(IDC_LIBRARY, library_left, library_y, library_width, vertical(100));
-    place(IDC_LIBRARY_NAME, library_left, library_y + vertical(2), library_width, vertical(13));
-    place(IDC_LOGIN, width - horizontal(108), vertical(5), horizontal(102), vertical(15));
+    // Beide statischen Texte verwenden dieselbe Zeichenart und dieselbe
+    // berechnete Textlinie, auch bei gerundeten Dialogeinheiten im Skin.
+    place(IDC_LIBRARY_LABEL, padding, library_text_y, horizontal(80), vertical(13));
+    const int library_width = width - field_left - padding - right_button_width - horizontal(6);
+    place(IDC_LIBRARY, field_left, library_y, library_width, vertical(100));
+    place(IDC_LIBRARY_NAME, field_left, library_text_y, library_width, vertical(13));
+    place(IDC_LOGIN, width - padding - right_button_width, library_y, right_button_width, vertical(15));
     if (compact_header) {
         ShowWindow(GetDlgItem(dialog, IDC_LIBRARY_LABEL), SW_HIDE);
         ShowWindow(GetDlgItem(dialog, IDC_LIBRARY_NAME), SW_HIDE);
@@ -1008,11 +1012,11 @@ void layout(HWND dialog) {
         if (view && view->libraries.size() <= 1) ShowWindow(GetDlgItem(dialog, IDC_LIBRARY_NAME), SW_SHOW);
     }
     const int search_y = vertical(compact_header ? 5 : narrow ? 25 : 27);
-    const int search_left = padding + horizontal(82);
-    const int reset_left = width - horizontal(narrow || compact_header ? 86 : 270);
+    const int search_left = field_left;
+    const int reset_left = narrow || compact_header ? width - padding - right_button_width : width - horizontal(292);
     place(IDC_SEARCH_LABEL, padding, search_y + vertical(2), horizontal(80), vertical(12));
     place(IDC_SEARCH, search_left, search_y, reset_left - search_left, vertical(15));
-    place(IDC_RESET_SELECTION, reset_left, search_y, horizontal(80), vertical(15));
+    place(IDC_RESET_SELECTION, reset_left, search_y, right_button_width, vertical(15));
     const int refresh_y = narrow || compact_header ? search_y + vertical(18) : search_y;
     if (compact_header) {
         const int gap = horizontal(5), button = (width - 2 * padding - 2 * gap) / 3;

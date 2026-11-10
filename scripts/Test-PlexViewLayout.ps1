@@ -18,6 +18,25 @@ function Assert-ControlBounds($Bounds) {
             $rectangle.Right -gt $Bounds.Right -or $rectangle.Bottom -gt $Bounds.Bottom) { throw "Bedienelement $($child.ControlId) überschreitet die Ansicht." }
     }
 }
+function Header-Rect([int]$Identifier) {
+    $control = ([PlexNative]::Children($view) | Where-Object ControlId -eq $Identifier).Handle
+    $rectangle = New-Object PlexNative+Rect
+    if (!$control -or ![PlexNative]::GetWindowRect($control,[ref]$rectangle)) { throw 'Kopfzeilen-Steuerelement fehlt.' }
+    return $rectangle
+}
+function Assert-HeaderAlignment {
+    $settings = Header-Rect 1007; $reset = Header-Rect 1180
+    if (($settings.Right-$settings.Left) -ne ($reset.Right-$reset.Left)) { throw 'Einstellungen und Zurücksetzen sind unterschiedlich breit.' }
+    $name = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1064).Handle
+    if (([PlexNative]::WindowStyle($name,-16) -band 268435456) -ne 0) {
+        $label = Header-Rect 1063; $value = Header-Rect 1064; $search = Header-Rect 1051
+        if ($label.Top -ne $value.Top -or $label.Bottom -ne $value.Bottom -or $value.Left -ne $search.Left) { throw 'Bibliotheksangaben und Suchfeld sind nicht bündig ausgerichtet.' }
+        foreach ($identifier in @(1063,1064)) {
+            $control = ([PlexNative]::Children($view) | Where-Object ControlId -eq $identifier).Handle
+            if (([PlexNative]::WindowStyle($control,-16) -band 49152) -ne 16384) { throw 'Bibliothekstexte verwenden unterschiedliche Zeichenarten.' }
+        }
+    }
+}
 try {
     $countercheck = $false
     foreach ($size in @(@(1024, 600), @(600, 400), @(420, 330), @(630, 280))) {
@@ -48,6 +67,28 @@ try {
             Write-Output 'layout_guard_detects_clipped_filter=1'
         }
         Assert-ControlBounds $bounds
+        Assert-HeaderAlignment
+        if ($size[0] -eq 1024) {
+            $label = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1063).Handle
+            $savedLabel = Header-Rect 1063
+            $detected = $false
+            try {
+                [void][PlexNative]::SetWindowPos($label,[IntPtr]::Zero,$savedLabel.Left-$bounds.Left,$savedLabel.Top-$bounds.Top+2,0,0,5)
+                try { Assert-HeaderAlignment } catch { $detected = $true }
+            } finally { [void][PlexNative]::SetWindowPos($label,[IntPtr]::Zero,$savedLabel.Left-$bounds.Left,$savedLabel.Top-$bounds.Top,0,0,5) }
+            if (!$detected) { throw 'Versetzte Bibliothekstextlinie wurde nicht erkannt.' }
+            Assert-HeaderAlignment
+            $reset = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1180).Handle
+            $savedReset = Header-Rect 1180
+            $detected = $false
+            try {
+                [void][PlexNative]::SetWindowPos($reset,[IntPtr]::Zero,0,0,$savedReset.Right-$savedReset.Left-2,$savedReset.Bottom-$savedReset.Top,6)
+                try { Assert-HeaderAlignment } catch { $detected = $true }
+            } finally { [void][PlexNative]::SetWindowPos($reset,[IntPtr]::Zero,0,0,$savedReset.Right-$savedReset.Left,$savedReset.Bottom-$savedReset.Top,6) }
+            if (!$detected) { throw 'Unterschiedliche Buttonbreiten wurden nicht erkannt.' }
+            Assert-HeaderAlignment
+            Write-Output 'header_alignment_countercheck=passed'
+        }
         if ([PlexNative]::QueryInt32($list.Handle,4136,[IntPtr]::Zero,[IntPtr]::Zero) -lt 1) { throw 'Track table has no room for a visible row.' }
         $search = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1051).Handle
         $searchBounds = New-Object PlexNative+Rect
