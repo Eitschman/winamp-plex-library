@@ -11,6 +11,7 @@ struct BrowseQuery {
     bool playlist_items = false, descending = false;
     std::size_t offset = 0, limit = 250;
     std::string genre, year, audio_codec;
+    std::string artist_identifier, search_field = "title";
 };
 // UI-Zustände verwenden stabile Plex-IDs, keine Zeiger oder temporären URLs.
 struct LibraryNavigation {

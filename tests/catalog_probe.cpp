@@ -2,6 +2,7 @@
 #include "plex/http_stream.h"
 #include "plex/artwork.h"
 #include "plex/page_cache.h"
+#include "plex/browser_selection.h"
 #include <objbase.h>
 #include <iostream>
 #include <stdexcept>
@@ -20,7 +21,8 @@ int main(int count, char** arguments) {
     const bool resources = count == 3 && std::string(arguments[1]) == "--resources";
     const bool library_cache = count == 2 && std::string(arguments[1]) == "--library-cache";
     const bool filters = count == 2 && std::string(arguments[1]) == "--filters";
-    if (count != 1 && !inventory && !sorts && !resources && !library_cache && !filters) return 2;
+    const bool browser_test = count == 2 && std::string(arguments[1]) == "--browser";
+    if (count != 1 && !inventory && !sorts && !resources && !library_cache && !filters && !browser_test) return 2;
     unsigned cycles = 0;
     if (resources) {
         const std::string value(arguments[2]);
@@ -32,6 +34,41 @@ int main(int count, char** arguments) {
     try {
         const auto settings = plex::load_settings(plex::settings_path());
         const plex::PlexCatalog client(settings, stop);
+        if (browser_test) {
+            stage = 90;
+            plex::BrowseQuery query; query.library_identifier = settings.library_identifier;
+            auto panes = plex::browser_queries(query, {});
+            const auto artists = client.page(*panes.primary);
+            bool verified = false;
+            for (const auto& item : artists.items) {
+                const auto& artist = std::get<plex::PlexArtist>(item);
+                plex::BrowserSelection selection; selection.artist = artist.identifier;
+                panes = plex::browser_queries(query, selection);
+                const auto albums = client.page(*panes.albums);
+                if (albums.items.empty()) continue;
+                query.search = artist.title;
+                panes = plex::browser_queries(query, selection);
+                const auto searched_albums = client.page(*panes.albums);
+                const auto searched_tracks = client.page(*panes.tracks);
+                if (searched_albums.items.empty() || searched_tracks.items.empty()) throw std::runtime_error("browser_artist_search_empty");
+                for (const auto& track : searched_tracks.items)
+                    if (std::get<plex::PlexTrack>(track).album_artist != artist.title) throw std::runtime_error("browser_artist_filter_ignored");
+                const auto album = std::get<plex::PlexAlbum>(searched_albums.items.front());
+                query.kind = plex::BrowseKind::albums; query.search = album.title; selection = {};
+                panes = plex::browser_queries(query, selection);
+                const auto album_tracks = client.page(*panes.tracks);
+                if (album_tracks.items.empty()) throw std::runtime_error("browser_album_search_empty");
+                selection.album = album.identifier; panes = plex::browser_queries(query, selection);
+                const auto chosen_tracks = client.page(*panes.tracks);
+                if (chosen_tracks.items.empty()) throw std::runtime_error("browser_album_children_empty");
+                for (const auto& track : chosen_tracks.items)
+                    if (std::get<plex::PlexTrack>(track).album_identifier != album.identifier) throw std::runtime_error("browser_album_filter_ignored");
+                std::cout << "browser_artist_and_album_filters_verified=1 tracks=" << chosen_tracks.items.size() << std::endl;
+                verified = true; break;
+            }
+            if (!verified) throw std::runtime_error("browser_requires_populated_artist");
+            CloseHandle(stop); return 0;
+        }
         if (filters) {
             for (const auto kind : {plex::BrowseKind::artists, plex::BrowseKind::albums, plex::BrowseKind::tracks}) {
                 plex::BrowseQuery query; query.kind = kind; query.library_identifier = settings.library_identifier;

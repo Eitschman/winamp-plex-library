@@ -11,7 +11,7 @@ $original = New-Object PlexNative+Rect
 if (-not [PlexNative]::GetWindowRect($view, [ref]$original)) { throw 'Ansichtsgröße fehlt.' }
 function Assert-ControlBounds($Bounds) {
     foreach ($child in [PlexNative]::Children($view)) {
-        if (([PlexNative]::WindowStyle($child.Handle,-16) -band 268435456) -eq 0 -or $child.ControlId -notin @(1004, 1007, 1001, 1050, 1051, 1052, 1053, 1054, 1055, 1058, 1059, 1063, 1064, 1120)) { continue }
+        if (([PlexNative]::WindowStyle($child.Handle,-16) -band 268435456) -eq 0 -or $child.ControlId -notin @(1004, 1007, 1001, 1050, 1051, 1052, 1053, 1054, 1055, 1058, 1059, 1063, 1064, 1120,1180,1181,1182,1183,1184,1185,1186,1187,1188,1189,1190)) { continue }
         $rectangle = New-Object PlexNative+Rect
         if (-not [PlexNative]::GetWindowRect($child.Handle, [ref]$rectangle) -or
             $rectangle.Left -lt $Bounds.Left -or $rectangle.Top -lt $Bounds.Top -or
@@ -20,9 +20,17 @@ function Assert-ControlBounds($Bounds) {
 }
 try {
     $countercheck = $false
-    foreach ($size in @(@(1024, 600), @(600, 400), @(420, 330))) {
+    foreach ($size in @(@(1024, 600), @(600, 400), @(420, 330), @(630, 280))) {
         if (-not [PlexNative]::SetWindowPos($view, [IntPtr]::Zero, 0, 0, $size[0], $size[1], 22)) { throw 'Testgröße konnte nicht gesetzt werden.' }
-        Start-Sleep -Milliseconds 150
+        # Vorherige temporäre Suche und Rücksetzung der Screenshotprüfung abwarten.
+        Start-Sleep -Milliseconds 450
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $status = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1004).Text
+            if ($status -match '^\d+ \.\.\. \d+|^No items found|^Keine Einträge') { break }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $deadline)
+        if ($status -notmatch '^\d+ \.\.\. \d+|^No items found|^Keine Einträge') { throw 'Catalog did not settle before layout measurement.' }
         [void][PlexNative]::RedrawWindow($view, [IntPtr]::Zero, [IntPtr]::Zero, 389)
         $bounds = New-Object PlexNative+Rect
         [void][PlexNative]::GetWindowRect($view, [ref]$bounds)
@@ -40,6 +48,7 @@ try {
             Write-Output 'layout_guard_detects_clipped_filter=1'
         }
         Assert-ControlBounds $bounds
+        if ([PlexNative]::QueryInt32($list.Handle,4136,[IntPtr]::Zero,[IntPtr]::Zero) -lt 1) { throw 'Track table has no room for a visible row.' }
         $search = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1051).Handle
         $searchBounds = New-Object PlexNative+Rect
         [void][PlexNative]::GetWindowRect($search,[ref]$searchBounds)

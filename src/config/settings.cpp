@@ -19,7 +19,8 @@ Json query_json(const BrowseQuery& query) {
     catalog_path(query);
     return {{"kind", static_cast<int>(query.kind)}, {"library", query.library_identifier}, {"parent", query.parent_identifier},
         {"search", query.search}, {"sort", query.sort}, {"playlist", query.playlist_items}, {"descending", query.descending},
-        {"offset", query.offset}, {"limit", query.limit}, {"genre", query.genre}, {"year", query.year}, {"codec", query.audio_codec}};
+        {"offset", query.offset}, {"limit", query.limit}, {"genre", query.genre}, {"year", query.year}, {"codec", query.audio_codec},
+        {"artist", query.artist_identifier}, {"search_field", query.search_field}};
 }
 BrowseQuery read_query(const Json& value) {
     const auto kind = value.at("kind").get<int>();
@@ -30,6 +31,8 @@ BrowseQuery read_query(const Json& value) {
     query.playlist_items = value.at("playlist"); query.descending = value.at("descending");
     query.offset = value.at("offset"); query.limit = value.at("limit");
     query.genre = value.at("genre"); query.year = value.at("year"); query.audio_codec = value.at("codec");
+    query.artist_identifier = value.value("artist", std::string{});
+    query.search_field = value.value("search_field", std::string{"title"});
     catalog_path(query); return query;
 }
 void validate_navigation(const LibraryNavigation& navigation) {

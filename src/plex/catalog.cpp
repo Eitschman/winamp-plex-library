@@ -125,7 +125,10 @@ std::string catalog_path(const BrowseQuery& query) {
         const auto type = query.kind == BrowseKind::artists ? 8 : query.kind == BrowseKind::albums ? 9 : 10;
         path = "/library/sections/" + library + "/all"; parameters.push_back("type=" + std::to_string(type));
     }
-    if (!query.search.empty()) parameters.push_back("title=" + encode_query_component(query.search));
+    if (query.search_field != "title" && query.search_field != "artist.title" && query.search_field != "album.title")
+        throw std::invalid_argument("catalog_search_field");
+    if (!query.artist_identifier.empty()) parameters.push_back("artist.id=" + identifier(query.artist_identifier));
+    if (!query.search.empty()) parameters.push_back(query.search_field + "=" + encode_query_component(query.search));
     if (query.kind == BrowseKind::playlists && (!query.genre.empty() || !query.year.empty() || !query.audio_codec.empty())) throw std::invalid_argument("playlist_filters");
     for (const auto& filter : {std::pair{"genre", query.genre}, {query.kind == BrowseKind::tracks ? "album.year" : "year", query.year}, {"audioCodec", query.audio_codec}}) {
         if (filter.second.size() > 256 || filter.second.find('\0') != filter.second.npos) throw std::invalid_argument("catalog_filter");

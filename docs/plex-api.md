@@ -17,6 +17,8 @@ Plex also documents JWT/device-key authentication and renewal. This plugin uses 
 
 ## Server and music
 
+The related library browser keeps all listing requests paginated. Album and track queries can constrain `artist.id` to a validated numeric Plex ID; artist-name searches in dependent panes use `artist.title`, and album-name searches in the track pane use `album.title`. The allowed search-field names are fixed, and values are query-encoded. These names are supported by the [Python PlexAPI reference implementation](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/audio.html), which also uses `artist.id` for artist albums. `catalog_probe --browser` verifies actual artist-constrained album/track results, artist-name search, album-name search and selected-album children against the configured real server without printing identifiers, addresses or credentials. Selected album tracks use the existing `/library/metadata/{id}/children` route; no recursive whole-library download is required. Search text for a playlist is applied only to the playlist listing, never to its ordered track contents.
+
 | Purpose | Endpoint or response structure | Usage |
 | --- | --- | --- |
 | Identity | `GET /identity`, `MediaContainer.machineIdentifier` | Compared before authenticated access. |

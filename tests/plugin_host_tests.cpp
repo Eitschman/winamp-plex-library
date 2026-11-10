@@ -99,7 +99,7 @@ LRESULT CALLBACK host(HWND window, UINT message, WPARAM parameter, LPARAM operat
     if (message == WM_ML_IPC) {
         if (operation == ML_IPC_UNSKINWINDOW) {
             const auto control = reinterpret_cast<HWND>(parameter);
-            if (IsWindow(control) && GetDlgCtrlID(control) == 1050) ++unskinned_lists;
+            if (IsWindow(control) && (GetDlgCtrlID(control) == 1050 || GetDlgCtrlID(control) == 1181 || GetDlgCtrlID(control) == 1182)) ++unskinned_lists;
             return IsWindow(control);
         }
         if (operation == ML_IPC_SKINWINDOW) {
@@ -216,6 +216,9 @@ int wmain(int count, wchar_t** arguments) {
             check(!(GetWindowLongPtrW(GetDlgItem(view, 1060), GWL_STYLE) & WS_VISIBLE) &&
                   (GetWindowLongPtrW(GetDlgItem(view, 1064), GWL_STYLE) & WS_VISIBLE), "unconfigured_library_without_empty_dropdown");
             check(GetDlgItem(view, 1002) == nullptr && IsWindow(GetDlgItem(view, 1050)), "catalog_without_manual_token_test_control");
+            check(IsWindow(GetDlgItem(view, 1181)) && IsWindow(GetDlgItem(view, 1182)) &&
+                (GetWindowLongPtrW(GetDlgItem(view, 1180), GWL_STYLE) & WS_VISIBLE) &&
+                !(GetWindowLongPtrW(GetDlgItem(view, 1055), GWL_STYLE) & WS_VISIBLE), "related_selection_lists_and_reset_without_cache_toolbar");
             wchar_t caption[80]{}; GetDlgItemTextW(view, 1007, caption, 80);
             check(wcscmp(caption, german_host ? L"Einstellungen..." : L"Settings...") == 0 && !GetDlgItem(view, 1005), "language_inherited_from_winamp_without_selector");
             if (iteration == 0) {
@@ -306,8 +309,8 @@ int wmain(int count, wchar_t** arguments) {
             }
         }
         check(additions == 500 && removals == 100, "balanced_navigation");
-        check(skin_dialogs == 302 && skin_lists == 100, "native_skin_registration");
-        check(unskinned_lists == 100, "list_skin_released_before_window_destruction");
+        check(skin_dialogs == 302 && skin_lists == 300, "native_skin_registration");
+        check(unskinned_lists == 300, "list_skin_released_before_window_destruction");
         const auto handles = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
         if (handles > baseline) {
             std::cerr << "USER objects: before=" << baseline << ", after=" << handles << '\n';

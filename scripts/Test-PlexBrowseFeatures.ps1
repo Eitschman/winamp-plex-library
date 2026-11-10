@@ -77,7 +77,7 @@ function Open-Filters {
 }
 function Control([IntPtr]$Window, [int]$Identifier) { return ([PlexNative]::Children($Window) | Where-Object ControlId -eq $Identifier).Handle }
 try {
-    Select-Node $albums
+    Select-Node $tracks
     if ($CheckPersisted) {
         if ([PlexNative]::QueryInt32($list,4146,[IntPtr]0,[IntPtr]0) -ne 2 -or [PlexNative]::QueryInt32($list,4135,[IntPtr]0,[IntPtr]0) -le 0) { throw 'Persisted selection or scroll position missing after process restart.' }
         Write-Output 'process_restart_restored_selection_and_scroll=1'
@@ -87,7 +87,7 @@ try {
     $top = [PlexNative]::QueryInt32($list,4135,[IntPtr]0,[IntPtr]0)
     if ($top -le 0) { throw 'Scroll fixture did not move.' }
     Select-Node $artists
-    Select-Node $albums
+    Select-Node $tracks
     if ([PlexNative]::QueryInt32($list,4146,[IntPtr]0,[IntPtr]0) -ne 2) { throw 'Selection was not restored.' }
     if ([PlexNative]::QueryInt32($list,4135,[IntPtr]0,[IntPtr]0) -ne $top) { throw 'Scroll position was not restored.' }
     Write-Output 'node_selection_and_scroll_restored=1'
@@ -118,6 +118,9 @@ try {
     Command $window 1124
     if ([PlexNative]::ControlText((Control $window 1004)) -notmatch 'gelöscht|deleted') { throw 'Saved view deletion failed.' }
     Command $window 2
+    # Retain an unfiltered Tracks fixture for the separate process-restart check.
+    [PlexNative]::SelectCatalogRows($list,$process.Id,[int[]]@(10,11))
+    [void][PlexNative]::Query($list,4116,[IntPtr]0,[IntPtr]700)
     Write-Output 'native_filters_saved_search_roundtrip=1'
 } finally {
     foreach ($dialog in @([PlexNative]::Windows($process.Id) | Where-Object Text -match '^Plex-(Filter)|^Plex filters')) { [void][PlexNative]::PostMessage($dialog.Handle,16,[IntPtr]0,[IntPtr]0) }

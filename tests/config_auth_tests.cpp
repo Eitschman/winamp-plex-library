@@ -69,6 +69,7 @@ int main() {
         stored.close();
         plex::BrowseQuery saved_query; saved_query.library_identifier = settings.library_identifier; saved_query.kind = plex::BrowseKind::tracks;
         saved_query.search = "Björk & Orchestra"; saved_query.genre = "12"; saved_query.audio_codec = "flac";
+        saved_query.artist_identifier = "42"; saved_query.search_field = "artist.title";
         settings.library_preferences.searches.push_back({settings.server_identifier, settings.library_identifier, "Meine Musik", saved_query});
         saved_query.offset = 250;
         settings.library_preferences.bookmarks.push_back({settings.server_identifier, settings.library_identifier, plex::BrowseKind::tracks,
@@ -76,6 +77,7 @@ int main() {
         plex::save_settings(path, settings);
         const auto preferences = plex::load_settings(path).library_preferences;
         check(preferences.searches.size() == 1 && preferences.searches.front().query.search == "Björk & Orchestra" && preferences.searches.front().query.audio_codec == "flac", "saved_search_unicode_filters_roundtrip");
+        check(preferences.searches.front().query.artist_identifier == "42" && preferences.searches.front().query.search_field == "artist.title", "browser_query_fields_roundtrip");
         check(preferences.bookmarks.front().current.selected.size() == 2 && preferences.bookmarks.front().current.top == "120" && preferences.bookmarks.front().current.query.offset == 250, "stable_selection_scroll_page_roundtrip");
         auto invalid_view = settings; invalid_view.library_preferences.bookmarks.front().current.offsets = {0};
         rejects([&] { plex::save_settings(path, invalid_view); }, "inconsistent_saved_page_rejected");

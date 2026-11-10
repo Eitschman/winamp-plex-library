@@ -1,5 +1,6 @@
 #include "plex/catalog.h"
 #include "plex/page_cache.h"
+#include "plex/browser_selection.h"
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -100,6 +101,43 @@ int main() {
         const auto path = plex::catalog_path(query);
         check(path.find("Bj%C3%B6rk%20%26%20AC%2FDC") != path.npos, "query_encoding");
         check(path.find("X-Plex-Container-Start=0&X-Plex-Container-Size=250") != path.npos, "pagination_query");
+        {
+            plex::BrowserSelection selection;
+            auto browser = query;
+            browser.search = "Elvellon & Björk";
+            auto panes = plex::browser_queries(browser, selection);
+            check(panes.primary && panes.albums && panes.tracks, "artist_browser_has_three_related_lists");
+            check(plex::catalog_path(*panes.albums).find("artist.title=Elvellon%20%26%20Bj%C3%B6rk") != std::string::npos &&
+                  plex::catalog_path(*panes.tracks).find("artist.title=") != std::string::npos, "artist_search_applies_to_albums_and_tracks");
+            selection.artist = "42"; selection.album = "43";
+            browser.sort = "albumOrder";
+            panes = plex::browser_queries(browser, selection);
+            check(panes.albums->artist_identifier == "42" && panes.tracks->parent_identifier == "43" && panes.tracks->sort == "albumOrder", "artist_and_album_selection_preserves_disc_order");
+            check(plex::catalog_path(*panes.albums).find("artist.id=42") != std::string::npos, "artist_identity_filter");
+            browser.sort = "duration"; browser.descending = true;
+            panes = plex::browser_queries(browser, selection);
+            check(panes.tracks->sort == "duration" && panes.tracks->descending, "selected_album_tracks_can_be_sorted_explicitly");
+            browser.genre = "7"; browser.year = "2024"; browser.audio_codec = "flac"; browser.offset = 250;
+            plex::reset_browser(browser, selection);
+            check(browser.kind == plex::BrowseKind::artists && browser.library_identifier == "5" && browser.search.empty() &&
+                browser.genre.empty() && browser.year.empty() && browser.audio_codec.empty() && browser.offset == 0 &&
+                selection.artist.empty() && selection.album.empty(), "reset_clears_whole_selection_but_retains_library_and_area");
+            browser.kind = plex::BrowseKind::albums; browser.search = "Until Dawn";
+            panes = plex::browser_queries(browser, selection);
+            check(panes.primary && !panes.albums && panes.tracks->search_field == "album.title", "album_browser_search_is_not_track_title_search");
+            browser.kind = plex::BrowseKind::playlists;
+            panes = plex::browser_queries(browser, selection);
+            check(panes.primary && !panes.tracks, "playlist_browser_does_not_show_unrelated_library_tracks");
+            selection.playlist = "77"; panes = plex::browser_queries(browser, selection);
+            check(panes.tracks && panes.tracks->playlist_items && panes.tracks->search.empty() && panes.tracks->sort == "albumOrder", "playlist_tracks_keep_order_and_ignore_playlist_name_search");
+            browser.kind = plex::BrowseKind::tracks;
+            panes = plex::browser_queries(browser, selection);
+            check(!panes.primary && !panes.albums && panes.tracks->search_field == "title" && panes.tracks->parent_identifier.empty(), "track_area_is_independent_from_selector_state");
+            auto unsafe = *panes.tracks; unsafe.search_field = "title&X-Plex-Token";
+            rejects([&] { plex::catalog_path(unsafe); }, "browser_search_field_injection_rejected");
+            unsafe = *panes.tracks; unsafe.artist_identifier = "42&evil=1";
+            rejects([&] { plex::catalog_path(unsafe); }, "browser_artist_identity_injection_rejected");
+        }
         query.kind = plex::BrowseKind::tracks; query.sort = "originalTitle";
         query.genre = "12&token=not-a-token"; query.year = "2001"; query.audio_codec = "flac";
         const auto filtered = plex::catalog_path(query);
