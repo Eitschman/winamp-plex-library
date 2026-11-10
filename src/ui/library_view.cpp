@@ -736,9 +736,9 @@ struct View : RetiredView {
     void localize() {
         SetDlgItemTextW(dialog, IDC_PAGE_TITLE, current.caption.c_str());
         for (const auto& label : {std::pair{IDC_LOGIN, text(L"Einstellungen...", L"Settings...")}, {IDC_BACK, text(L"Zurück", L"Back")},
-             {IDC_SEARCH_LABEL, text(L"Suche", L"Search")}, {IDC_REFRESH, text(L"Aktualisieren", L"Refresh")}, {IDC_CLEAR_CACHE, text(L"Cache leeren", L"Clear cache")},
+             {IDC_SEARCH_LABEL, root == BrowseKind::artists ? text(L"Künstler suchen", L"Search artists") : root == BrowseKind::albums ? text(L"Alben suchen", L"Search albums") : root == BrowseKind::playlists ? text(L"Playlists suchen", L"Search playlists") : text(L"Titel suchen", L"Search tracks")}, {IDC_REFRESH, text(L"Aktualisieren", L"Refresh")}, {IDC_CLEAR_CACHE, text(L"Cache leeren", L"Clear cache")},
              {IDC_LIBRARY_LABEL, text(L"Musikbibliothek", L"Music library")},
-             {IDC_RESET_SELECTION, text(L"× Zurücksetzen", L"× Reset")},
+             {IDC_RESET_SELECTION, text(L"Zurücksetzen", L"Reset")},
              {IDC_FILTERS, text(L"Filter / Ansichten...", L"Filters / views...")},
              {IDC_PREVIOUS, text(L"Vorherige Seite", L"Previous page")}, {IDC_NEXT, text(L"Nächste Seite", L"Next page")}})
             SetDlgItemTextW(dialog, label.first, label.second);
@@ -1008,9 +1008,9 @@ void layout(HWND dialog) {
         if (view && view->libraries.size() <= 1) ShowWindow(GetDlgItem(dialog, IDC_LIBRARY_NAME), SW_SHOW);
     }
     const int search_y = vertical(compact_header ? 5 : narrow ? 25 : 27);
-    const int search_left = padding + horizontal(30);
+    const int search_left = padding + horizontal(82);
     const int reset_left = width - horizontal(narrow || compact_header ? 86 : 270);
-    place(IDC_SEARCH_LABEL, padding, search_y + vertical(2), horizontal(28), vertical(12));
+    place(IDC_SEARCH_LABEL, padding, search_y + vertical(2), horizontal(80), vertical(12));
     place(IDC_SEARCH, search_left, search_y, reset_left - search_left, vertical(15));
     place(IDC_RESET_SELECTION, reset_left, search_y, horizontal(80), vertical(15));
     const int refresh_y = narrow || compact_header ? search_y + vertical(18) : search_y;

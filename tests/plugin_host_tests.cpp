@@ -221,6 +221,10 @@ int wmain(int count, wchar_t** arguments) {
                 !(GetWindowLongPtrW(GetDlgItem(view, 1055), GWL_STYLE) & WS_VISIBLE), "related_selection_lists_and_reset_without_cache_toolbar");
             wchar_t caption[80]{}; GetDlgItemTextW(view, 1007, caption, 80);
             check(wcscmp(caption, german_host ? L"Einstellungen..." : L"Settings...") == 0 && !GetDlgItem(view, 1005), "language_inherited_from_winamp_without_selector");
+            GetDlgItemTextW(view, 1052, caption, 80);
+            check(wcscmp(caption, german_host ? L"Künstler suchen" : L"Search artists") == 0, "visible_artist_search_scope_in_host_language");
+            GetDlgItemTextW(view, 1180, caption, 80);
+            check(wcscmp(caption, german_host ? L"Zurücksetzen" : L"Reset") == 0, "reset_button_without_symbol");
             if (iteration == 0) {
                 for (settings_case = 0; settings_case < 3; ++settings_case) {
                     settings_valid = false;

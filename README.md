@@ -9,7 +9,7 @@ Browse Plex music directly in the classic Winamp Media Library and play it with 
 
 - Artists, albums, tracks and Plex audio playlists in dedicated Media Library nodes.
 - Related artist, album and track lists, single-click selection, sorting and multiple track selection.
-- Reset search, artist/album selection and filters together with **× Reset** or Escape in the search field.
+- Reset search, artist/album selection and filters together with **Reset** or Escape in the search field.
 - Server-side genre, album-year and audio-codec filters, named saved views, and restored positions in the unfiltered Tracks area.
 - Bounded next-track prefetch for sequential MP3/M4A playback, with cache usage in Diagnostics.
 - Play tracks or albums, append selections, or insert them after the current playlist entry. Winamp provides the player controls.
@@ -51,7 +51,7 @@ The plugin is tested in a separate copy of the target Winamp version. The SDK ho
 
 Source builds use related selection panes modeled on Winamp's local Audio library: Artists shows artists and albums above the track table, Albums shows albums above tracks, Tracks is a direct track table, and Playlists shows playlists above their tracks. Single-click a selector to update its dependent lists. Choose **All artists** or **All albums** to remove that selection; double-click a track to play it. Pane dividers can be dragged or adjusted with arrow keys when focused. Each list loads bounded pages in the background and has its own page controls when needed. A bounded metadata cache retains loaded pages. Playback remains under Winamp's control.
 
-Search applies to the current area: artist names in Artists, album names in Albums, track names in Tracks and playlist names in Playlists. A new search removes artist/album selections. **× Reset**, or Escape in the search field, clears search, selections and filters and returns to the first page, keeping the music library and navigation area. Switching areas or restarting does not restore implicit search/filter restrictions. Cache clearing is available in Settings instead of the browsing toolbar. These source changes are separate from the published version described under Download.
+Search applies to the current area. Its persistent label reads **Search artists**, **Search albums**, **Search tracks** or **Search playlists**, including while text is entered. A new search removes artist/album selections. **Reset**, or Escape in the search field, clears search, selections and filters and returns to the first page, keeping the music library and navigation area. Switching areas or restarting does not restore implicit search/filter restrictions. Cache clearing is available in Settings instead of the browsing toolbar. These source changes are separate from the published version described under Download.
 
 Narrow or low windows keep title, artist and duration visible without a horizontal scrollbar; wider, taller windows restore the full track columns. With one music library, low windows combine search and actions into two rows instead of repeating the library label. The library remains selectable through Settings. Multiple-library windows retain their chooser.
 

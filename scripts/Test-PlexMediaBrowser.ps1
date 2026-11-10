@@ -49,7 +49,12 @@ function Select-Node([IntPtr]$Node) {
         $albumsVisible = ([PlexNative]::WindowStyle((Control 1182),-16) -band 268435456) -ne 0
         if ($primaryVisible -ne ($Node -ne $tracks) -or $albumsVisible -ne ($Node -eq $artists)) { continue }
         Wait-Loaded
-        if (!$primaryVisible -or [PlexNative]::QueryInt32((Control 1181),4100,[IntPtr]::Zero,[IntPtr]::Zero) -ge 1) { return }
+        if (!$primaryVisible -or [PlexNative]::QueryInt32((Control 1181),4100,[IntPtr]::Zero,[IntPtr]::Zero) -ge 1) {
+            $scope = if ($Node -eq $artists) { 'Künstler suchen|Search artists' } elseif ($Node -eq $albums) { 'Alben suchen|Search albums' } elseif ($Node -eq $tracks) { 'Titel suchen|Search tracks' } else { 'Playlists suchen|Search playlists' }
+            if ([PlexNative]::ControlText((Control 1052)) -notmatch ('^(' + $scope + ')$')) { throw 'Visible search label does not identify its area.' }
+            if ([PlexNative]::ControlText((Control 1180)) -notmatch '^(Zurücksetzen|Reset)$') { throw 'Reset button contains unexpected text or a symbol.' }
+            return
+        }
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Plex area was not created and populated.'
 }
