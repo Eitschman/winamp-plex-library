@@ -158,7 +158,7 @@ function Add-ProductTrack([IntPtr]$Main,[string]$Title,[string]$Artist,[string]$
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
         $status = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1004).Text
-        if ($status -match '^\d+ \.\.\. \d+') { break }
+        if ($status -match '^\d+-\d+') { break }
         if ($status -match 'Fehler|error|verweigert|denied') { throw 'Bibliotheksabfrage fehlgeschlagen.' }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)

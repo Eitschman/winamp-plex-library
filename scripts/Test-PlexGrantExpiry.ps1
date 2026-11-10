@@ -35,7 +35,7 @@ function Wait-Status([bool]$Expired) {
     do {
         $status = [PlexNative]::Children($selected.View) | Where-Object ControlId -eq 1004
         if ($Expired -and $status.Text -match '^Wiedergabelink abgelaufen\.|^Playback link expired\.') { return }
-        if (-not $Expired -and $status.Text -match '^1 \.\.\. ') { return }
+        if (-not $Expired -and $status.Text -match '^1-\d+') { return }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Ablaufmeldung oder Erholung fehlt.'

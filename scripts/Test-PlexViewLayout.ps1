@@ -46,10 +46,10 @@ try {
         $deadline = [DateTime]::UtcNow.AddSeconds(30)
         do {
             $status = ([PlexNative]::Children($view) | Where-Object ControlId -eq 1004).Text
-            if ($status -match '^\d+ \.\.\. \d+|^No items found|^Keine Einträge') { break }
+            if ($status -match '^\d+-\d+|^No items found|^Keine Einträge') { break }
             Start-Sleep -Milliseconds 100
         } while ([DateTime]::UtcNow -lt $deadline)
-        if ($status -notmatch '^\d+ \.\.\. \d+|^No items found|^Keine Einträge') { throw 'Catalog did not settle before layout measurement.' }
+        if ($status -notmatch '^\d+-\d+|^No items found|^Keine Einträge') { throw 'Catalog did not settle before layout measurement.' }
         [void][PlexNative]::RedrawWindow($view, [IntPtr]::Zero, [IntPtr]::Zero, 389)
         $bounds = New-Object PlexNative+Rect
         [void][PlexNative]::GetWindowRect($view, [ref]$bounds)

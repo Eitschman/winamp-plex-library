@@ -38,7 +38,7 @@ try {
         if ([PlexNative]::CatalogCellText($list.Handle, $process.Id, $Sample.row_index, 0) -cne $Sample.title) { throw 'Playlistprobe und Tabellenzeile stimmen nicht überein.' }
         [PlexNative]::SelectCatalogRows($list.Handle, $process.Id, [int[]]@($Sample.row_index))
     }
-    Command 1054; Wait-Status '^1 \.\.\. '
+    Command 1054; Wait-Status '^1-\d+'
     if ([PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) -ne $samples.playlist_count) { throw 'Playlistübersicht ist unvollständig.' }
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
@@ -53,9 +53,9 @@ try {
     Select-Sample $samples.empty
     Command 1056; Wait-Status '^Die Auswahl enthält keine Titel\.$|^The selection contains no tracks\.$'
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124) -ne 0) { throw 'Leere Playlist verändert Winamps Playlist.' }
-    Command 1054; Wait-Status '^1 \.\.\. '
+    Command 1054; Wait-Status '^1-\d+'
     Select-Sample $samples.selected
-    Command 1057; Wait-Status '^1 \.\.\. '
+    Command 1057; Wait-Status '^1-\d+'
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]124) -ne $samples.selected.count) { throw 'Playlistübergabe verliert Titel.' }
     [void][PlexNative]::Query($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]120)
     $playlist = Get-Content -LiteralPath (Join-Path (Split-Path $process.Path -Parent) 'settings\Winamp.m3u8') -Encoding UTF8
@@ -68,13 +68,13 @@ try {
     if ([PlexNative]::QueryInt32($main.Handle, 1024, [IntPtr]::Zero, [IntPtr]104) -ne 0) { throw 'Anhängen startet unerwartet die Wiedergabe.' }
     Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $PSScriptRoot '..\.local\playlists-root.png')
     [void][PlexNative]::PostMessage($list.Handle, 256, [IntPtr]13, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 200; Wait-Status '^1 \.\.\. '
+    Start-Sleep -Milliseconds 200; Wait-Status '^1-\d+'
     if ([PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) -ne $samples.selected.count) { throw 'Playlistnavigation verliert Titel.' }
     for ($index = 0; $index -lt $titles.Count; ++$index) {
         if ([PlexNative]::CatalogCellText($list.Handle, $process.Id, $index, 0) -cne $samples.selected.titles[$index]) { throw 'Titelansicht verändert die Playlistreihenfolge.' }
     }
     Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $PSScriptRoot '..\.local\playlists-tracks.png')
-    Command 1053; Wait-Status '^1 \.\.\. '
+    Command 1053; Wait-Status '^1-\d+'
     Write-Output "Leere Playlist, aktuelle dynamische Titelanzahl und $($titles.Count) Titel in Plex-Reihenfolge geprüft. Anhängen und Navigation ohne Wiedergabestart."
 } finally {
     [void][PlexNative]::Query($main.Handle, 273, [IntPtr]40047, [IntPtr]::Zero)

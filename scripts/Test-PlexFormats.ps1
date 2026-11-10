@@ -23,7 +23,7 @@ function Wait-Catalog {
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
         $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-        if ($status.Text -match '^\d+ \.\.\. \d+') { return [PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) }
+        if ($status.Text -match '^\d+-\d+') { return [PlexNative]::QueryInt32($list.Handle, 4100, [IntPtr]::Zero, [IntPtr]::Zero) }
         if ($status.Text -match '^Keine Einträge gefunden\.|^No items found\.') { return 0 }
         if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Katalogfehler beim Formatnachweis.' }
         Start-Sleep -Milliseconds 100

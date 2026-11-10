@@ -57,7 +57,7 @@ function Wait-Catalog {
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         $status = ([PlexNative]::Children($script:view) | Where-Object ControlId -eq 1004).Text
-        if ($status -match '^\d+ \.\.\. \d+|^No items found|^Keine Einträge') { return }
+        if ($status -match '^\d+-\d+|^No items found|^Keine Einträge') { return }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Catalog did not complete.'

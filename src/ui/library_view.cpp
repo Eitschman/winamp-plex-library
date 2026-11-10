@@ -751,7 +751,7 @@ struct View : RetiredView {
         if (root == BrowseKind::playlists && browser.playlist.empty()) value = text(L"Bitte eine Playlist auswählen.", L"Select a playlist.");
         else if (rows.empty()) value = text(L"Keine Einträge gefunden.", L"No items found.");
         else {
-            value = std::to_wstring(page.offset + 1) + L" ... " + std::to_wstring(page.offset + rows.size());
+            value = std::to_wstring(page.offset + 1) + L"-" + std::to_wstring(page.offset + rows.size());
             if (page.total) value += text(L" von ", L" of ") + std::to_wstring(*page.total);
         }
         SetDlgItemTextW(dialog, IDC_STATUS, value.c_str());
@@ -788,7 +788,7 @@ struct View : RetiredView {
         ListView_SetItemCount(list, static_cast<int>(entries.size()) + 1);
         if (selection_index >= 0) ListView_SetItemState(list, selection_index, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
         std::wstring range = entries.empty() ? text(L"Keine Einträge", L"No items") :
-            std::to_wstring(catalog.offset + 1) + L" ... " + std::to_wstring(catalog.offset + entries.size());
+            std::to_wstring(catalog.offset + 1) + L"-" + std::to_wstring(catalog.offset + entries.size());
         if (catalog.total && !entries.empty()) range += text(L" von ", L" of ") + std::to_wstring(*catalog.total);
         SetDlgItemTextW(dialog, primary ? IDC_PRIMARY_COUNT : IDC_ALBUM_COUNT, range.c_str());
         updating_selectors = false;
@@ -989,6 +989,17 @@ void layout(HWND dialog) {
     auto place = [&](int control, int left, int top, int control_width, int control_height) {
         MoveWindow(GetDlgItem(dialog, control), left, top, (std::max)(1, control_width), (std::max)(1, control_height), TRUE);
     };
+    // Die Seitenangabe nutzt dieselbe Zeilenhöhe wie ihre Buttons. Ohne
+    // Seitenwechsel gehört sie an den rechten Rand der zugehörigen Tabelle.
+    auto place_count = [&](int identifier, int left, int top, int span, int button_width, int line_height, bool pages) {
+        const auto control = GetDlgItem(dialog, identifier);
+        auto style = GetWindowLongPtrW(control, GWL_STYLE);
+        style = (style & ~static_cast<LONG_PTR>(SS_TYPEMASK)) | (pages ? SS_CENTER : SS_RIGHT) | SS_CENTERIMAGE | SS_ENDELLIPSIS;
+        SetWindowLongPtrW(control, GWL_STYLE, style);
+        const int inset = pages ? button_width + horizontal(2) : 0;
+        place(identifier, left + inset, top, span - 2 * inset, line_height);
+        InvalidateRect(control, nullptr, TRUE);
+    };
     auto* view = reinterpret_cast<View*>(GetWindowLongPtrW(dialog, GWLP_USERDATA));
     const bool short_layout = height < vertical(200);
     const bool compact_header = short_layout && view && view->libraries.size() <= 1;
@@ -1042,10 +1053,8 @@ void layout(HWND dialog) {
     int list_y = content_y;
     if (view && view->has_selectors()) {
         const int usable_height = (std::max)(vertical(60), bottom - content_y - vertical(7));
-        const bool footer = height >= vertical(250) || view->primary_page.more || view->primary_offsets.size() > 1 ||
-            (view->root == BrowseKind::artists && (view->album_page.more || view->album_offsets.size() > 1));
         const bool compact_height = height < vertical(250);
-        const int minimum_selector = short_layout ? vertical(footer ? 50 : 38) : compact_height ? vertical(footer ? 54 : 45) : vertical(37);
+        const int minimum_selector = short_layout ? vertical(50) : compact_height ? vertical(54) : vertical(37);
         const int selection_height = (std::clamp)(usable_height * view->horizontal_split / 100, minimum_selector, (std::max)(minimum_selector, usable_height - vertical(42)));
         const int selection_width = width - 2 * padding;
         const int gap = horizontal(4);
@@ -1054,9 +1063,9 @@ void layout(HWND dialog) {
         const int second_left = padding + first_width + gap;
         const int second_width = width - padding - second_left;
         const int footer_height = vertical(compact_height ? 12 : 16);
-        const int selector_height = selection_height - (footer ? footer_height : 0);
-        ShowWindow(GetDlgItem(dialog, IDC_PRIMARY_COUNT), footer ? SW_SHOW : SW_HIDE);
-        ShowWindow(GetDlgItem(dialog, IDC_ALBUM_COUNT), footer && two ? SW_SHOW : SW_HIDE);
+        const int selector_height = selection_height - footer_height;
+        ShowWindow(GetDlgItem(dialog, IDC_PRIMARY_COUNT), SW_SHOW);
+        ShowWindow(GetDlgItem(dialog, IDC_ALBUM_COUNT), two ? SW_SHOW : SW_HIDE);
         place(IDC_PRIMARY_SELECTION, padding, content_y, first_width, selector_height);
         place(IDC_ALBUM_SELECTION, second_left, content_y, second_width, selector_height);
         place(IDC_SPLIT_VERTICAL, padding + first_width, content_y, gap, selection_height);
@@ -1064,7 +1073,9 @@ void layout(HWND dialog) {
             const int left = primary ? padding : second_left, span = primary ? first_width : second_width;
             place(primary ? IDC_PRIMARY_PREVIOUS : IDC_ALBUM_PREVIOUS, left, content_y + selector_height, horizontal(18), vertical(compact_height ? 12 : 15));
             place(primary ? IDC_PRIMARY_NEXT : IDC_ALBUM_NEXT, left + span - horizontal(18), content_y + selector_height, horizontal(18), vertical(compact_height ? 12 : 15));
-            place(primary ? IDC_PRIMARY_COUNT : IDC_ALBUM_COUNT, left + horizontal(20), content_y + selector_height + vertical(compact_height ? 1 : 2), span - horizontal(40), vertical(compact_height ? 10 : 12));
+            const bool pages = primary ? view->primary_page.more || view->primary_offsets.size() > 1 : view->album_page.more || view->album_offsets.size() > 1;
+            place_count(primary ? IDC_PRIMARY_COUNT : IDC_ALBUM_COUNT, left, content_y + selector_height, span,
+                horizontal(18), vertical(compact_height ? 12 : 15), pages);
             const auto list = GetDlgItem(dialog, primary ? IDC_PRIMARY_SELECTION : IDC_ALBUM_SELECTION);
             const auto available = (std::max)(60, span - 22);
             if (Header_GetItemCount(ListView_GetHeader(list)) == 1) ListView_SetColumnWidth(list, 0, available);
@@ -1094,11 +1105,13 @@ void layout(HWND dialog) {
             for (int column = 0; column < 8; ++column) ListView_SetColumnWidth(list, column, widths[static_cast<std::size_t>(column)]);
         }
     }
-    place(IDC_STATUS, padding, bottom + vertical(3), width - horizontal(narrow ? 62 : 204), vertical(14));
-    SetDlgItemTextW(dialog, IDC_PREVIOUS, narrow ? L"<" : text(L"Vorherige Seite", L"Previous page"));
-    SetDlgItemTextW(dialog, IDC_NEXT, narrow ? L">" : text(L"Nächste Seite", L"Next page"));
-    place(IDC_PREVIOUS, width - horizontal(narrow ? 54 : 196), bottom, horizontal(narrow ? 22 : 92), vertical(15));
-    place(IDC_NEXT, width - horizontal(narrow ? 28 : 98), bottom, horizontal(narrow ? 22 : 92), vertical(15));
+    SetDlgItemTextW(dialog, IDC_PREVIOUS, L"<");
+    SetDlgItemTextW(dialog, IDC_NEXT, L">");
+    const int page_button_width = horizontal(18), page_height = vertical(15);
+    place(IDC_PREVIOUS, padding, bottom, page_button_width, page_height);
+    place(IDC_NEXT, width - padding - page_button_width, bottom, page_button_width, page_height);
+    place_count(IDC_STATUS, padding, bottom, width - 2 * padding, page_button_width, page_height,
+        view && (view->current.offsets.size() > 1 || view->page.more));
 }
 }
 

@@ -16,7 +16,7 @@ try {
         $deadline = [DateTime]::UtcNow.AddSeconds(60)
         do {
             $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-            if ($status.Text -match '^\d+ \.\.\. \d+') { return }
+            if ($status.Text -match '^\d+-\d+') { return }
             if ($status.Text -match 'Fehler|error|verweigert|denied|nicht verarbeitet|not be processed') { throw 'Bibliotheksaktion meldet einen Fehler.' }
             Start-Sleep -Milliseconds 100
         } while ([DateTime]::UtcNow -lt $deadline)

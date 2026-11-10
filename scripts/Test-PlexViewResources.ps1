@@ -69,11 +69,11 @@ function Switch-Views {
         $deadline = [DateTime]::UtcNow.AddSeconds(60)
         do {
             $status = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1004
-            if ($status.Text -match '^1 \.\.\. |^Keine Einträge|^No items found|^Bitte eine Playlist|^Select a playlist') { break }
+            if ($status.Text -match '^1-\d+|^Keine Einträge|^No items found|^Bitte eine Playlist|^Select a playlist') { break }
             if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Bibliotheksansicht meldet einen Fehler.' }
             Start-Sleep -Milliseconds 100
         } while ([DateTime]::UtcNow -lt $deadline)
-        if ($status.Text -notmatch '^1 \.\.\. |^Keine Einträge|^No items found|^Bitte eine Playlist|^Select a playlist') { throw 'Bibliotheksansicht überschreitet das Testlimit.' }
+        if ($status.Text -notmatch '^1-\d+|^Keine Einträge|^No items found|^Bitte eine Playlist|^Select a playlist') { throw 'Bibliotheksansicht überschreitet das Testlimit.' }
         Start-Sleep -Milliseconds 300
     }
 }

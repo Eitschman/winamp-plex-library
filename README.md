@@ -55,6 +55,8 @@ Search applies to the current area. Its persistent label reads **Search artists*
 
 Narrow or low windows keep title, artist and duration visible without a horizontal scrollbar; wider, taller windows restore the full track columns. With one music library, low windows combine search and actions into two rows instead of repeating the library label. The library remains selectable through Settings. Multiple-library windows retain their chooser.
 
+Each table shows page ranges as **1-250 of 306** (German: **1-250 von 306**). With page buttons, the range is centered horizontally and vertically between them. Without page buttons, it is right-aligned beneath its table. Selector ranges remain visible in small windows.
+
 **Insert after current track** preserves playback or pause and changes the physical playlist order. Winamp shuffle and queue plugins can still choose a different next track. This action has been tested in Classic, Winamp Modern, Bento and Big Bento, in German and English. Queued streaming tracks remain playable within the same Winamp session after their exportable links expire; other processes then receive HTTP 410.
 
 Personal ratings appear on a five-star scale. The context menu for one selected track sets one to five stars or removes the rating. Background writing and readback update the table only after confirmation. Existing fractional ratings are preserved when read. A real test track's rating was changed and restored.

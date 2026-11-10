@@ -25,11 +25,11 @@ $deadline = [DateTime]::UtcNow.AddSeconds(20)
 do {
     $controls = [PlexNative]::Children($outer[0].Handle)
     $status = $controls | Where-Object ControlId -eq 1004
-    if ($status.Text -match '^\d+ \.\.\. \d+') { break }
+    if ($status.Text -match '^\d+-\d+') { break }
     if ($status.Text -match 'Fehler|error|nicht geladen|not be loaded|Keine Einträge|No items') { throw 'Cover-Test meldet Fehler oder findet kein Album.' }
     Start-Sleep -Milliseconds 100
 } while ([DateTime]::UtcNow -lt $deadline)
-if ($status.Text -notmatch '^\d+ \.\.\. \d+') { throw 'Albumabfrage überschreitet das Testlimit.' }
+if ($status.Text -notmatch '^\d+-\d+') { throw 'Albumabfrage überschreitet das Testlimit.' }
 # Das Nachladen wird separat von der Katalogantwort abgewartet. Der Screenshot wird
 # anschließend tatsächlich angesehen; diese Wartezeit allein belegt kein korrektes Bild.
 Start-Sleep -Seconds 2
@@ -39,5 +39,5 @@ $view = [PlexNative]::GetParent($list.Handle)
 Save-PlexWindowScreenshot $view (Join-Path $root '.local\album-artwork-view.png')
 Save-PlexWindowScreenshot $outer[0].Handle (Join-Path $root '.local\album-artwork-container.png')
 $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-if ($status.Text -notmatch '^\d+ \.\.\. \d+') { throw 'Cover-Nachladen meldet einen Fehler.' }
+if ($status.Text -notmatch '^\d+-\d+') { throw 'Cover-Nachladen meldet einen Fehler.' }
 Write-Output 'Albumabfrage angezeigt; Screenshots zur Sichtprüfung im lokalen Testordner gespeichert.'

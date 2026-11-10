@@ -24,11 +24,34 @@ $main = [PlexNative]::Windows($process.Id) | Where-Object Class -eq WinampPlexTe
 [void][PlexNative]::Query($main.Handle,273,[IntPtr]40047,[IntPtr]::Zero)
 function Control([int]$Identifier) { ([PlexNative]::Children($script:view) | Where-Object ControlId -eq $Identifier).Handle }
 function Command([int]$Identifier) { [void][PlexNative]::Query($script:view,273,[IntPtr]$Identifier,[IntPtr]::Zero) }
+function Assert-Footers {
+    foreach ($ids in @(@(1187,1183,1184,1181),@(1188,1185,1186,1182),@(1004,1058,1059,1050))) {
+        $label = Control $ids[0]
+        if (([PlexNative]::WindowStyle($label,-16) -band 268435456) -eq 0) { continue }
+        $caption = [PlexNative]::ControlText($label)
+        if ($caption -match '^\d' -and $caption -notmatch '^\d+-\d+ (von|of) \d+$') { throw 'Page range does not use start-end of total.' }
+        $style = [PlexNative]::WindowStyle($label,-16)
+        $previous = Control $ids[1]; $next = Control $ids[2]
+        $pages = ([PlexNative]::WindowStyle($previous,-16) -band 268435456) -ne 0
+        $expected = if ($pages) { 1 } else { 2 }
+        if (($style -band 31) -ne $expected -or ($style -band 512) -eq 0) { throw 'Page range has incorrect horizontal or vertical alignment.' }
+        $range = New-Object PlexNative+Rect; $left = New-Object PlexNative+Rect; $right = New-Object PlexNative+Rect
+        [void][PlexNative]::GetWindowRect($label,[ref]$range)
+        if ($pages) {
+            [void][PlexNative]::GetWindowRect($previous,[ref]$left); [void][PlexNative]::GetWindowRect($next,[ref]$right)
+            if ($range.Top -ne $left.Top -or $range.Bottom -ne $left.Bottom -or
+                [Math]::Abs(($range.Left+$range.Right)-($left.Right+$right.Left)) -gt 1) { throw 'Page range is not centered between buttons.' }
+        } else {
+            [void][PlexNative]::GetWindowRect((Control $ids[3]),[ref]$right)
+            if ($range.Right -ne $right.Right) { throw 'Page range does not reach its table right edge.' }
+        }
+    }
+}
 function Wait-Loaded {
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         $status = [PlexNative]::ControlText((Control 1004))
-        if ($status -match '^\d+ \.\.\. \d+|^No items found|^Keine Einträge|^Bitte eine Playlist|^Select a playlist') { return }
+        if ($status -match '^\d+-\d+|^No items found|^Keine Einträge|^Bitte eine Playlist|^Select a playlist') { return }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Catalog request did not finish.'
@@ -53,6 +76,7 @@ function Select-Node([IntPtr]$Node) {
             $scope = if ($Node -eq $artists) { 'Künstler suchen|Search artists' } elseif ($Node -eq $albums) { 'Alben suchen|Search albums' } elseif ($Node -eq $tracks) { 'Titel suchen|Search tracks' } else { 'Playlists suchen|Search playlists' }
             if ([PlexNative]::ControlText((Control 1052)) -notmatch ('^(' + $scope + ')$')) { throw 'Visible search label does not identify its area.' }
             if ([PlexNative]::ControlText((Control 1180)) -notmatch '^(Zurücksetzen|Reset)$') { throw 'Reset button contains unexpected text or a symbol.' }
+            Assert-Footers
             return
         }
     } while ([DateTime]::UtcNow -lt $deadline)
@@ -90,6 +114,24 @@ try {
     $tracks = [PlexNative]::Query($tree,4362,[IntPtr]1,$albums)
     $playlists = [PlexNative]::Query($tree,4362,[IntPtr]1,$tracks)
     Select-Node $artists
+    $countControl = Control 1187
+    $originalCount = [PlexNative]::ControlText($countControl)
+    $detected = $false
+    try {
+        [void][PlexNative]::SendMessage($countControl,12,[IntPtr]::Zero,'1 ... 250 von 306')
+        try { Assert-Footers } catch { $detected = $true }
+    } finally { [void][PlexNative]::SendMessage($countControl,12,[IntPtr]::Zero,$originalCount) }
+    if (!$detected) { throw 'Page range countercheck did not reject the old format.' }
+    $countBounds = New-Object PlexNative+Rect; $viewBounds = New-Object PlexNative+Rect
+    [void][PlexNative]::GetWindowRect($countControl,[ref]$countBounds); [void][PlexNative]::GetWindowRect($view,[ref]$viewBounds)
+    $detected = $false
+    try {
+        [void][PlexNative]::SetWindowPos($countControl,[IntPtr]::Zero,$countBounds.Left-$viewBounds.Left+2,$countBounds.Top-$viewBounds.Top+2,0,0,5)
+        try { Assert-Footers } catch { $detected = $true }
+    } finally { [void][PlexNative]::SetWindowPos($countControl,[IntPtr]::Zero,$countBounds.Left-$viewBounds.Left,$countBounds.Top-$viewBounds.Top,0,0,5) }
+    if (!$detected) { throw 'Page range countercheck did not reject displaced text.' }
+    Assert-Footers
+    Write-Output 'page_footer_format_and_alignment_counterchecks=passed'
     if ([PlexNative]::QueryInt32((Control 1181),4100,[IntPtr]::Zero,[IntPtr]::Zero) -lt 2) { throw 'Artist fixture is empty.' }
     if ([PlexNative]::IsWindowEnabled((Control 1184))) {
         $first = [PlexNative]::CatalogCellText((Control 1181),$process.Id,1,0)
@@ -135,6 +177,7 @@ try {
         if ($seconds -lt $previousSeconds) { throw 'Explicit track sorting inside an album was ignored.' }
         $previousSeconds = $seconds
     }
+    Assert-Footers
     Save-PlexWindowScreenshot $outer (Join-Path $project ('.local\' + $ScreenshotName + '-selected.png'))
     if ($TestEnqueue) {
         $before = [PlexNative]::QueryInt32($main.Handle,1024,[IntPtr]::Zero,[IntPtr]124)

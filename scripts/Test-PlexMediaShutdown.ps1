@@ -34,7 +34,7 @@ function Wait-Catalog {
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     do {
         $status = [PlexNative]::Children($view) | Where-Object ControlId -eq 1004
-        if ($status.Text -match '^\d+ \.\.\. |^No items found|^Keine Einträge') { return }
+        if ($status.Text -match '^\d+-\d+|^No items found|^Keine Einträge') { return }
         if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Katalogabfrage schlägt fehl.' }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)

@@ -111,11 +111,11 @@ try {
             $deadline = [DateTime]::UtcNow.AddSeconds(60)
             do {
                 $status = [PlexNative]::Children($outer[0].Handle) | Where-Object ControlId -eq 1004
-                if ($status.Text -match '^1 \.\.\. ') { break }
+                if ($status.Text -match '^1-\d+|^Bitte eine Playlist|^Select a playlist') { break }
                 if ($status.Text -match 'Fehler|error|verweigert|denied') { throw 'Plex-Navigation meldet einen Fehler.' }
                 Start-Sleep -Milliseconds 100
             } while ([DateTime]::UtcNow -lt $deadline)
-            if ($status.Text -notmatch '^1 \.\.\. ') { throw 'Plex-Navigation überschreitet das Testlimit.' }
+            if ($status.Text -notmatch '^1-\d+|^Bitte eine Playlist|^Select a playlist') { throw 'Plex-Navigation überschreitet das Testlimit.' }
             Start-Sleep -Milliseconds 300
         }
         Select-Node $tree.Handle $foreign
