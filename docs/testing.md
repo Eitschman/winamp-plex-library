@@ -1,6 +1,12 @@
 # Validation and integration checklist
 
-Baseline evidence date: November 9, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+Current evidence date: November 10, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+
+## Release 0.4.0
+
+The versioned x86 Debug and Release builds each pass all 20 CTest suites (`release-040-tests-debug.log`, `release-040-tests-release.log`). All 13 packaging checks pass (`release-040-packaging.log`), including rejected malformed PE files, x64/non-DLL files, missing licenses, output-directory reuse and invalid tags. The assembled DLL reports FileVersion 0.4.0. The package contains exactly the DLL, INSTALL.md, LICENSE, THIRD-PARTY-NOTICES.md and the nlohmann/json license. A redacted Gitleaks 8.30.1 scan of Git history and a separate package scan report no findings. The release workflow repeats the history scan and builds/tests both configurations before publishing its own package. GitHub workflow results are available from the README badge and the tagged release.
+
+The native browser and visual evidence below applies to the released browsing behavior. This release changes browsing and version metadata; transport, buffering, playback resolution and decoder paths retain their existing implementation. Real multiple-library switching, further third-party skins/DPI settings and WACUP remain unverified.
 
 ## Plex track information
 

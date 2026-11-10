@@ -71,7 +71,9 @@ Artwork and supplementary album/playlist counts share up to 64 entries with a fi
 
 Playlist count/duration enrichment uses the audio-playlist detail endpoint because dynamic-playlist overview values may be stale. Results are bound to the requested playlist and view generation. Playlist rows have no cover image list.
 
-The library header names the music library, using a selector only when more than one exists. The tree identifies root views; context headings and Back appear only in artist/album subviews. Paging actions are explicit. Narrow layouts place library identification, search actions and paging on separate rows.
+The library header names the music library, using a selector only when more than one exists. The tree identifies root views; related selection panes replace drill-down headings and Back. The persistent search label names its scope. The library label and name use the same static text drawing style and text line, and the name aligns with the search field. Settings and Reset share a button width. Low single-library windows omit the redundant header and use two action rows. Narrow or low track lists prioritize title, artist and duration.
+
+Every visible table has a page range using start-end of total, localized to German or English. Each table's previous and next arrow buttons occupy its left and right footer edges when paging is needed. The range uses a single-line static with vertical centering at the buttons' height and horizontal centering between their inner edges. Without buttons, it spans the table footer and is right-aligned. Counts remain visible in small selector panes. The native tests check both modes and reject the former format and displaced text.
 
 ## Ratings and timeline
 
@@ -85,7 +87,7 @@ Multipart positions use known part durations as offsets. Missing reliable offset
 
 ## Artwork and skin integration
 
-Visible album/track rows use a dedicated artwork worker. Original images come through validated `/library/metadata/{id}/thumb` paths and are scaled by WIC. Download size, source dimensions and pixel count are bounded. The view owns its image list; temporary GDI bitmaps are freed after insertion. Missing paths or HTTP 404 leave an empty image slot. Other image/transport errors are exposed. Missing album counts use a one-item children page and its total.
+Visible track rows use a dedicated artwork worker. Original images come through validated `/library/metadata/{id}/thumb` paths and are scaled by WIC; prepared thumbnails are at most 48 × 48 pixels and the dense track list uses 24 × 24 image slots. Download size, source dimensions and pixel count are bounded. The view owns its image list; temporary GDI bitmaps are freed after insertion. Missing paths or HTTP 404 leave an empty image slot. Other image/transport errors are exposed. Missing album counts use a one-item children page and its total.
 
 Tracks use their own thumb or inherited parentThumb. Before playlist handoff, the catalog worker loads each required cover once per job, with a maximum dimension of 256 pixels. The registered `svc_albumArtProvider` returns prepared PNG bytes only for owned paths, using Winamp's allocator for image/type buffers and SDK type string `png`. HTTP tracks require `ALBUMARTPROVIDER_TYPE_EMBEDDED`; the mapping is separate from the media bytes. Shared image data is capped at 67.1 MB and 10,000 mappings. Revocation/shutdown remove mappings and unregister the service. Missing host services fail initialization.
 
