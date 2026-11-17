@@ -6,6 +6,7 @@
 #include <string>
 
 namespace plex {
+class Verbindungsverwaltung;
 enum class HttpMethod { get, post, put };
 enum class HttpRepresentation { json, image };
 struct HttpError : std::exception {
@@ -22,18 +23,21 @@ public:
     // API-Pfade stammen aus dem Client; der Aufruf bleibt an die konfigurierte Origin gebunden.
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                HttpMethod method, const std::string& client_identifier, HANDLE stop,
-               HttpRepresentation representation = HttpRepresentation::json);
+               HttpRepresentation representation = HttpRepresentation::json, bool recover = true, HANDLE request_stop = nullptr);
     ~HttpStream();
     HttpStream(const HttpStream&) = delete;
     HttpStream& operator=(const HttpStream&) = delete;
     unsigned long status() const;
     std::string header(const wchar_t* name) const;
     unsigned long read(char* buffer, unsigned long size);
+    void refresh_connection();
 private:
     HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
                const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop,
-               const wchar_t* accept, bool media = false, HANDLE request_stop = nullptr);
+               const wchar_t* accept, bool media = false, HANDLE request_stop = nullptr, bool recover = true);
     struct State;
     std::unique_ptr<State> state_;
+    std::shared_ptr<Verbindungsverwaltung> recovery_;
+    unsigned long long generation_ = 0;
 };
 }

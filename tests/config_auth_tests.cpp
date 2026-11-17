@@ -50,6 +50,7 @@ int main() {
               actual.client_identifier == settings.client_identifier, "dpapi_roundtrip_unicode");
         check(actual.cache_enabled, "cache_default_enabled");
         settings.cache_enabled = false;
+        settings.account_token = "synthetic-account-credential";
         settings.preferred_origin = "https://preferred.example:32400";
         settings.server_connections = {{"https://local.example:32400", true, false}, {"https://music.example:32400", false, false}};
         settings.known_servers = {{settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections},
@@ -60,12 +61,14 @@ int main() {
         const auto routes = plex::load_settings(path).server_connections;
         check(routes.size() == 2 && routes[0].local && !routes[1].local && routes[0].uri == settings.server_connections[0].uri, "connection_routes_roundtrip");
         const auto profiles = plex::load_settings(path).known_servers;
+        check(plex::load_settings(path).account_token == settings.account_token, "account_token_dpapi_roundtrip");
         check(profiles.size() == 2 && profiles[1].access_token == "synthetic-other-token" && profiles[0].connections[0].local,
               "server_profiles_roundtrip");
         std::ifstream stored(path, std::ios::binary);
         std::string encrypted{std::istreambuf_iterator<char>(stored), {}};
         check(encrypted.find(settings.server_token) == encrypted.npos && encrypted.find(settings.server_origin) == encrypted.npos, "no_plaintext_credentials");
         check(encrypted.find("synthetic-other-token") == encrypted.npos && encrypted.find(settings.preferred_origin) == encrypted.npos, "no_plaintext_profile_credentials");
+        check(encrypted.find(settings.account_token) == encrypted.npos, "no_plaintext_account_token");
         stored.close();
         plex::BrowseQuery saved_query; saved_query.library_identifier = settings.library_identifier; saved_query.kind = plex::BrowseKind::tracks;
         saved_query.search = "Björk & Orchestra"; saved_query.genre = "12"; saved_query.audio_codec = "flac";

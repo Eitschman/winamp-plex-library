@@ -30,6 +30,7 @@ struct PlexConnectionSettings {
     std::vector<PlexConnection> server_connections;
     std::vector<PlexServer> known_servers;
     LibraryPreferences library_preferences;
+    std::string account_token;
 };
 std::filesystem::path settings_path();
 PlexConnectionSettings load_settings(const std::filesystem::path& path);

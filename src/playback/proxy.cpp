@@ -375,6 +375,7 @@ struct PlaybackProxy::State {
                          failure.code != ERROR_TIMEOUT && failure.code != ERROR_WINHTTP_CONNECTION_ERROR)) throw;
                     remember_failure(status, failure.code, expected, downloaded);
                     ++reconnects;
+                    stream->refresh_connection();
                     stream.reset();
                     const auto range = "bytes=" + std::to_string(downloaded) + "-" + std::to_string(expected - 1);
                     stream = std::make_shared<HttpStream>(grant->source.server, grant->source.token, grant->source.media_path, false, range, stop, destination.cancellation());

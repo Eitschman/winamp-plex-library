@@ -548,6 +548,7 @@ struct View : RetiredView {
                         {job.settings.server_identifier, job.settings.server_name, job.settings.server_token, job.settings.server_connections},
                         job.settings.preferred_origin);
                     job.settings.server_origin = connection.origin;
+                    job.settings.server_token = connection.server_token;
                     result.verified_origin = std::move(connection.origin);
                     result.libraries = std::move(connection.libraries);
                     result.libraries_loaded = true;
@@ -844,6 +845,7 @@ struct View : RetiredView {
             const auto error = result->error;
             const auto http = error >= 0x20000000UL && error < 0x20000400UL ? error - 0x20000000UL : 0;
             if (error == server_identity_mismatch) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Serveridentität stimmt nicht mit dem ausgewählten Plex-Server überein.", L"The server identity does not match the selected Plex server."));
+            else if (error == account_signin_required) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die automatische Wiederverbindung bitte einmal in den Einstellungen mit Plex anmelden. Die Playlist bleibt erhalten.", L"Sign in with Plex once in Settings to enable automatic reconnection. Your playlist is preserved."));
             else if (http == 401 || http == 403) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Zugriff verweigert. Bitte erneut mit Plex anmelden.", L"Access denied. Sign in with Plex again."));
             else if (result->action == Action::rate) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Die Bewertung konnte nicht bestätigt werden. Bitte aktualisieren und prüfen.", L"The rating could not be confirmed. Refresh and check it."));
             else if (error == ERROR_NOT_SUPPORTED) SetDlgItemTextW(dialog, IDC_STATUS, text(L"Für die Auswahl ist kein unterstütztes Direct-Play-Medium verfügbar.", L"No supported direct-play media is available for this selection."));

@@ -11,9 +11,11 @@ The primary source is the [official PMS API](https://developer.plex.tv/pms/). Do
 5. Use the account token for `GET https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0`.
 6. Offer only resources providing `server`. Resources contain `clientIdentifier`, `name`, `accessToken` and `connections[]`. Resource tokens may differ from the account token.
 7. Probe advertised HTTPS connections in the background, preferring local, direct remote and relay in that order. Query `/identity` without authentication and require `machineIdentifier` to match the selected resource. Only then send its token to `/library/sections`. Custom origins use the same identity check.
-8. Store profiles, connections, selected access and library using Windows DPAPI. The account token is not needed persistently after discovery. Only the sign-in button starts another browser authorization.
+8. Store the account token, profiles, connections, selected access and library using CurrentUser Windows DPAPI. Send the account token only to Plex services. It is needed to refresh advertised server addresses after a connection failure; PMS receives only its resource token. Only the sign-in button starts browser authorization.
 
 Plex also documents JWT/device-key authentication and renewal. This plugin uses the officially documented strong PIN flow. Expired or revoked server access requires a visible sign-in action rather than silently trying other tokens.
+
+Automatic reconnection repeats the resources request after DNS, connection, timeout or TLS transport failures. Only the selected `clientIdentifier` is eligible, and `/identity` must match before authenticated access. Concurrent failures share one refresh; failed refreshes have a five-second cooldown. Cancellation remains effective while waiting or fetching. Fixed Advanced addresses are not replaced. HTTP 401/403 are not network failures and do not initiate rediscovery. Legacy profiles without an account token report that one browser sign-in is required without deleting playlist references. See the official API's Authentication and Talking to PMS sections for the separate account/resource-token contract.
 
 ## Server and music
 

@@ -137,6 +137,8 @@ PlexConnectionSettings load_settings(const std::filesystem::path& path) {
         PlexConnectionSettings result{document.at("client_identifier"), document.at("server_identifier"), document.at("server_origin"),
             document.at("server_name"), document.at("server_token"), document.at("library_identifier"), document.at("library_title")};
         validate_token(result.client_identifier);
+        result.account_token = document.value("account_token", std::string{});
+        if (!result.account_token.empty()) validate_token(result.account_token);
         result.cache_enabled = document.value("cache_enabled", true);
         if (document.contains("library_preferences")) result.library_preferences = read_preferences(document.at("library_preferences"));
         result.preferred_origin = document.value("preferred_origin", std::string{});
@@ -166,13 +168,14 @@ PlexConnectionSettings load_settings(const std::filesystem::path& path) {
 
 void save_settings(const std::filesystem::path& path, const PlexConnectionSettings& settings) {
     validate_token(settings.client_identifier);
+    if (!settings.account_token.empty()) validate_token(settings.account_token);
     if (!settings.preferred_origin.empty()) parse_server_address(settings.preferred_origin);
     if (!settings.server_origin.empty()) { parse_server_address(settings.server_origin); validate_token(settings.server_token); }
     nlohmann::json document{{"client_identifier", settings.client_identifier}, {"server_identifier", settings.server_identifier},
         {"server_origin", settings.server_origin}, {"server_name", settings.server_name}, {"server_token", settings.server_token},
         {"library_identifier", settings.library_identifier}, {"library_title", settings.library_title},
         {"cache_enabled", settings.cache_enabled}, {"preferred_origin", settings.preferred_origin},
-        {"library_preferences", preferences_json(settings.library_preferences)}};
+        {"library_preferences", preferences_json(settings.library_preferences)}, {"account_token", settings.account_token}};
     if (settings.server_connections.size() > 32) throw std::invalid_argument("connections_limit");
     document["server_connections"] = nlohmann::json::array();
     for (const auto& connection : settings.server_connections) {

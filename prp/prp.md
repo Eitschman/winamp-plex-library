@@ -4,6 +4,8 @@ This is a maintained working document, not an immutable copy of the initial prom
 
 ## Binding project decisions
 
+- Automatic connections recover from changed server addresses, including router WAN-IP changes, by querying Plex with the DPAPI-protected account token and verifying the same stable server ID before authenticated PMS access. Existing Plex links, playlist order, local files and web radios are preserved. Fixed Advanced connections remain fixed; authentication failures are distinct from network failures. Older profiles require one explicit browser sign-in to retain the account token, without clearing the playlist. Simulate address changes and concurrent failures instead of modifying the real router.
+
 - Tracks must play to their natural end without an artificial time limit. Decoder backpressure and pause must not terminate a stream. Native natural-end tests are separate from seeking, backpressure, shutdown and incomplete-request timeout tests.
 - Interrupted full media GETs may resume byte-exactly from the same file, with known length, a strong identical ETag, the same server/path, exact HTTP 206 range and remaining length. At most three follow-up requests are allowed. No alternate format, decoder or server is selected on failure. Initial HTTP 206 seeking responses require separate resumption evidence.
 - Numeric failure history survives recovery and subsequent healthy playback. A real interruption/resumption reached natural end; persistent outages remain errors.
@@ -32,7 +34,7 @@ This is a maintained working document, not an immutable copy of the initial prom
 - MSVC x86 builds, original SDK export/descriptor, Plex tree nodes, native views, regular exit/restart and 100 SDK load cycles.
 - Browser sign-in approved by the user, HTTPS identity checks, music library discovery and DPAPI persistence.
 - Synthetic transport, ranges, cancellation, URL security and classified failures.
-- Controlled background view teardown; native stalled-TLS navigation in 2 ms and native view-switch resource tests within stated limits. Debug and Release have 20 automated suites, with 13 package checks and a redacted Git-history scan. Local intermittent IME observations remain documented in testing.
+- Controlled background view teardown; native stalled-TLS navigation in 2 ms and native view-switch resource tests within stated limits. Debug and Release pass 21 automated suites, including simulated address recovery, with 13 package checks and a redacted Git-history scan. Local intermittent IME observations remain documented in testing.
 - Real MP3 handoff through documented WM_COPYDATA/M3U8 and SDK title/play commands, with seeking, duration and token-free playlists.
 - Real MP3/M4A/FLAC/OGG progress, duration, seeking and metadata. Synthetic AAC-LC uses the same preparation path with unchanged compressed payload. Real Plex ADTS and other AAC profiles remain unverified.
 - Private media limits of 536.8 MB per file and 2147.4 MB overall; regular exit removes prepared files/session directory.

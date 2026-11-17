@@ -3,6 +3,7 @@
 #include <gen_tray/WINAMPCMD.H>
 #include "plex/playlist.h"
 #include "plex/http_stream.h"
+#include "plex/connection.h"
 #include "plugin/playlist_replay.h"
 #include "plugin/track_info.h"
 #include <cstddef>
@@ -26,7 +27,7 @@ std::vector<QueueItem> track_items(const std::vector<PlexTrack>& tracks, const P
 std::vector<PlaylistEntry> bind_items(std::vector<QueueItem> items, std::vector<ReplayReference>& references, const PlexConnectionSettings& connection);
 std::vector<PlaylistEntry> bind_restored(const std::vector<ReplayTrack>& tracks, const PlexConnectionSettings& connection, const PreparedMedia& prepared, const PlaybackArtwork& artwork);
 void revoke_entries(const std::vector<PlaylistEntry>& entries) noexcept;
-char description[] = "Winamp Plex Library 0.4.0";
+char description[] = "Winamp Plex Library 0.4.1";
 winampMediaLibraryPlugin plugin{MLHDR_VER, description, initialize, shutdown, message, nullptr, nullptr, nullptr};
 UINT_PTR tree_id = 0;
 std::array<UINT_PTR, 4> child_ids{};
@@ -194,6 +195,7 @@ int initialize() noexcept {
         ui_thread = GetCurrentThreadId();
         initialize_library_workers();
         settings = load_settings(settings_path());
+        konfiguriere_verbindung(settings);
         ++settings_revision; verified_connection = false;
         const auto language = reinterpret_cast<const wchar_t*>(SendMessageW(plugin.hwndWinampParent, WM_WA_IPC,
                                                                                  MAKEWPARAM(5, LANG_LANG_CODE), IPC_GETLANGUAGEPACKINSTANCE));
@@ -235,6 +237,7 @@ void shutdown() noexcept {
     shutdown_library_workers();
     clear_library_cache();
     stop_playback();
+    entferne_verbindung();
     UnregisterClassW(monitor_class, plugin.hDllInstance);
     shutdown_artwork_provider();
     if (tree_id && IsWindow(plugin.hwndLibraryParent)) {
@@ -477,7 +480,11 @@ unsigned long long playback_diagnostic(unsigned counter) noexcept {
     }
 }
 bool playback_active() noexcept { return proxy != nullptr; }
-PlexConnectionSettings connection_settings() { return settings; }
+PlexConnectionSettings connection_settings() {
+    auto result = settings;
+    if (const auto connection = aktuelle_verbindung()) connection->abgleichen(result);
+    return result;
+}
 // Hintergrundanfragen benötigen nur den ausgewählten Zugang, keine weiteren
 // Server-Tokens oder Kopien aller gespeicherten Verbindungen pro Coverauftrag.
 PlexConnectionSettings request_connection_settings(bool include_connections) {
@@ -496,18 +503,20 @@ bool connection_verified() noexcept { return verified_connection; }
 bool accept_verified_connection(unsigned long long revision, const std::string& origin) {
     if (revision != settings_revision) return false;
     if (!parse_server_address(origin).secure) throw std::invalid_argument("insecure_verified_origin");
-    if (settings.server_origin != origin) {
-        stop_playback(); clear_library_cache(); settings.server_origin = origin;
-    }
+    const auto previous_origin = settings.server_origin;
+    settings.server_origin = origin;
+    if (const auto connection = aktuelle_verbindung()) connection->abgleichen(settings);
+    if (settings.server_origin != previous_origin) clear_library_cache();
     verified_connection = true;
     return true;
 }
 void update_connection_settings(PlexConnectionSettings value) {
     save_settings(settings_path(), value);
+    konfiguriere_verbindung(value);
     if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin ||
         value.server_token != settings.server_token || value.library_identifier != settings.library_identifier ||
         value.cache_enabled != settings.cache_enabled) clear_library_cache();
-    if (value.server_identifier != settings.server_identifier || value.server_origin != settings.server_origin || value.server_token != settings.server_token) stop_playback();
+    if (value.server_identifier != settings.server_identifier) stop_playback();
     settings = std::move(value);
     ++settings_revision; verified_connection = false;
 }

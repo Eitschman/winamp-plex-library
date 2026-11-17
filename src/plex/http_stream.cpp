@@ -1,4 +1,5 @@
 #include "plex/http_stream.h"
+#include "plex/connection.h"
 #include <winhttp.h>
 #include <atomic>
 #include <vector>
@@ -88,13 +89,33 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     : HttpStream(server, token, (validate_media_path(path), path), head ? L"HEAD" : L"GET", range, "winamp-plex-library-poc", stop, L"*/*", true, request_stop) {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation)
+                       HttpMethod method, const std::string& client_identifier, HANDLE stop, HttpRepresentation representation, bool recover, HANDLE request_stop)
     : HttpStream(server, token, path, method == HttpMethod::post ? L"POST" : method == HttpMethod::put ? L"PUT" : L"GET", {}, client_identifier, stop,
-                 representation == HttpRepresentation::image ? L"image/*" : L"application/json") {}
+                 representation == HttpRepresentation::image ? L"image/*" : L"application/json", false, request_stop, recover) {}
 
 HttpStream::HttpStream(const ServerAddress& server, const std::string& token, const std::string& path,
-                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept, bool media, HANDLE request_stop)
+                       const wchar_t* method, const std::string& range, const std::string& client_identifier, HANDLE stop, const wchar_t* accept, bool media, HANDLE request_stop, bool recover)
     : state_(std::make_unique<State>()) {
+    // Nur wiederholbare Leseaufrufe dürfen nach einer Adressänderung erneut starten.
+    // Prüf-/Cloud-Aufrufe umgehen diese Ebene, damit Identitätsprüfungen nicht rekursiv werden.
+    if (recover) {
+        const auto connection = aktuelle_verbindung();
+        auto target = connection ? connection->ziel(server, token) : std::nullopt;
+        if (target) {
+            try {
+                HttpStream opened(target->server, target->token, path, method, range, client_identifier, stop, accept, media, request_stop, false);
+                state_ = std::move(opened.state_);
+            } catch (const HttpError& failure) {
+                if ((wcscmp(method, L"GET") && wcscmp(method, L"HEAD")) || !Verbindungsverwaltung::verbindungsfehler(failure.code)) throw;
+                target = connection->erneuern(target->generation, stop, request_stop);
+                HttpStream opened(target->server, target->token, path, method, range, client_identifier, stop, accept, media, request_stop, false);
+                state_ = std::move(opened.state_);
+            }
+            if (!wcscmp(method, L"GET") || !wcscmp(method, L"HEAD")) recovery_ = connection;
+            generation_ = target->generation;
+            return;
+        }
+    }
     if (!token.empty()) validate_token(token);
     validate_token(client_identifier);
     if (path.empty() || path.front() != '/' || path.substr(0, 2) == "//" || path.size() > 8192 ||
@@ -129,7 +150,7 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
     auto context = reinterpret_cast<DWORD_PTR>(&state);
     require(WinHttpSetOption(state.request, WINHTTP_OPTION_CONTEXT_VALUE, &context, sizeof(context)));
     state.context_installed = true;
-    auto headers = L"X-Plex-Product: Winamp Plex Library\r\nX-Plex-Version: 0.4.0\r\nX-Plex-Platform: Windows\r\n"
+    auto headers = L"X-Plex-Product: Winamp Plex Library\r\nX-Plex-Version: 0.4.1\r\nX-Plex-Platform: Windows\r\n"
                    L"X-Plex-Client-Identifier: " + widen(client_identifier) + L"\r\nAccept: " + accept + L"\r\nAccept-Encoding: identity\r\n";
     if (!token.empty()) headers += L"X-Plex-Token: " + widen(token) + L"\r\n";
     if (!range.empty()) headers += L"Range: " + widen(range) + L"\r\n";
@@ -143,6 +164,10 @@ HttpStream::HttpStream(const ServerAddress& server, const std::string& token, co
 }
 
 HttpStream::~HttpStream() = default;
+
+void HttpStream::refresh_connection() {
+    if (recovery_) recovery_->erneuern(generation_, state_->stop, state_->request_stop);
+}
 
 unsigned long HttpStream::status() const {
     DWORD result = 0;
@@ -168,8 +193,16 @@ std::string HttpStream::header(const wchar_t* name) const {
 }
 
 unsigned long HttpStream::read(char* buffer, unsigned long size) {
-    state_->prepare();
-    state_->wait(WinHttpReadData(state_->request, buffer, size, nullptr));
+    try {
+        state_->prepare();
+        state_->wait(WinHttpReadData(state_->request, buffer, size, nullptr));
+    } catch (const HttpError& failure) {
+        // Bereits ausgegebene Bytes werden hier nicht wiederholt. Der Proxy darf
+        // ausschließlich über seinen bestehenden ETag-/Range-Nachweis fortsetzen.
+        if (recovery_ && Verbindungsverwaltung::verbindungsfehler(failure.code))
+            recovery_->erneuern(generation_, state_->stop, state_->request_stop);
+        throw;
+    }
     return state_->bytes.load();
 }
 }

@@ -1,6 +1,20 @@
 # Validation and integration checklist
 
-Current evidence date: November 10, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+Current evidence date: November 17, 2026. This document distinguishes executed checks from requirements still awaiting a suitable environment. Local log and screenshot names refer to the ignored `.local` directory; those files may contain private display information and are not published.
+
+## Connection recovery
+
+The versioned x86 Debug and Release builds each pass all 21 CTest suites. The new suite reports 33 checks. All 13 package checks pass. Current local evidence is in `/tmp/winamp-041-debug-tests.log`, `/tmp/winamp-041-release-tests.log` and `/tmp/winamp-041-packaging.log`; these are not distributed. The DLL reports version 0.4.1. The existing release workflow repeats both builds, tests and package checks before publication.
+
+The `connection_recovery` suite uses synthetic account and server credentials with injected resources/identity responses. It first reproduces failure using only the saved old address, then verifies rediscovery of the same server at a new HTTPS address, renewed resource credentials, continued routing for old playback sources, synchronized settings and exclusion of foreign sources. It covers account revocation, server access denial without rediscovery, mismatched server identity without credential disclosure, fixed Advanced connections, legacy profiles, cancellation, repeated alias imports and eight concurrent failures sharing one refresh. A real HttpStream against a closed loopback port checks that media and catalog requests enter the shared recovery path while PUT requests are not replayed. No real account, router or Winamp installation is used by this suite.
+
+Configuration tests round-trip the account token through CurrentUser DPAPI and reject plaintext occurrence in the encrypted file. Existing transport tests continue to require exact byte content, strong-ETag/length/range consistency, bounded storage and cancellation. Existing lifecycle and playlist tests retain their foreign-source and protected-reference checks.
+
+One local Debug run reported `balanced_user_handles` with two remaining Windows windows, `MSCTFIME UI` and `IME`, after 100 cycles. Its isolated unchanged recheck passes (`/tmp/winamp-041-debug-lifecycle-recheck.log`). This matches the separately documented intermittent IME observation; no plugin leak fix or weakened USER/GDI checks are claimed.
+
+The muted/minimized native `Test-PlexPlaylistReplay.ps1 -Product -Prefetch -Radio -SkipNegative` run passes with real MP3 tracks The Puppeteer and Until Dawn by Elvellon. It checks saved-list restart, playback metadata/artwork, next-track prefetch and seeking, player/editor start actions, native shuffle and mixed local/radio/Plex transitions. Only the Plex entries are renewed; foreign URLs/order and the saved playlist file are unchanged. The normal DLL and original DPAPI-profile hashes remain unchanged. Evidence: `/tmp/winamp-041-native-replay.log`. This verifies playlist regression behavior, not a real WAN-IP change or a new browser authorization.
+
+Manual integration still required: after one explicit browser sign-in and Save, retain a mixed playlist, change the home router's public address and verify recovery once Plex advertises the new address. Check both a newly selected track and a buffered active MP3/M4A response, restart Winamp with a saved playlist and verify local files/web radios are untouched. A real router address change has not been forced. Interrupted local-format preparation may require retrying the selected entry; incomplete files are not played. A depleted audio buffer, stale Plex advertisement or an initial seeking response can still interrupt playback. HTTP 401/403 must remain visible authentication errors. No normal-installation DLL replacement is part of the release task.
 
 ## Release 0.4.0
 
@@ -181,7 +195,7 @@ After restoring the refresh handler, the Release lifecycle check passes again; s
 
 A native “The Puppeteer” run stopped after 129,788 ms despite a decoder duration of 273 seconds. Diagnostics recorded HTTP 200, Windows error 38 and 4,521,984 of 9,330,407 expected bytes. This reproduced an incomplete transfer in the common transport path. The exact cause of the upstream termination remains unresolved. A later healthy request's HTTP 200/Windows 0 cannot reconstruct that earlier failure, so numeric failure history is retained.
 
-Interrupted full GETs can resume the same file at the next byte not yet downloaded, at most three times. Resumption requires known length, a strong ETag, the same origin/token/path, HTTP 206, identical ETag, exact Content-Range and remaining Content-Length. Changed content and inconsistent responses fail. Initial HTTP 206 seeking responses have no equivalent resumption proof. No alternate server, format or decoder is selected.
+Interrupted full GETs can resume the same file at the next byte not yet downloaded, at most three times. Resumption requires known length, a strong ETag, the same server identity/media path, HTTP 206, identical ETag, exact Content-Range and remaining Content-Length. The connection manager may renew that server's verified address/resource token. Changed content and inconsistent responses fail. Initial HTTP 206 seeking responses have no equivalent resumption proof. No alternate server, format or decoder is selected.
 
 Synthetic counterchecks without resumption detect missing content. With resumption all bytes match without duplication; changed ETags are rejected. Removing retained failure history also fails its countercheck. Media receive timeout is 15 seconds while API deadlines remain shorter. A six-second media pause passes; the five-second timeout countercheck fails.
 

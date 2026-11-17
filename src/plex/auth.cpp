@@ -1,5 +1,6 @@
 #include "plex/auth.h"
 #include "plex/http_stream.h"
+#include "plex/connection.h"
 #include <array>
 #include <stdexcept>
 #include <algorithm>
@@ -13,13 +14,13 @@ std::string scalar_identifier(const nlohmann::json& value) {
 }
 }
 
-PlexAuth::PlexAuth(std::string client_identifier, HANDLE stop) : client_identifier_(std::move(client_identifier)), stop_(stop) {
+PlexAuth::PlexAuth(std::string client_identifier, HANDLE stop, HANDLE request_stop) : client_identifier_(std::move(client_identifier)), stop_(stop), request_stop_(request_stop) {
     validate_token(client_identifier_);
 }
 
-nlohmann::json PlexAuth::request(const std::string& origin, const std::string& token, const std::string& path, bool post) const {
+nlohmann::json PlexAuth::request(const std::string& origin, const std::string& token, const std::string& path, bool post, bool recover) const {
     const auto server = parse_server_address(origin);
-    HttpStream stream(server, token, path, post ? HttpMethod::post : HttpMethod::get, client_identifier_, stop_);
+    HttpStream stream(server, token, path, post ? HttpMethod::post : HttpMethod::get, client_identifier_, stop_, HttpRepresentation::json, recover, request_stop_);
     const auto status = stream.status();
     if (status != 200 && status != 201) throw HttpError(0x20000000UL + status);
     std::array<char, 32768> buffer{};
@@ -48,6 +49,9 @@ nlohmann::json PlexAuth::request(const std::string& origin, const std::string& t
         }
         SecureZeroMemory(body.data(), body.size());
         return response;
+    } catch (const HttpError&) {
+        SecureZeroMemory(body.data(), body.size());
+        throw;
     } catch (...) {
         SecureZeroMemory(body.data(), body.size());
         // Parserfehler können den Antworttext enthalten. Niemals über die API-Grenze geben.
@@ -81,8 +85,8 @@ std::vector<PlexServer> PlexAuth::servers(const std::string& account_token) cons
     return parse_servers(request("https://clients.plex.tv", account_token, "/api/v2/resources?includeHttps=1&includeRelay=1&includeIPv6=0", false));
 }
 
-nlohmann::json PlexAuth::get_server(const std::string& origin, const std::string& token, const std::string& path) const {
-    return request(origin, token, path, false);
+nlohmann::json PlexAuth::get_server(const std::string& origin, const std::string& token, const std::string& path, bool recover) const {
+    return request(origin, token, path, false, recover);
 }
 
 std::vector<PlexServer> parse_servers(const nlohmann::json& response) {
@@ -155,13 +159,15 @@ PlexConnectionResult verify_server_connection(const PlexServer& server, const st
         }
     }).uri;
     else if (!verified({origin})) throw HttpError(server_identity_mismatch);
-    return {origin, parse_libraries(request(origin, server.access_token, "/library/sections"))};
+    return {origin, parse_libraries(request(origin, server.access_token, "/library/sections")), server.access_token, server.connections};
 }
 
-PlexConnectionResult PlexAuth::connect_server(const PlexServer& server, const std::string& preferred_origin) const {
+PlexConnectionResult PlexAuth::connect_server(const PlexServer& server, const std::string& preferred_origin, bool recover) const {
+    const auto connection = aktuelle_verbindung();
+    if (recover && connection && connection->passt(server, preferred_origin)) return connection->verbinden(stop_, request_stop_);
     return verify_server_connection(server, preferred_origin, [&](const auto& origin, const auto& token, const auto& path) {
         if (WaitForSingleObject(stop_, 0) == WAIT_OBJECT_0) throw HttpError(ERROR_CANCELLED);
-        return get_server(origin, token, path);
+        return get_server(origin, token, path, false);
     });
 }
 }

@@ -18,6 +18,14 @@ The reference registry, artwork and configuration have separate limits; they are
 
 ## Components
 
+### Connection recovery
+
+One shared `Verbindungsverwaltung` owns the selected profile's verified runtime route and a bounded set of previously issued origin/resource-token aliases. HttpStream maps registered requests to the current route, so existing proxy grants and prepared-playlist references need no playlist rebuild after an address change. Foreign origins or credentials are not mapped. At most 128 distinct alias pairs are retained per session; repeated settings saves deduplicate aliases and a limit violation is explicit.
+
+DNS/connect/timeout/TLS failures on GET/HEAD can trigger one retry after resource rediscovery through Plex. Only the same stable server ID is selected, with the existing local/direct/relay priority and token-free identity check before PMS authentication. The account token stays in CurrentUser DPAPI and is used only with Plex services. HTTP 401/403, cancellation and malformed content do not initiate address discovery. Advanced fixed connections stay fixed. A single cancellable refresh coordinates concurrent workers; failed HTTP/transport refreshes have a five-second cooldown. Updates to known addresses/resource tokens are reflected in Settings and saved when the user saves Settings. Address-only updates do not stop playback or revoke existing grants; changing servers and shutdown still tear down playback.
+
+POST/PUT requests use an already renewed route but are not automatically replayed after a connection failure. Read errors do not replay bytes inside HttpStream. The proxy's existing strong-ETag/length/exact-range checks control any continuation across a new address of the same server. Buffer exhaustion and initial-range response failures can still interrupt playback. Legacy profiles remain readable and require one explicit browser sign-in to retain the account token; the protected playlist-reference registry is unchanged.
+
 ### Track information
 
 The `TrackInformationController` subclasses the player and playlist editor on their UI thread. Only exact names present in the plugin's bound playback-metadata map are handled. Winamp File Information, the playlist editor's selected-entry information command and ANSI/Unicode information IPC open a native read-only panel. A mixed selection snapshots names in playlist order and sends foreign entries back through Winamp's information IPC; Cancel stops the sequence. Shutdown removes both subclasses before releasing playback state.
@@ -219,6 +227,6 @@ Plex authentication is attached upstream only. TLS verification stays enabled. R
 
 ## Failure boundaries
 
-An interrupted full response may resume at the next byte not yet downloaded into the buffer, at most three times. The resume offset is independent of how much Winamp has consumed. Known total length and a strong ETag are required. Follow-up requests use the same origin/token/path and must return HTTP 206, the same ETag, exact Content-Range and remaining Content-Length. Authentication failure or mismatch fails visibly. Initial HTTP 206 seeking responses are excluded from resumption. Numeric diagnostics retain the latest transfer failure after recovery or a subsequent healthy track; received/expected counts describe upstream progress.
+An interrupted full response may resume at the next byte not yet downloaded into the buffer, at most three times. The resume offset is independent of how much Winamp has consumed. Known total length and a strong ETag are required. Follow-up requests retain the same server identity and media path, using its renewed verified address/resource token when needed, and must return HTTP 206, the same ETag, exact Content-Range and remaining Content-Length. Authentication failure or mismatch fails visibly. Initial HTTP 206 seeking responses are excluded from resumption. Numeric diagnostics retain the latest transfer failure after recovery or a subsequent healthy track; received/expected counts describe upstream progress.
 
 ABI/thread entry points catch exceptions. JSON failures become classified errors before reaching the UI. Unreachable servers never trigger transcoding or insecure HTTP. Unverified areas are listed in [testing.md](testing.md).

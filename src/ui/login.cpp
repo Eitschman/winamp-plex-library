@@ -172,8 +172,8 @@ struct Login {
                 if (token.empty()) continue;
                 try {
                     auto available = auth.servers(token);
+                    { std::lock_guard<std::mutex> lock(mutex); servers = std::move(available); settings.account_token = token; }
                     SecureZeroMemory(token.data(), token.size());
-                    { std::lock_guard<std::mutex> lock(mutex); servers = std::move(available); }
                     error = 0; publish(Step::authorized); return;
                 } catch (...) { SecureZeroMemory(token.data(), token.size()); throw; }
             }
@@ -202,9 +202,12 @@ struct Login {
                 settings.server_name = server.name;
                 settings.server_origin = origin;
                 settings.preferred_origin = automatic ? std::string{} : origin;
-                settings.server_connections = server.connections;
+                settings.server_connections = connection.connections;
                 settings.known_servers = servers;
-                settings.server_token = server.access_token;
+                settings.server_token = connection.server_token;
+                for (auto& known : settings.known_servers) if (known.identifier == settings.server_identifier) {
+                    known.access_token = settings.server_token; known.connections = settings.server_connections;
+                }
                 freshly_verified = true;
             }
             error = 0; publish(Step::libraries);

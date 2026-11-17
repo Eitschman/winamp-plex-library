@@ -161,7 +161,9 @@ struct PlaylistReplay::State {
         const auto text = german() ?
             L"Die Plex-Playlist konnte nicht wiederhergestellt werden. Bitte Anmeldung, ausgewählten Server und Erreichbarkeit prüfen. Alte Einträge ohne gespeicherte Zuordnung müssen aus der Plex-Bibliothek neu hinzugefügt werden. Fehlercode: " :
             L"Could not restore the Plex playlist. Check sign-in, selected server and connectivity. Old entries without a saved reference must be added again from the Plex library. Error code: ";
-        const auto message = std::wstring(text) + std::to_wstring(error);
+        const auto message = error == account_signin_required ? std::wstring(german() ?
+            L"Für die automatische Wiederverbindung bitte einmal in den Einstellungen mit Plex anmelden. Die Playlist bleibt erhalten." :
+            L"Sign in with Plex once in Settings to enable automatic reconnection. Your playlist is preserved.") : std::wstring(text) + std::to_wstring(error);
         MessageBoxW(player, message.c_str(), L"Winamp Plex Library", MB_OK | MB_ICONERROR);
         } catch (...) {}
         reporting = false;
@@ -218,6 +220,7 @@ struct PlaylistReplay::State {
             const PlexAuth auth(settings.client_identifier, cancelled);
             const auto route = auth.connect_server({settings.server_identifier, settings.server_name, settings.server_token, settings.server_connections}, settings.preferred_origin);
             settings.server_origin = route.origin;
+            settings.server_token = route.server_token;
             std::map<std::string, PlexTrack> tracks;
             std::size_t artwork_bytes = 0;
             for (const auto& record : records) {

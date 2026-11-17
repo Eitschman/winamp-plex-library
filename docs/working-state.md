@@ -2,15 +2,17 @@
 
 ## Current release and installed build
 
-[Version 0.3.3](https://github.com/Eitschman/winamp-plex-library/releases/tag/v0.3.3) is published from source commit e4203d3. The [release workflow](https://github.com/Eitschman/winamp-plex-library/actions/runs/42240991267) and [main workflow](https://github.com/Eitschman/winamp-plex-library/actions/runs/42240990738) pass. Both configurations pass 18 suites; Release also passes seven package checks. Downloaded package contents, x86 version, checksum and licenses were verified. Full-history, package, DLL-string and workflow-log secret scans report no findings.
+[Version 0.4.1](https://github.com/Eitschman/winamp-plex-library/releases/tag/v0.4.1) adds shared recovery after server-address changes. Validation evidence and remaining real-router cases are recorded in [testing](testing.md). Release publication must pass the existing GitHub Actions build, package and redacted secret checks.
 
-The user explicitly authorized replacing the normal Winamp DLL with the published 0.3.3 DLL. Replacement and independent version/hash verification succeeded while Winamp was stopped. The previous DLL is preserved in the ignored local installation archive. This records that specific replacement; future normal-installation changes need a new instruction.
+The current task authorizes implementation and release publication, not replacing the normal Winamp DLL. Future normal-installation changes need an explicit instruction.
 
 Public documentation and commit messages are English. UI language follows Winamp, with German and English supported. Do not create branches, rewrite tags or publish another release without instruction.
 
 ## Playback and playlist behavior
 
-MP3/M4A responses use bounded progressive private disk buffers, starting playback at 128 KiB or short-response completion. Upstream downloading is independent of decoder consumption. Guarded byte-exact continuation of interrupted full GETs requires known length, an identical strong ETag, the same origin/path/token and exact HTTP 206 ranges, with at most three follow-up requests. Initial seeking responses are excluded from that continuation path. Persistent failures remain explicit.
+MP3/M4A responses use bounded progressive private disk buffers, starting playback at 128 KiB or short-response completion. Upstream downloading is independent of decoder consumption. Guarded byte-exact continuation of interrupted full GETs requires known length, an identical strong ETag, the same server identity/media path and exact HTTP 206 ranges, with at most three follow-up requests. The connection manager may renew the verified address/resource token of that server. Initial seeking responses are excluded from that continuation path. Persistent failures remain explicit.
+
+Automatic reconnection retains the account token in CurrentUser DPAPI and sends it only to Plex services. Network failures trigger same-server resource rediscovery; old playback sources map to the verified current route without clearing the playlist. Fixed connections remain fixed and HTTP 401/403 do not trigger discovery. Older profiles need one explicit browser sign-in and Save; protected playlist references remain unchanged. Shared refreshes are cancellable, failed HTTP/transport refreshes have a five-second cooldown and alias imports are deduplicated. A real WAN-IP change remains unverified.
 
 Saved playlists retain exact alias/server/track/part mappings under CurrentUser DPAPI. Only the requested stale track is resolved before playback resumes. FLAC/OGG/ADTS-AAC selections enter the playlist as protected deferred aliases without whole-selection downloads. Individual local-format preparation completes before its decoder opens; AAC is repackaged into M4A without re-encoding.
 
